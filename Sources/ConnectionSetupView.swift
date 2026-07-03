@@ -17,16 +17,17 @@ struct ConnectionSetupView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(.systemBackground).ignoresSafeArea()
+                LinearGradient(
+                    colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: GlassTheme.spacingXL) {
                         // Header
                         VStack(spacing: GlassTheme.spacingM) {
-                            Image(systemName: "winged Hermes caduceus")
-                                .font(.system(size: 0))
-                                .hidden()
-
                             // App icon hero
                             VStack(spacing: GlassTheme.spacingS) {
                                 Image(systemName: "bubble.left.and.exclamationmark.bubble.right.fill")
