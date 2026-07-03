@@ -4,6 +4,7 @@ import SwiftUI
 /// Uses .glassEffect() throughout for translucent, depth-heavy UI.
 struct ChatView: View {
     @ObservedObject var store: AppStore
+    @EnvironmentObject var appearance: AppearanceSettings
     @State private var inputText = ""
     @State private var showSessionPicker = false
     @State private var showSettings = false
@@ -90,12 +91,28 @@ struct ChatView: View {
                     }
 
                     ForEach(store.messages) { msg in
-                        GlassBubble(content: msg.content, isUser: msg.isUser)
+                        GlassBubble(
+                            content: msg.content,
+                            isUser: msg.isUser,
+                            fontScale: appearance.fontScaleDouble,
+                            fixedFontSize: appearance.messageFontSizeDouble,
+                            accentColor: appearance.accent,
+                            compact: appearance.compactModeBool,
+                            showTimestamp: appearance.showTimestampsBool
+                        )
                             .id(msg.id)
                     }
 
                     if store.isStreaming && !store.streamingText.isEmpty {
-                        GlassBubble(content: store.streamingText, isUser: false, isStreaming: true)
+                        GlassBubble(
+                            content: store.streamingText,
+                            isUser: false,
+                            isStreaming: true,
+                            fontScale: appearance.fontScaleDouble,
+                            fixedFontSize: appearance.messageFontSizeDouble,
+                            accentColor: appearance.accent,
+                            compact: appearance.compactModeBool
+                        )
                             .id("streaming")
                     }
 
