@@ -101,15 +101,21 @@ struct CreateSessionRequest: Codable {
 // MARK: - Messages
 
 struct SessionMessage: Codable, Identifiable, Hashable {
-    let id: String
+    let id: Int
     let role: String
     let content: String
-    let timestamp: String?
+    let timestamp: Double?
 
+    var idString: String { String(id) }
     var isUser: Bool { role == "user" }
     var isAssistant: Bool { role == "assistant" }
     var isSystem: Bool { role == "system" }
     var isTool: Bool { role == "tool" }
+
+    var date: Date? {
+        guard let ts = timestamp else { return nil }
+        return Date(timeIntervalSince1970: ts)
+    }
 }
 
 struct SessionMessagesResponse: Codable {
