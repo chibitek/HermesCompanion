@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Connection
 
-struct ConnectionConfig: Codable, Equatable {
+struct ConnectionConfig: Codable, Equatable, Sendable {
     var baseURL: String
     var apiKey: String
     var label: String
@@ -173,7 +173,7 @@ enum SSEEvent: String, Codable {
     case done = "done"
 }
 
-struct SSEEventPayload: Codable {
+struct SSEEventPayload: Codable, Sendable {
     let event: String
     let sessionId: String?
     let runId: String?
@@ -209,7 +209,7 @@ struct SSEEventPayload: Codable {
 
 // MARK: - AnyCodable (for flexible JSON args)
 
-struct AnyCodable: Codable {
+struct AnyCodable: Codable, @unchecked Sendable {
     let value: Any
 
     init(_ value: Any) {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Session picker: list, create, select, delete sessions.
+/// Session picker with Liquid Glass styling.
 struct SessionPickerView: View {
     @ObservedObject var store: AppStore
     @State private var isCreating = false
@@ -9,29 +9,45 @@ struct SessionPickerView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if store.sessions.isEmpty {
-                    ContentUnavailableView(
-                        "No Sessions",
-                        systemImage: "tray",
-                        description: Text("Create a new session to start chatting.")
-                    )
-                } else {
-                    ForEach(store.sessions) { session in
-                        Button {
-                            Task {
-                                await store.selectSession(session)
-                                dismiss()
+            ZStack {
+                Color(.systemBackground).ignoresSafeArea()
+
+                Group {
+                    if store.sessions.isEmpty {
+                        ContentUnavailableView(
+                            "No Sessions",
+                            systemImage: "tray",
+                            description: Text("Create a new session to start chatting.")
+                        )
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: GlassTheme.spacingS) {
+                                ForEach(store.sessions) { session in
+                                    Button {
+                                        Task {
+                                            await store.selectSession(session)
+                                            dismiss()
+                                        }
+                                    } label: {
+                                        GlassSessionRow(
+                                            session: session,
+                                            isActive: store.activeSession?.id == session.id
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            Task { await store.deleteSession(session) }
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
+                                }
                             }
-                        } label: {
-                            SessionRow(session: session, isActive: store.activeSession?.id == session.id)
+                            .padding(GlassTheme.spacingL)
                         }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                Task { await store.deleteSession(session) }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                        .refreshable {
+                            await store.refreshSessions()
                         }
                     }
                 }
@@ -63,20 +79,17 @@ struct SessionPickerView: View {
                     newSessionTitle = ""
                 }
             }
-            .refreshable {
-                await store.refreshSessions()
-            }
         }
     }
 }
 
-struct SessionRow: View {
+struct GlassSessionRow: View {
     let session: HermesSession
     let isActive: Bool
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: GlassTheme.spacingM) {
+            VStack(alignment: .leading, spacing: GlassTheme.spacingXS) {
                 Text(session.title ?? "Untitled")
                     .font(.body)
                     .fontWeight(isActive ? .semibold : .regular)
@@ -98,9 +111,11 @@ struct SessionRow: View {
 
             if isActive {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(GlassTheme.accent)
             }
         }
-        .padding(.vertical, 4)
+        .padding(GlassTheme.spacingM)
+        .glassEffect(isActive ? .regular.tint(GlassTheme.accent.opacity(0.12)) : .regular)
+        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusL, style: .continuous))
     }
 }
