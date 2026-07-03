@@ -24,8 +24,14 @@ struct RootView: View {
         if store.isConnected {
             ChatView(store: store)
                 .task {
-                    if store.activeSession == nil && !store.sessions.isEmpty {
-                        await store.selectSession(store.sessions[0])
+                    // Wait for sessions to load, then auto-select the first one
+                    if store.activeSession == nil {
+                        if store.sessions.isEmpty {
+                            await store.refreshSessions()
+                        }
+                        if !store.sessions.isEmpty {
+                            await store.selectSession(store.sessions[0])
+                        }
                     }
                 }
         } else {
