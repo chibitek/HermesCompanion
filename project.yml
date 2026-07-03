@@ -1,0 +1,34 @@
+name: HermesCompanion
+options:
+  bundleIdPrefix: com.chibitek.hermescompanion
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    ENABLE_BITCODE: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    GENERATE_INFOPLIST_FILE: YES
+
+targets:
+  HermesCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion
+        INFOPLIST_KEY_CFBundleDisplayName: Hermes
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone is used for voice input to Hermes."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Camera is used to send photos to Hermes for analysis."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Speech recognition is used to transcribe your voice messages."
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
