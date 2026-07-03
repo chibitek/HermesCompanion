@@ -163,7 +163,7 @@ Select your iPhone or simulator, then build and run.
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+**Personal Use License** — free for personal, non-commercial use. See [LICENSE](LICENSE) for details. Commercial licenses available from Chibitek Labs (licensing@chibitek.com).
 
 ## Acknowledgments
 
