@@ -29,9 +29,12 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        INFOPLIST_KEY_NSAppTransportSecurity_AllowsArbitraryLoads: true
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Microphone is used for voice input to Hermes."
         INFOPLIST_KEY_NSCameraUsageDescription: "Camera is used to send photos to Hermes for analysis."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Speech recognition is used to transcribe your voice messages."
+        INFOPLIST_KEY_NSAppTransportSecurity_AllowLocalNetworking: YES
+        INFOPLIST_KEY_NSAppTransportSecurity_NSLocalNetworkDescription: "Hermes Companion needs to connect to your local Hermes server."
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         ENABLE_PREVIEWS: YES
