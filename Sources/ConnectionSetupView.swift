@@ -206,7 +206,7 @@ struct ConnectionSetupView: View {
         let client = HermesAPIClient(config: config)
         do {
             let health = try await client.checkHealth()
-            testResult = .success("Connected — Hermes v\(health.version)")
+            testResult = .success("Connected — Hermes v\(health.version ?? "unknown")")
         } catch {
             testResult = .failure(error.localizedDescription)
         }

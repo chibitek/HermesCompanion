@@ -314,7 +314,7 @@ struct GlassConnectionCard: View {
                 Text("Connected")
                     .font(.headline)
             }
-            Text("\(config.label) — Hermes v\(health.version)")
+            Text("\(config.label) — Hermes v\(health.version ?? "unknown")")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

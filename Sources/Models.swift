@@ -21,8 +21,13 @@ struct ConnectionConfig: Codable, Equatable, Sendable {
 
 struct HealthResponse: Codable {
     let status: String
-    let platform: String
-    let version: String
+    let platform: String?
+    let version: String?
+
+    /// Whether this looks like a real Hermes API server
+    var isHermes: Bool {
+        platform == "hermes-agent" || platform == "webhook"
+    }
 }
 
 // MARK: - Capabilities
