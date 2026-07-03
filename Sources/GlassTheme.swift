@@ -42,6 +42,11 @@ struct GlassBubble: View {
     let content: String
     let isUser: Bool
     var isStreaming: Bool = false
+    var fontScale: Double = 1.0
+    var fixedFontSize: Double = 0  // 0 = use system Dynamic Type
+    var accentColor: Color = GlassTheme.accent
+    var compact: Bool = false
+    var showTimestamp: Bool = false
 
     var body: some View {
         HStack {
@@ -49,18 +54,24 @@ struct GlassBubble: View {
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: GlassTheme.spacingXS) {
                 Text(content)
-                    .font(.body)
+                    .font(messageFont)
                     .textSelection(.enabled)
                     .foregroundStyle(isUser ? .white : .primary)
+
+                if showTimestamp {
+                    Text(Date(), style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(.horizontal, GlassTheme.spacingL)
-            .padding(.vertical, GlassTheme.spacingM)
+            .padding(.horizontal, compact ? 12 : GlassTheme.spacingL)
+            .padding(.vertical, compact ? 8 : GlassTheme.spacingM)
             .frame(maxWidth: screenBoundsWidth * GlassTheme.bubbleMaxWidthRatio,
                    alignment: isUser ? .trailing : .leading)
             .background(bubbleBackground)
-            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusL, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : GlassTheme.radiusL, style: .continuous))
             .if(isUser) { view in
-                view.glassEffect(.regular.tint(GlassTheme.accent.opacity(0.35)))
+                view.glassEffect(.regular.tint(accentColor.opacity(0.35)))
             }
             .if(!isUser) { view in
                 view.glassEffect(.regular)
@@ -75,6 +86,13 @@ struct GlassBubble: View {
 
             if !isUser { Spacer(minLength: 40) }
         }
+    }
+
+    private var messageFont: Font {
+        if fixedFontSize > 0 {
+            return .system(size: fixedFontSize)
+        }
+        return .body
     }
 
     @ViewBuilder

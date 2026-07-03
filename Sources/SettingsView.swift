@@ -3,6 +3,7 @@ import SwiftUI
 /// Settings with Liquid Glass design.
 struct SettingsView: View {
     @ObservedObject var store: AppStore
+    @EnvironmentObject var appearance: AppearanceSettings
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -113,6 +114,30 @@ struct SettingsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, GlassTheme.spacingM)
                             .glassEffect(.regular.tint(GlassTheme.danger.opacity(0.1)))
+                            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, GlassTheme.spacingL)
+
+                        // Appearance
+                        NavigationLink {
+                            AppearanceSettingsView(appearance: appearance)
+                        } label: {
+                            HStack {
+                                Image(systemName: "paintpalette")
+                                    .foregroundStyle(appearance.accent)
+                                Text("Appearance")
+                                Spacer()
+                                Text(appearance.colorScheme.capitalized)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.body)
+                            .padding(GlassTheme.spacingM)
+                            .glassEffect(.regular)
                             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
                         }
                         .buttonStyle(.plain)
