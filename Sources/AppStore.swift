@@ -364,11 +364,11 @@ struct ChatDisplayMessage: Identifiable, Equatable {
     }
 
     init(from msg: SessionMessage) {
-        self.id = msg.id
+        self.id = msg.idString
         self.role = msg.role
         self.content = msg.content
         self.images = []
-        self.timestamp = ISO8601DateFormatter().date(from: msg.timestamp ?? "") ?? Date()
+        self.timestamp = msg.date ?? Date()
     }
 }
 
