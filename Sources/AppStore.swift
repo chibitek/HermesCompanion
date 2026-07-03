@@ -34,6 +34,17 @@ final class AppStore: ObservableObject {
 
     var isConnected: Bool { connectionConfig != nil }
 
+    /// Returns the current API client, creating one from saved config if needed
+    private func client() throws -> HermesAPIClient {
+        if let apiClient { return apiClient }
+        guard let config = connectionConfig else {
+            throw APIError.connectionRefused
+        }
+        let c = HermesAPIClient(config: config)
+        apiClient = c
+        return c
+    }
+
     func connect(config: ConnectionConfig) async -> Bool {
         self.apiClient = HermesAPIClient(config: config)
         do {
@@ -358,7 +369,7 @@ enum ToolEventType: String, Equatable {
     case failed
 }
 
-struct PendingApproval: Identifiable {
+struct PendingApproval: Identifiable, Sendable {
     let id: String
     let runId: String
     let command: String

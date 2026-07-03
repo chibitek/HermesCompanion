@@ -6,7 +6,7 @@ import Foundation
 /// (e.g., http://100.x.x.x:8642 via Tailscale, or http://192.168.1.50:8642 via LAN).
 ///
 /// This client is completely generic — no hardcoded URLs or credentials.
-final class HermesAPIClient {
+final class HermesAPIClient: Sendable {
     private let session: URLSession
     private let config: ConnectionConfig
 

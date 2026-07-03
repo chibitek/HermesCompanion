@@ -1,100 +1,144 @@
 import SwiftUI
 
-/// Settings: connection info, capabilities, skills, disconnect.
+/// Settings with Liquid Glass design.
 struct SettingsView: View {
     @ObservedObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            List {
-                // Connection
-                Section {
-                    if let config = store.connectionConfig {
-                        LabeledContent("Label", value: config.label)
-                        LabeledContent("URL", value: config.normalizedBaseURL)
-                        LabeledContent("API Key", value: String(repeating: "*", count: min(config.apiKey.count, 20)) + "...")
-                    }
-                } header: {
-                    Text("Connection")
-                }
+            ZStack {
+                Color(.systemBackground).ignoresSafeArea()
 
-                // Server Info
-                if let caps = store.capabilities {
-                    Section {
-                        LabeledContent("Model", value: caps.model)
-                        LabeledContent("Auth", value: caps.auth.type)
-
-                        if let version = caps.object as String? {
-                            LabeledContent("API Type", value: version)
-                        }
-                    } header: {
-                        Text("Server")
-                    }
-
-                    // Features
-                    Section {
-                        FeatureRow("Streaming Chat", enabled: caps.features.sessionChatStreaming)
-                        FeatureRow("Async Runs", enabled: caps.features.runSubmission)
-                        FeatureRow("Run Events SSE", enabled: caps.features.runEventsSSE)
-                        FeatureRow("Tool Approvals", enabled: caps.features.runApprovalResponse)
-                        FeatureRow("Tool Progress", enabled: caps.features.toolProgressEvents)
-                        FeatureRow("Session Forking", enabled: caps.features.sessionFork)
-                        FeatureRow("Skills API", enabled: caps.features.skillsAPI)
-                    } header: {
-                        Text("Features")
-                    }
-                }
-
-                // Skills
-                Section {
-                    if store.skills.isEmpty {
-                        Text("No skills loaded")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(store.skills.prefix(20)) { skill in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(skill.name)
-                                    .font(.body)
-                                if let desc = skill.description {
-                                    Text(desc)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
+                ScrollView {
+                    LazyVStack(spacing: GlassTheme.spacingM) {
+                        // Connection card
+                        if let config = store.connectionConfig {
+                            glassCard {
+                                VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
+                                    Label("Connection", systemImage: "network")
+                                        .font(.headline)
+                                    settingRow("Label", config.label)
+                                    settingRow("URL", config.normalizedBaseURL)
+                                    settingRow("API Key", maskedKey(config.apiKey))
                                 }
                             }
                         }
-                        if store.skills.count > 20 {
-                            Text("... and \(store.skills.count - 20) more")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+
+                        // Server info
+                        if let caps = store.capabilities {
+                            glassCard {
+                                VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
+                                    Label("Server", systemImage: "server.rack")
+                                        .font(.headline)
+                                    settingRow("Model", caps.model)
+                                    settingRow("Auth", caps.auth.type)
+                                }
+                            }
+
+                            // Features
+                            glassCard {
+                                VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
+                                    Label("Features", systemImage: "sparkles")
+                                        .font(.headline)
+                                    featureRow("Streaming Chat", caps.features.sessionChatStreaming)
+                                    featureRow("Async Runs", caps.features.runSubmission)
+                                    featureRow("Run Events SSE", caps.features.runEventsSSE)
+                                    featureRow("Tool Approvals", caps.features.runApprovalResponse)
+                                    featureRow("Tool Progress", caps.features.toolProgressEvents)
+                                    featureRow("Session Forking", caps.features.sessionFork)
+                                    featureRow("Skills API", caps.features.skillsAPI)
+                                }
+                            }
+                        }
+
+                        // Skills
+                        glassCard {
+                            VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
+                                HStack {
+                                    Label("Skills", systemImage: "books.vertical")
+                                        .font(.headline)
+                                    Spacer()
+                                    Button {
+                                        Task { await store.refreshSkills() }
+                                    } label: {
+                                        Image(systemName: "arrow.clockwise")
+                                    }
+                                }
+
+                                if store.skills.isEmpty {
+                                    Text("No skills loaded")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    ForEach(store.skills.prefix(25)) { skill in
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(skill.name)
+                                                .font(.subheadline)
+                                            if let desc = skill.description {
+                                                Text(desc)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(2)
+                                            }
+                                        }
+                                        .padding(.vertical, GlassTheme.spacingXS)
+                                    }
+                                    if store.skills.count > 25 {
+                                        Text("... and \(store.skills.count - 25) more")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Disconnect
+                        Button(role: .destructive) {
+                            store.disconnect()
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "wifi.slash")
+                                Text("Disconnect")
+                            }
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundStyle(GlassTheme.danger)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, GlassTheme.spacingM)
+                            .glassEffect(.regular.tint(GlassTheme.danger.opacity(0.1)))
+                            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, GlassTheme.spacingL)
+
+                        // About
+                        glassCard {
+                            VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
+                                Label("About", systemImage: "info.circle")
+                                    .font(.headline)
+                                settingRow("Version", appVersion)
+
+                                Link(destination: URL(string: AppConfig.hermesDocsURL)!) {
+                                    HStack {
+                                        Text("Hermes Docs")
+                                        Spacer()
+                                        Image(systemName: "arrow.up.right")
+                                    }
+                                }
+
+                                Link(destination: URL(string: AppConfig.repoURL)!) {
+                                    HStack {
+                                        Text("GitHub")
+                                        Spacer()
+                                        Image(systemName: "arrow.up.right")
+                                    }
+                                }
+                            }
                         }
                     }
-                } header: {
-                    Text("Skills")
-                } footer: {
-                    Button("Refresh Skills") {
-                        Task { await store.refreshSkills() }
-                    }
-                }
-
-                // Actions
-                Section {
-                    Button(role: .destructive) {
-                        store.disconnect()
-                        dismiss()
-                    } label: {
-                        Label("Disconnect", systemImage: "wifi.slash")
-                    }
-                }
-
-                // About
-                Section {
-                    LabeledContent("Version", value: appVersion)
-                    Link("Hermes Docs", destination: URL(string: AppConfig.hermesDocsURL)!)
-                    Link("GitHub", destination: URL(string: AppConfig.repoURL)!)
-                } header: {
-                    Text("About")
+                    .padding(GlassTheme.spacingL)
                 }
             }
             .navigationTitle("Settings")
@@ -110,28 +154,46 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Helpers
+
+    private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(GlassTheme.spacingL)
+            .glassEffect(.regular)
+            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
+    }
+
+    private func settingRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    private func featureRow(_ label: String, _ enabled: Bool) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+            Spacer()
+            Image(systemName: enabled ? "checkmark.circle.fill" : "xmark.circle")
+                .foregroundStyle(enabled ? .green : .secondary)
+                .font(.subheadline)
+        }
+    }
+
+    private func maskedKey(_ key: String) -> String {
+        String(repeating: "*", count: min(key.count, 20)) + "..."
+    }
+
     private var appVersion: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(v) (\(b))"
-    }
-}
-
-struct FeatureRow: View {
-    let label: String
-    let enabled: Bool
-
-    init(_ label: String, enabled: Bool) {
-        self.label = label
-        self.enabled = enabled
-    }
-
-    var body: some View {
-        HStack {
-            Text(label)
-            Spacer()
-            Image(systemName: enabled ? "checkmark.circle.fill" : "xmark.circle")
-                .foregroundStyle(enabled ? .green : .secondary)
-        }
     }
 }

@@ -128,10 +128,21 @@ The app talks directly to the Hermes gateway API server. No intermediate servers
 
 ## Requirements
 
-- iOS 17.0+
-- Xcode 15.0+
+- iOS 26.0+ (Liquid Glass framework)
+- Xcode 26.0+
 - A running Hermes Agent instance with the API server platform enabled
 - Tailscale (recommended) or network access to the Hermes machine
+
+## Design
+
+Hermes Companion uses Apple's **Liquid Glass** visual framework, introduced in iOS 26 and designed for iOS 27. All UI elements use `.glassEffect()` for translucent, light-refracting surfaces with real depth. The design language:
+
+- **Translucent surfaces** — frosted glass panels for messages, tool chips, input bar, cards
+- **Depth and layering** — glass tints convey state (teal for user, neutral for assistant, amber for approvals, red for danger)
+- **Fluid animations** — `.smooth` spring curves, blinking cursors, pulsing thinking indicators
+- **System-native** — feels like a first-party Apple app, not a wrapper
+
+The app icon features a stylized Hermes winged motif in teal on a dark gradient, designed to look at home on the iOS 26 home screen with its rounded icon treatment.
 
 ## Building from Source
 

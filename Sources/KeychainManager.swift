@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 /// Manages connection configs and API keys in iOS Keychain
-final class KeychainManager {
+final class KeychainManager: Sendable {
     static let shared = KeychainManager()
     private init() {}
 
