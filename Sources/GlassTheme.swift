@@ -55,7 +55,7 @@ struct GlassBubble: View {
             }
             .padding(.horizontal, GlassTheme.spacingL)
             .padding(.vertical, GlassTheme.spacingM)
-            .frame(maxWidth: UIScreen.main.bounds.width * GlassTheme.bubbleMaxWidthRatio,
+            .frame(maxWidth: screenBoundsWidth * GlassTheme.bubbleMaxWidthRatio,
                    alignment: isUser ? .trailing : .leading)
             .background(bubbleBackground)
             .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusL, style: .continuous))
@@ -84,6 +84,14 @@ struct GlassBubble: View {
         } else {
             Color.clear  // Glass effect provides the visual
         }
+    }
+
+    /// Screen width from the current window scene (replaces deprecated UIScreen.main)
+    private var screenBoundsWidth: CGFloat {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        return scene?.screen.bounds.width ?? 390
     }
 }
 
