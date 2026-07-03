@@ -155,9 +155,34 @@ struct ChatView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
+
+            VStack(spacing: GlassTheme.spacingM) {
+                Button {
+                    Task { await store.createSession(title: nil) }
+                } label: {
+                    Label("New Session", systemImage: "plus.circle.fill")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(appearance.accent)
+                        .padding(.horizontal, GlassTheme.spacingL)
+                        .padding(.vertical, GlassTheme.spacingM)
+                        .glassEffect(.regular.tint(appearance.accent.opacity(0.1)))
+                        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showSessionPicker = true
+                } label: {
+                    Label("Browse Sessions", systemImage: "list.bullet")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.top, 60)
+        .padding(.top, 50)
     }
 
     // MARK: - Tool Events Panel
