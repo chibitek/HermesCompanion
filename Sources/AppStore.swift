@@ -156,9 +156,26 @@ final class AppStore: ObservableObject {
     // MARK: - Chat (streaming)
 
     func sendMessage(_ text: String, images: [Data] = []) async {
-        guard let client = apiClient, let session = activeSession else {
-            self.error = AppError(message: "No active session")
+        guard let client = apiClient else {
+            self.error = AppError(message: "Not connected")
             return
+        }
+
+        // Auto-create a session if none is active — the user should be able
+        // to just type and send without manually creating a session first.
+        let session: HermesSession
+        if let active = activeSession {
+            session = active
+        } else {
+            do {
+                let newSession = try await client.createSession(title: nil)
+                self.sessions.insert(newSession, at: 0)
+                self.activeSession = newSession
+                session = newSession
+            } catch {
+                self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
+                return
+            }
         }
 
         // Build display message (user's text + any images)
