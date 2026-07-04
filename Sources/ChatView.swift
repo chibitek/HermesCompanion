@@ -45,12 +45,10 @@ struct ChatView: View {
                         attachments: attachments,
                         onRemoveAttachment: removeAttachment,
                         onVoiceConversationTranscription: { transcription in
-                            // In live conversation mode: send the transcribed text
+                            // In remote mode: send the transcribed text to Hermes API
                             // and speak the response when it arrives
                             Task {
                                 await store.sendMessage(transcription)
-                                // The response will be in store.messages.last
-                                // Trigger TTS via the voice conversation manager
                                 if let lastMsg = store.messages.last, lastMsg.isAssistant {
                                     voiceConversation.speakResponse(lastMsg.content)
                                 }
@@ -58,8 +56,15 @@ struct ChatView: View {
                         },
                         onSpeakResponse: { text in
                             voiceConversation.speakResponse(text)
-                        }
+                        },
+                        voiceConversation: voiceConversation
                     )
+                }
+
+                // Full-screen voice conversation overlay
+                if voiceConversation.isConversing {
+                    VoiceConversationOverlay(voiceConversation: voiceConversation)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
             }
             .navigationTitle(store.activeSession?.title ?? "New Chat")
