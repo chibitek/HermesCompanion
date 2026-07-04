@@ -112,45 +112,20 @@ struct CreateSessionRequest: Codable {
 // MARK: - Messages
 
 struct SessionMessage: Codable, Identifiable, Hashable {
-    /// API returns id as an integer (e.g. 9643), but we need a String for Identifiable.
-    /// Custom decoder handles both Int and String from the API.
-    let id: String
+    let id: Int
     let role: String
     let content: String
-    let timestamp: String?
+    let timestamp: Double?
 
+    var idString: String { String(id) }
     var isUser: Bool { role == "user" }
     var isAssistant: Bool { role == "assistant" }
     var isSystem: Bool { role == "system" }
     var isTool: Bool { role == "tool" }
 
-    /// The API sends timestamp as a float (epoch seconds), not an ISO string.
-    /// We keep it as String for Codable compatibility but provide a Date accessor.
     var date: Date? {
-        if let ts = Double(timestamp ?? "") { return Date(timeIntervalSince1970: ts) }
-        return nil
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        // API returns id as Int — handle both Int and String
-        if let intId = try? c.decode(Int.self, forKey: .id) {
-            self.id = String(intId)
-        } else {
-            self.id = try c.decode(String.self, forKey: .id)
-        }
-        self.role = try c.decode(String.self, forKey: .role)
-        self.content = try c.decode(String.self, forKey: .content)
-        // API sends timestamp as float (epoch seconds), not ISO string
-        if let ts = try? c.decode(Double.self, forKey: .timestamp) {
-            self.timestamp = String(ts)
-        } else {
-            self.timestamp = try? c.decode(String.self, forKey: .timestamp)
-        }
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case id, role, content, timestamp
+        guard let ts = timestamp else { return nil }
+        return Date(timeIntervalSince1970: ts)
     }
 }
 
