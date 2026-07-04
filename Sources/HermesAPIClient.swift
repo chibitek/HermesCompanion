@@ -334,6 +334,224 @@ final class HermesAPIClient: Sendable {
         try checkHTTPStatus(response)
     }
 
+    // MARK: - Models
+
+    /// GET /v1/models — list available models and route aliases.
+    func getModels() async throws -> [ModelInfo] {
+        var req = URLRequest(url: makeURL(path: "/v1/models"))
+        req.httpMethod = "GET"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(ModelsResponse.self, from: data)
+        return result.data
+    }
+
+    // MARK: - Toolsets
+
+    /// GET /v1/toolsets — list toolsets, their tools, and enabled state.
+    func getToolsets() async throws -> [ToolsetInfo] {
+        var req = URLRequest(url: makeURL(path: "/v1/toolsets"))
+        req.httpMethod = "GET"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(ToolsetsResponse.self, from: data)
+        return result.data
+    }
+
+    // MARK: - Session Detail
+
+    /// GET /api/sessions/{id} — full session metadata (tokens, cost, lineage).
+    func getSession(sessionId: String) async throws -> SessionDetail {
+        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)"))
+        req.httpMethod = "GET"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(GetSessionResponse.self, from: data)
+        return result.session
+    }
+
+    // MARK: - Session Rename
+
+    /// PATCH /api/sessions/{id} — update session title.
+    func patchSession(sessionId: String, title: String?) async throws -> HermesSession {
+        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)"))
+        req.httpMethod = "PATCH"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+
+        let body = PatchSessionRequest(title: title)
+        req.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        // Server returns {"object": "hermes.session", "session": {...}}
+        // The session payload uses the same keys as HermesSession
+        let result = try JSONDecoder().decode(CreateSessionResponse.self, from: data)
+        return result.session
+    }
+
+    // MARK: - Session Fork
+
+    /// POST /api/sessions/{id}/fork — branch a session, carrying conversation history.
+    func forkSession(sessionId: String, title: String? = nil) async throws -> HermesSession {
+        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)/fork"))
+        req.httpMethod = "POST"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+
+        let body = ForkSessionRequest(title: title)
+        req.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(ForkSessionResponse.self, from: data)
+        return result.session
+    }
+
+    // MARK: - Run Status (enriched)
+
+    /// GET /v1/runs/{run_id} — pollable run status with model, timestamps, last event.
+    func getRunStatus(runId: String) async throws -> RunStatusResponse {
+        var req = URLRequest(url: makeURL(path: "/v1/runs/\(runId)"))
+        req.httpMethod = "GET"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(RunStatusResponse.self, from: data)
+    }
+
+    // MARK: - Cron Jobs
+
+    /// GET /api/jobs — list all cron jobs.
+    func listCronJobs(includeDisabled: Bool = false) async throws -> [CronJob] {
+        var path = "/api/jobs"
+        if includeDisabled {
+            path += "?include_disabled=true"
+        }
+        var req = URLRequest(url: makeURL(path: path))
+        req.httpMethod = "GET"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(CronJobListResponse.self, from: data)
+        return result.jobs
+    }
+
+    /// GET /api/jobs/{id} — get a single cron job.
+    func getCronJob(jobId: String) async throws -> CronJob {
+        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)"))
+        req.httpMethod = "GET"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
+        return result.job
+    }
+
+    /// POST /api/jobs — create a new cron job.
+    func createCronJob(
+        name: String,
+        schedule: String,
+        prompt: String,
+        deliver: String? = nil,
+        skills: [String]? = nil,
+        repeat: Int? = nil
+    ) async throws -> CronJob {
+        var req = URLRequest(url: makeURL(path: "/api/jobs"))
+        req.httpMethod = "POST"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+
+        let body = CreateCronJobRequest(
+            name: name,
+            schedule: schedule,
+            prompt: prompt,
+            deliver: deliver,
+            skills: skills,
+            repeat: `repeat`
+        )
+        req.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
+        return result.job
+    }
+
+    /// PATCH /api/jobs/{id} — update a cron job. Only non-nil fields are sent.
+    func updateCronJob(
+        jobId: String,
+        name: String? = nil,
+        schedule: String? = nil,
+        prompt: String? = nil,
+        deliver: String? = nil,
+        skills: [String]? = nil,
+        repeat: Int? = nil,
+        enabled: Bool? = nil
+    ) async throws -> CronJob {
+        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)"))
+        req.httpMethod = "PATCH"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+
+        let body = UpdateCronJobRequest(
+            name: name,
+            schedule: schedule,
+            prompt: prompt,
+            deliver: deliver,
+            skills: skills,
+            repeat: `repeat`,
+            enabled: enabled
+        )
+        req.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
+        return result.job
+    }
+
+    /// DELETE /api/jobs/{id} — delete a cron job.
+    func deleteCronJob(jobId: String) async throws {
+        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)"))
+        req.httpMethod = "DELETE"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (_, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+    }
+
+    /// POST /api/jobs/{id}/pause — pause a cron job.
+    func pauseCronJob(jobId: String) async throws -> CronJob {
+        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)/pause"))
+        req.httpMethod = "POST"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
+        return result.job
+    }
+
+    /// POST /api/jobs/{id}/resume — resume a paused cron job.
+    func resumeCronJob(jobId: String) async throws -> CronJob {
+        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)/resume"))
+        req.httpMethod = "POST"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
+        return result.job
+    }
+
+    /// POST /api/jobs/{id}/run — trigger immediate execution of a cron job.
+    func runCronJob(jobId: String) async throws -> CronJob {
+        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)/run"))
+        req.httpMethod = "POST"
+        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
+        return result.job
+    }
+
     // MARK: - Error Handling
 
     private func checkHTTPStatus(_ response: URLResponse) throws {
