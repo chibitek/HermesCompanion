@@ -49,6 +49,7 @@ struct GlassBubble: View {
     var accentColor: Color = GlassTheme.accent
     var compact: Bool = false
     var showTimestamp: Bool = false
+    var images: [Data] = []
 
     @EnvironmentObject private var appearance: AppearanceSettings
 
@@ -59,10 +60,27 @@ struct GlassBubble: View {
             if isUser { Spacer(minLength: 40) }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: theme.spacingXS) {
-                Text(content)
-                    .font(messageFont)
-                    .textSelection(.enabled)
-                    .foregroundStyle(isUser ? .white : .primary)
+                // Render attached images
+                if !images.isEmpty {
+                    LazyVStack(alignment: isUser ? .trailing : .leading, spacing: theme.spacingS) {
+                        ForEach(images.indices, id: \.self) { i in
+                            if let uiImage = UIImage(data: images[i]) {
+                                Image(uiImage: uiImage)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxWidth: 200, maxHeight: 200)
+                                    .clipShape(RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous))
+                            }
+                        }
+                    }
+                }
+
+                if !content.isEmpty {
+                    Text(content)
+                        .font(messageFont)
+                        .textSelection(.enabled)
+                        .foregroundStyle(isUser ? .white : .primary)
+                }
 
                 if showTimestamp {
                     Text(Date(), style: .time)
