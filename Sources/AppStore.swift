@@ -27,7 +27,10 @@ final class AppStore: ObservableObject {
     // MARK: - Init
 
     init() {
-        connectionConfig = KeychainManager.shared.loadActive()
+        if let savedConfig = KeychainManager.shared.loadActive() {
+            connectionConfig = savedConfig
+            apiClient = HermesAPIClient(config: savedConfig)
+        }
     }
 
     // MARK: - Connection
@@ -84,7 +87,13 @@ final class AppStore: ObservableObject {
     // MARK: - Capabilities
 
     func refreshCapabilities() async {
-        guard let client = apiClient else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
         do {
             self.capabilities = try await client.getCapabilities()
         } catch {
@@ -95,7 +104,13 @@ final class AppStore: ObservableObject {
     // MARK: - Sessions
 
     func refreshSessions() async {
-        guard let client = apiClient else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
         do {
             self.sessions = try await client.listSessions()
         } catch {
@@ -104,7 +119,13 @@ final class AppStore: ObservableObject {
     }
 
     func createSession(title: String? = nil) async {
-        guard let client = apiClient else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
         do {
             let session = try await client.createSession(title: title)
             self.sessions.insert(session, at: 0)
@@ -115,7 +136,13 @@ final class AppStore: ObservableObject {
     }
 
     func selectSession(_ session: HermesSession) async {
-        guard let client = apiClient else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
         self.activeSession = session
         self.messages = []
         self.toolEvents = []
@@ -129,7 +156,13 @@ final class AppStore: ObservableObject {
     }
 
     func deleteSession(_ session: HermesSession) async {
-        guard let client = apiClient else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
         do {
             try await client.deleteSession(sessionId: session.id)
             self.sessions.removeAll { $0.id == session.id }
@@ -145,7 +178,7 @@ final class AppStore: ObservableObject {
     // MARK: - Skills
 
     func refreshSkills() async {
-        guard let client = apiClient else { return }
+        guard let client = try? self.client() else { return }
         do {
             self.skills = try await client.listSkills()
         } catch {
@@ -156,7 +189,10 @@ final class AppStore: ObservableObject {
     // MARK: - Chat (streaming)
 
     func sendMessage(_ text: String, images: [Data] = []) async {
-        guard let client = apiClient else {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
             self.error = AppError(message: "Not connected")
             return
         }
@@ -329,7 +365,14 @@ final class AppStore: ObservableObject {
     // MARK: - Approval
 
     func resolveApproval(choice: String) async {
-        guard let client = apiClient, let approval = pendingApproval else { return }
+        guard let approval = pendingApproval else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
         do {
             try await client.resolveApproval(runId: approval.runId, choice: choice)
             self.pendingApproval = nil
