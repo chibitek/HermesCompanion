@@ -246,39 +246,29 @@ final class AppStore: ObservableObject {
 
         streamTask = Task { [weak self] in
             guard let self = self else { return }
-            var receivedContent = false
-            var reachedEnd = false
             do {
-                let stream = try await client.streamChat(
-                    sessionId: session.id,
-                    message: messagePayload
-                )
+                // Use the reliable JSON chat endpoint as the primary iOS send path.
+                // The SSE endpoint works from curl, but iOS/Tailscale can eventually
+                // tear down the streaming transport and show "Stream failed" even
+                // though normal API calls still work.
+                let response = try await client.sendChat(sessionId: session.id, message: messagePayload)
+                if Task.isCancelled { return }
 
-                for try await event in stream {
-                    if Task.isCancelled { break }
-                    switch event.event {
-                    case "assistant.delta", "assistant.completed":
-                        receivedContent = true
-                    case "run.completed", "done":
-                        reachedEnd = true
-                    case "error":
-                        receivedContent = true // an error is a delivered outcome, not silence
-                    default:
-                        break
-                    }
-                    await self.handleSSEEvent(event)
+                let content = response.message.content
+                if !content.isEmpty {
+                    messages.append(ChatDisplayMessage(
+                        id: UUID().uuidString,
+                        role: response.message.role,
+                        content: content,
+                        timestamp: Date()
+                    ))
                 }
-
-                // The stream closed without ever delivering assistant content or a
-                // normal terminator. This is the "sessions visible but reply never
-                // arrives" symptom — surface it instead of leaving a dead spinner.
-                if !receivedContent && !reachedEnd && !Task.isCancelled && self.error == nil {
-                    self.error = AppError(message: "No response received. The connection closed before Hermes replied. Check that the Hermes gateway is running and reachable.")
-                }
+                streamingText = ""
+                await refreshSessions()
             } catch let e as APIError {
-                self.error = AppError(message: e.errorDescription ?? "Stream failed")
+                self.error = AppError(message: e.errorDescription ?? "Message failed")
             } catch {
-                self.error = AppError(message: "Stream failed: \(error.localizedDescription)")
+                self.error = AppError(message: "Message failed: \(error.localizedDescription)")
             }
             self.isStreaming = false
         }

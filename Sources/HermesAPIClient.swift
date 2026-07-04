@@ -13,8 +13,11 @@ final class HermesAPIClient: Sendable {
     init(config: ConnectionConfig) {
         self.config = config
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 120
-        cfg.timeoutIntervalForResource = 300
+        // Hermes turns can legitimately take several minutes on large contexts
+        // or slow providers. Keep the request alive long enough for gateway SSE
+        // keepalives and long-running non-streaming fallbacks.
+        cfg.timeoutIntervalForRequest = 600
+        cfg.timeoutIntervalForResource = 1_800
         cfg.waitsForConnectivity = true
         self.session = URLSession(configuration: cfg)
     }
