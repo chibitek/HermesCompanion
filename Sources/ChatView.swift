@@ -12,6 +12,8 @@ struct ChatView: View {
     @State private var attachments: [AttachmentData] = []
     @State private var showPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
+    @State private var showFilePicker = false
+    @StateObject private var voiceConversation = VoiceConversationManager()
 
     var body: some View {
         NavigationStack {
@@ -39,8 +41,24 @@ struct ChatView: View {
                         onSend: sendMessage,
                         onStop: { store.stopStreaming() },
                         onCamera: { showPhotoPicker = true },
+                        onFilePick: { showFilePicker = true },
                         attachments: attachments,
-                        onRemoveAttachment: removeAttachment
+                        onRemoveAttachment: removeAttachment,
+                        onVoiceConversationTranscription: { transcription in
+                            // In live conversation mode: send the transcribed text
+                            // and speak the response when it arrives
+                            Task {
+                                await store.sendMessage(transcription)
+                                // The response will be in store.messages.last
+                                // Trigger TTS via the voice conversation manager
+                                if let lastMsg = store.messages.last, lastMsg.isAssistant {
+                                    voiceConversation.speakResponse(lastMsg.content)
+                                }
+                            }
+                        },
+                        onSpeakResponse: { text in
+                            voiceConversation.speakResponse(text)
+                        }
                     )
                 }
             }
@@ -101,6 +119,12 @@ struct ChatView: View {
                     }
                 }
                 photoPickerItems = []
+            }
+        }
+        // File picker sheet
+        .sheet(isPresented: $showFilePicker) {
+            FilePickerView { data, fileName, mimeType in
+                attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: mimeType))
             }
         }
     }
@@ -237,10 +261,11 @@ struct ChatView: View {
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespaces)
         let images = attachments.filter { $0.isImage }.map { $0.data }
-        guard !text.isEmpty || !images.isEmpty else { return }
+        let fileAttachments = attachments
+        guard !text.isEmpty || !images.isEmpty || !fileAttachments.isEmpty else { return }
         inputText = ""
         attachments = []
-        Task { await store.sendMessage(text, images: images) }
+        Task { await store.sendMessage(text, images: images, attachments: fileAttachments) }
     }
 
     // MARK: - Attachment Helpers

@@ -364,19 +364,47 @@ struct GlassButton: View {
 
 // MARK: - Glass Input Bar (theme-aware, with attachments + voice)
 
+/// Voice input mode: voice-to-text (transcribe) or live conversation (TTS)
+enum VoiceInputMode: String, CaseIterable {
+    case voiceToText = "Voice-to-Text"
+    case liveConversation = "Live Conversation"
+
+    var icon: String {
+        switch self {
+        case .voiceToText: return "waveform"
+        case .liveConversation: return "waveform.badge.mic"
+        }
+    }
+
+    var toggled: VoiceInputMode {
+        switch self {
+        case .voiceToText: return .liveConversation
+        case .liveConversation: return .voiceToText
+        }
+    }
+}
+
 struct GlassInputBar: View {
     @Binding var text: String
     let isStreaming: Bool
     let onSend: () -> Void
     let onStop: () -> Void
     let onCamera: () -> Void
+    let onFilePick: () -> Void
     let attachments: [AttachmentData]
     let onRemoveAttachment: (Int) -> Void
+
+    // Voice conversation callback - called when a transcription is ready in live modes
+    var onVoiceConversationTranscription: ((String) -> Void)?
+    // Callback to speak a response (set by ChatView when in live conversation mode)
+    var onSpeakResponse: ((String) -> Void)?
 
     @FocusState private var focused: Bool
     @EnvironmentObject private var appearance: AppearanceSettings
     @StateObject private var voiceTranscriber = VoiceTranscriber()
+    @StateObject private var voiceConversation = VoiceConversationManager()
     @State private var showAttachmentMenu = false
+    @State private var voiceMode: VoiceInputMode = .voiceToText
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -395,7 +423,7 @@ struct GlassInputBar: View {
                 }
             }
 
-            // Voice transcription indicator
+            // Voice transcription indicator (voice-to-text mode)
             if voiceTranscriber.isRecording {
                 HStack(spacing: theme.spacingS) {
                     // Pulsing red dot
@@ -449,9 +477,73 @@ struct GlassInputBar: View {
                 }
             }
 
+            // Live conversation indicator
+            if voiceConversation.isConversing {
+                HStack(spacing: theme.spacingS) {
+                    // Pulsing indicator
+                    if voiceConversation.isListening {
+                        Circle()
+                            .fill(theme.accent)
+                            .frame(width: 8, height: 8)
+                            .modifier(PulsingAnimation())
+                    } else if voiceConversation.isSpeaking {
+                        // Animated waveform when speaking
+                        HStack(spacing: 3) {
+                            ForEach(0..<4, id: \.self) { i in
+                                Capsule()
+                                    .fill(theme.accent)
+                                    .frame(width: 3, height: 14)
+                                    .modifier(SpeakingBarAnimation(delay: Double(i) * 0.15))
+                            }
+                        }
+                    } else {
+                        Circle()
+                            .fill(.secondary)
+                            .frame(width: 8, height: 8)
+                    }
+
+                    if voiceConversation.isSpeaking {
+                        Text(voiceConversation.spokenResponse.isEmpty ? "Speaking..." : String(voiceConversation.spokenResponse.prefix(50)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    } else if voiceConversation.isListening {
+                        Text(voiceConversation.transcribedText.isEmpty ? "Listening..." : voiceConversation.transcribedText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    } else {
+                        Text("Conversation active")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        voiceConversation.stopConversation()
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(theme.danger)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, theme.spacingL)
+                .padding(.vertical, theme.spacingS)
+                .if(theme.usesGlass) { view in
+                    view.glassEffect(.regular.tint(theme.accent.opacity(0.08)))
+                }
+                .if(!theme.usesGlass) { view in
+                    view.background(theme.accent.opacity(0.08))
+                }
+            }
+
             // Main input row
             HStack(spacing: theme.spacingS) {
-                // Plus button — attachment menu
+                // Plus button - attachment menu
                 Button {
                     showAttachmentMenu = true
                 } label: {
@@ -462,6 +554,7 @@ struct GlassInputBar: View {
                 .buttonStyle(.plain)
                 .confirmationDialog("Attach", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
                     Button("Photo Library") { onCamera() }
+                    Button("Files") { onFilePick() }
                     Button("Cancel", role: .cancel) {}
                 }
 
@@ -473,16 +566,33 @@ struct GlassInputBar: View {
                     .submitLabel(.send)
                     .onSubmit(onSend)
 
-                // Voice button
-                if !voiceTranscriber.isRecording && text.isEmpty && attachments.isEmpty {
+                // Voice mode toggle + mic button
+                if !voiceTranscriber.isRecording && !voiceConversation.isConversing && text.isEmpty && attachments.isEmpty {
+                    // Mic button with context menu for mode toggle
                     Button {
-                        voiceTranscriber.startTranscription()
+                        if voiceMode == .voiceToText {
+                            voiceTranscriber.startTranscription()
+                        } else {
+                            // Start live conversation
+                            voiceConversation.startConversation { transcription in
+                                onVoiceConversationTranscription?(transcription)
+                            }
+                        }
                     } label: {
-                        Image(systemName: "mic.fill")
+                        Image(systemName: voiceMode == .liveConversation ? "waveform.badge.mic" : "mic.fill")
                             .font(.title3)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(voiceMode == .liveConversation ? theme.accent : .secondary)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        ForEach(VoiceInputMode.allCases, id: \.self) { mode in
+                            Button {
+                                voiceMode = mode
+                            } label: {
+                                Label(mode.rawValue, systemImage: mode.icon)
+                            }
+                        }
+                    }
                 }
 
                 // Send / Stop button
@@ -522,10 +632,17 @@ struct GlassInputBar: View {
         }
         .onAppear {
             Task { await voiceTranscriber.requestAuthorization() }
+            Task { await voiceConversation.requestAuthorization() }
         }
         .onChange(of: voiceTranscriber.transcribedText) { _, newValue in
             if voiceTranscriber.isRecording && !newValue.isEmpty {
                 text = newValue
+            }
+        }
+        .onChange(of: voiceConversation.spokenResponse) { _, response in
+            // When in live conversation and a response comes back, speak it
+            if voiceConversation.isConversing && !response.isEmpty {
+                voiceConversation.speakResponse(response)
             }
         }
     }
@@ -586,6 +703,25 @@ struct PulsingAnimation: ViewModifier {
             .scaleEffect(pulsing ? 1.3 : 0.8)
             .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: pulsing)
             .onAppear { pulsing = true }
+    }
+}
+
+// MARK: - Speaking Bar Animation (for live conversation TTS)
+
+struct SpeakingBarAnimation: ViewModifier {
+    let delay: Double
+    @State private var animating = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(y: animating ? 1.0 : 0.3)
+            .animation(
+                .easeInOut(duration: 0.3)
+                    .repeatForever(autoreverses: true)
+                    .delay(delay),
+                value: animating
+            )
+            .onAppear { animating = true }
     }
 }
 
