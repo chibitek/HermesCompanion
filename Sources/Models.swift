@@ -73,16 +73,27 @@ struct HermesSession: Codable, Identifiable, Hashable {
     let id: String
     let title: String?
     let source: String?
-    let createdAt: String?
-    let updatedAt: String?
+    let startedAt: Double?
+    let lastActive: Double?
     let messageCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, title, source
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
+        case startedAt = "started_at"
+        case lastActive = "last_active"
         case messageCount = "message_count"
     }
+
+    var date: Date? {
+        guard let ts = startedAt else { return nil }
+        return Date(timeIntervalSince1970: ts)
+    }
+}
+
+/// Wrapper for POST /api/sessions response: {"object": "hermes.session", "session": {...}}
+struct CreateSessionResponse: Codable {
+    let object: String
+    let session: HermesSession
 }
 
 struct SessionListResponse: Codable {
@@ -157,13 +168,13 @@ struct ChatMessageContent: Codable {
 }
 
 struct Usage: Codable {
-    let promptTokens: Int?
-    let completionTokens: Int?
+    let inputTokens: Int?
+    let outputTokens: Int?
     let totalTokens: Int?
 
     enum CodingKeys: String, CodingKey {
-        case promptTokens = "prompt_tokens"
-        case completionTokens = "completion_tokens"
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
         case totalTokens = "total_tokens"
     }
 }
@@ -185,7 +196,7 @@ enum SSEEvent: String, Codable {
 }
 
 struct SSEEventPayload: Codable, Sendable {
-    let event: String
+    var event: String
     let sessionId: String?
     let runId: String?
     let message_id: String?
@@ -215,6 +226,56 @@ struct SSEEventPayload: Codable, Sendable {
         case interrupted
         case usage
         case message
+    }
+
+    /// Custom decoder: the `event` field is NOT in the SSE JSON data — it comes
+    /// from the `event:` SSE protocol line. We decode without it and inject it after.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.event = try c.decodeIfPresent(String.self, forKey: .event) ?? ""
+        self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+        self.runId = try c.decodeIfPresent(String.self, forKey: .runId)
+        self.message_id = try c.decodeIfPresent(String.self, forKey: .message_id)
+        self.delta = try c.decodeIfPresent(String.self, forKey: .delta)
+        self.content = try c.decodeIfPresent(String.self, forKey: .content)
+        self.toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
+        self.preview = try c.decodeIfPresent(String.self, forKey: .preview)
+        self.args = try c.decodeIfPresent(AnyCodable.self, forKey: .args)
+        self.completed = try c.decodeIfPresent(Bool.self, forKey: .completed)
+        self.partial = try c.decodeIfPresent(Bool.self, forKey: .partial)
+        self.interrupted = try c.decodeIfPresent(Bool.self, forKey: .interrupted)
+        self.usage = try c.decodeIfPresent(Usage.self, forKey: .usage)
+        // The `message` field is overloaded: in `message.started` events it's an
+        // object ({"id": ..., "role": ...}), in `error` events it's a string.
+        // Try string first; if that fails, decode as object and extract nothing
+        // (we don't need the message object's fields — we only use the string form).
+        if let msg = try? c.decodeIfPresent(String.self, forKey: .message) {
+            self.message = msg
+        } else {
+            // It's an object or absent — not an error message, so nil is fine
+            self.message = nil
+        }
+    }
+
+    /// Direct initializer for fallback construction
+    init(event: String, sessionId: String?, runId: String?, message_id: String?,
+         delta: String?, content: String?, toolName: String?, preview: String?,
+         args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
+         usage: Usage?, message: String?) {
+        self.event = event
+        self.sessionId = sessionId
+        self.runId = runId
+        self.message_id = message_id
+        self.delta = delta
+        self.content = content
+        self.toolName = toolName
+        self.preview = preview
+        self.args = args
+        self.completed = completed
+        self.partial = partial
+        self.interrupted = interrupted
+        self.usage = usage
+        self.message = message
     }
 }
 

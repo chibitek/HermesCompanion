@@ -76,7 +76,9 @@ final class HermesAPIClient: Sendable {
 
         let (data, response) = try await session.data(for: req)
         try checkHTTPStatus(response)
-        return try JSONDecoder().decode(HermesSession.self, from: data)
+        // Server returns {"object": "hermes.session", "session": {...}}
+        let wrapper = try JSONDecoder().decode(CreateSessionResponse.self, from: data)
+        return wrapper.session
     }
 
     /// GET /api/sessions/{id}/messages
@@ -180,6 +182,10 @@ final class HermesAPIClient: Sendable {
                                         completed: nil, partial: nil, interrupted: nil,
                                         usage: nil, message: dataBuffer
                                     )
+                                } else {
+                                    // Inject the event type from the SSE protocol line
+                                    // (the JSON data doesn't include an "event" field)
+                                    payload!.event = eventBuffer
                                 }
                                 if let payload = payload {
                                     continuation.yield(payload)
@@ -251,6 +257,8 @@ final class HermesAPIClient: Sendable {
                                         completed: nil, partial: nil, interrupted: nil,
                                         usage: nil, message: dataBuffer
                                     )
+                                } else {
+                                    payload!.event = eventBuffer
                                 }
                                 if let payload = payload {
                                     continuation.yield(payload)

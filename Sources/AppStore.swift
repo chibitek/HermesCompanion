@@ -258,12 +258,14 @@ final class AppStore: ObservableObject {
             }
 
         case "tool.progress":
-            if let preview = event.preview, !preview.isEmpty {
+            // Server sends "delta" for reasoning.available events, "preview" for others
+            let detail = event.preview ?? event.delta ?? ""
+            if !detail.isEmpty {
                 toolEvents.append(ToolEvent(
                     id: UUID().uuidString,
                     type: .progress,
                     toolName: event.toolName ?? "thinking",
-                    detail: preview
+                    detail: detail
                 ))
             }
 
