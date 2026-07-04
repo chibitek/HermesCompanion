@@ -120,25 +120,36 @@ final class HermesAPIClient: Sendable {
     // MARK: - Chat (non-streaming)
 
     /// POST /api/sessions/{id}/chat
-    /// When images are provided, sends multimodal content (text + image_url parts).
+    /// When images or files are provided, sends multimodal content (text + image_url/file parts).
     /// Images should already be JPEG-encoded by the caller.
-    func sendChat(sessionId: String, message: String, systemMessage: String? = nil, images: [Data] = []) async throws -> SessionChatResponse {
+    /// File attachments are sent as base64 data URLs with appropriate MIME types.
+    func sendChat(
+        sessionId: String,
+        message: String,
+        systemMessage: String? = nil,
+        images: [Data] = [],
+        attachments: [AttachmentData] = []
+    ) async throws -> SessionChatResponse {
         var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)/chat"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
+        let hasImages = !images.isEmpty
+        let hasFileAttachments = attachments.contains { !$0.isImage }
+        let hasImageAttachments = attachments.contains { $0.isImage }
+
         let body: Data
-        if images.isEmpty {
+        if !hasImages && !hasFileAttachments && !hasImageAttachments {
             // Plain text message
             let chatBody = SessionChatRequest(message: message, systemMessage: systemMessage)
             body = try JSONEncoder().encode(chatBody)
         } else {
             // Multimodal: build content parts array
-            // Images are pre-converted to JPEG by the caller, so always use image/jpeg.
             var contentParts: [[String: Any]] = []
             if !message.isEmpty {
                 contentParts.append(["type": "text", "text": message])
             }
+            // Inline images (legacy parameter — pre-converted to JPEG)
             for imageData in images {
                 let base64 = imageData.base64EncodedString()
                 let dataUrl = "data:image/jpeg;base64,\(base64)"
@@ -146,6 +157,41 @@ final class HermesAPIClient: Sendable {
                     "type": "image_url",
                     "image_url": ["url": dataUrl]
                 ])
+            }
+            // Attachment-based images and files
+            for attachment in attachments {
+                let base64 = attachment.data.base64EncodedString()
+                if attachment.isImage {
+                    // Image attachment
+                    let dataUrl = "data:\(attachment.mimeType);base64,\(base64)"
+                    contentParts.append([
+                        "type": "image_url",
+                        "image_url": ["url": dataUrl]
+                    ])
+                } else if MimeTypeResolver.isTextType(attachment.mimeType) {
+                    // Text-based files: try to send as inline text for better LLM comprehension
+                    if let textContent = String(data: attachment.data, encoding: .utf8) {
+                        let fileLabel = "`\(attachment.fileExtension)\n\(textContent)\n`"
+                        contentParts.append([
+                            "type": "text",
+                            "text": "File: \(attachment.fileName)\n\(fileLabel)"
+                        ])
+                    } else {
+                        // Cannot decode as text, send as base64
+                        let dataUrl = "data:\(attachment.mimeType);base64,\(base64)"
+                        contentParts.append([
+                            "type": "image_url",
+                            "image_url": ["url": dataUrl]
+                        ])
+                    }
+                } else {
+                    // Binary files: send as base64 data URL
+                    let dataUrl = "data:\(attachment.mimeType);base64,\(base64)"
+                    contentParts.append([
+                        "type": "image_url",
+                        "image_url": ["url": dataUrl]
+                    ])
+                }
             }
             // Build the request with multimodal message field
             var bodyDict: [String: Any] = ["message": contentParts]
