@@ -188,7 +188,7 @@ final class AppStore: ObservableObject {
 
     // MARK: - Chat (streaming)
 
-    func sendMessage(_ text: String, images: [Data] = []) async {
+    func sendMessage(_ text: String, images: [Data] = [], attachments: [AttachmentData] = []) async {
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -241,7 +241,8 @@ final class AppStore: ObservableObject {
                 let response = try await client.sendChat(
                     sessionId: session.id,
                     message: messagePayload,
-                    images: images
+                    images: images,
+                    attachments: attachments
                 )
                 if Task.isCancelled { return }
 
