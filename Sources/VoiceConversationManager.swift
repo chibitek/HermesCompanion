@@ -3,24 +3,52 @@ import SwiftUI
 import AVFoundation
 import Speech
 
+/// Voice conversation mode: local (on-device) or remote (Hermes API).
+enum ConversationMode: String, CaseIterable {
+    case local = "Local"
+    case remote = "Remote"
+
+    var icon: String {
+        switch self {
+        case .local: return "iphone.radiowaves.left.and.right"
+        case .remote: return "cloud.fill"
+        }
+    }
+
+    var toggled: ConversationMode {
+        switch self {
+        case .local: return .remote
+        case .remote: return .local
+        }
+    }
+}
+
 /// Voice conversation mode for live 2-way voice interaction.
 ///
-/// In live conversation mode:
-/// 1. Records audio and transcribes via SFSpeechRecognizer (same as voice-to-text)
-/// 2. Sends transcribed text to Hermes API
-/// 3. Speaks the response using AVSpeechSynthesizer (iOS TTS)
+/// In **local** mode:
+/// 1. Records audio and transcribes via SFSpeechRecognizer
+/// 2. Generates response on-device via LocalLLMManager (Apple Foundation Models)
+/// 3. Speaks the response using AVSpeechSynthesizer
+/// 4. Resumes listening — fully hands-free
 ///
-/// This provides a natural conversation flow without requiring the Hermes API
-/// to support audio input/output natively. If the API later adds audio
-/// capabilities, this can be extended to use them.
+/// In **remote** mode:
+/// 1. Records audio and transcribes via SFSpeechRecognizer
+/// 2. Sends transcribed text to Hermes API
+/// 3. Speaks the response using AVSpeechSynthesizer
+/// 4. Resumes listening — fully hands-free
 @MainActor
 final class VoiceConversationManager: ObservableObject {
     @Published var isConversing = false
     @Published var isListening = false
     @Published var isSpeaking = false
+    @Published var isThinking = false
     @Published var transcribedText = ""
     @Published var spokenResponse = ""
     @Published var hasPermission = false
+    @Published var conversationMode: ConversationMode = .local
+
+    // Local LLM
+    let localLLM = LocalLLMManager()
 
     // Speech recognition
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
@@ -34,10 +62,18 @@ final class VoiceConversationManager: ObservableObject {
 
     // Conversation flow
     private var onTranscriptionComplete: ((String) -> Void)?
+    private var onLocalResponse: ((String) -> Void)?
 
     init() {
         delegateBridge.manager = self
         synthesizer.delegate = delegateBridge
+
+        // Auto-select local mode if available, otherwise remote
+        if localLLM.isAvailable {
+            conversationMode = .local
+        } else {
+            conversationMode = .remote
+        }
     }
 
     // MARK: - Permission
@@ -64,19 +100,28 @@ final class VoiceConversationManager: ObservableObject {
 
     // MARK: - Start/Stop Conversation
 
-    func startConversation(onTranscription: @escaping (String) -> Void) {
+    /// Start a live conversation. In local mode, responses are generated on-device.
+    /// In remote mode, `onTranscription` is called and the caller sends to Hermes API.
+    func startConversation(
+        onTranscription: ((String) -> Void)? = nil,
+        onLocalResponse: ((String) -> Void)? = nil
+    ) {
         guard hasPermission else {
             Task {
                 await requestAuthorization()
                 if hasPermission {
-                    startConversation(onTranscription: onTranscription)
+                    startConversation(
+                        onTranscription: onTranscription,
+                        onLocalResponse: onLocalResponse
+                    )
                 }
             }
             return
         }
 
         isConversing = true
-        onTranscriptionComplete = onTranscription
+        self.onTranscriptionComplete = onTranscription
+        self.onLocalResponse = onLocalResponse
         startListening()
     }
 
@@ -84,13 +129,15 @@ final class VoiceConversationManager: ObservableObject {
         isConversing = false
         stopListening()
         stopSpeaking()
+        isThinking = false
         onTranscriptionComplete = nil
+        onLocalResponse = nil
     }
 
     // MARK: - Listening
 
     func startListening() {
-        guard isConversing, !isSpeaking else { return }
+        guard isConversing, !isSpeaking, !isThinking else { return }
         guard let speechRecognizer, speechRecognizer.isAvailable else { return }
 
         cancelRecognition()
@@ -172,8 +219,9 @@ final class VoiceConversationManager: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    /// Finalize the current transcription and trigger the conversation callback.
-    /// Uses a brief delay to allow the recognizer to settle on the final text.
+    /// Finalize the current transcription and trigger the conversation flow.
+    /// In local mode: generates a response via LocalLLMManager, speaks it, resumes listening.
+    /// In remote mode: calls the onTranscriptionComplete callback.
     func finalizeTranscription(_ text: String) {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !finalText.isEmpty else {
@@ -189,10 +237,25 @@ final class VoiceConversationManager: ObservableObject {
 
         stopListening()
 
-        // Call the callback with the transcribed text
-        // The caller will send it to Hermes and call speakResponse when the
-        // reply arrives.
-        onTranscriptionComplete?(finalText)
+        switch conversationMode {
+        case .local:
+            // Generate response on-device, then speak it
+            isThinking = true
+            Task {
+                let response = await localLLM.generateResponse(to: finalText)
+                isThinking = false
+                if isConversing {
+                    speakResponse(response)
+                    onLocalResponse?(response)
+                }
+            }
+
+        case .remote:
+            // Call the callback with the transcribed text
+            // The caller will send it to Hermes and call speakResponse when the
+            // reply arrives.
+            onTranscriptionComplete?(finalText)
+        }
     }
 
     // MARK: - TTS
@@ -230,6 +293,19 @@ final class VoiceConversationManager: ObservableObject {
             synthesizer.stopSpeaking(at: .immediate)
         }
         isSpeaking = false
+    }
+
+    // MARK: - Mode Toggle
+
+    func toggleMode() {
+        conversationMode = conversationMode.toggled
+        if conversationMode == .local && !localLLM.isAvailable {
+            localLLM.refreshAvailability()
+            if !localLLM.isAvailable {
+                // Fallback to remote
+                conversationMode = .remote
+            }
+        }
     }
 
     // MARK: - Private
