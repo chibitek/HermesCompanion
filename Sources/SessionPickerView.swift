@@ -3,6 +3,7 @@ import SwiftUI
 /// Session picker with Liquid Glass styling.
 struct SessionPickerView: View {
     @ObservedObject var store: AppStore
+    @EnvironmentObject var appearance: AppearanceSettings
     @State private var isCreating = false
     @State private var newSessionTitle = ""
     @Environment(\.dismiss) private var dismiss
@@ -10,12 +11,8 @@ struct SessionPickerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                appearance.activeTheme.backgroundView
+                    .ignoresSafeArea()
 
                 Group {
                     if store.sessions.isEmpty {

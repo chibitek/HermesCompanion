@@ -9,9 +9,22 @@ struct HermesCompanionApp: App {
         WindowGroup {
             RootView(store: store)
                 .environmentObject(appearance)
-                .preferredColorScheme(appearance.preferredColorScheme)
+                .preferredColorScheme(effectiveColorScheme)
                 .tint(appearance.accent)
         }
+    }
+
+    /// Force dark mode for themes that are inherently dark (Matrix, Cyberpunk).
+    /// For the default Hermes theme, respect the user's color scheme picker.
+    private var effectiveColorScheme: ColorScheme? {
+        let theme = appearance.activeTheme
+        if !theme.usesGlass {
+            return .dark  // Matrix: always dark
+        }
+        if theme.id == "cyberpunk" {
+            return .dark  // Cyberpunk: always dark
+        }
+        return appearance.preferredColorScheme
     }
 }
 

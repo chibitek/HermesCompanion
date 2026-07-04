@@ -12,16 +12,9 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Base gradient background for depth
-                LinearGradient(
-                    colors: [
-                        Color(.systemBackground),
-                        Color(.systemBackground).opacity(0.95),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                // Theme background
+                appearance.activeTheme.backgroundView
+                    .ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     messageList

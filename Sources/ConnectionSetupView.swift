@@ -3,6 +3,7 @@ import SwiftUI
 /// First-run setup with Liquid Glass design.
 struct ConnectionSetupView: View {
     @ObservedObject var store: AppStore
+    @EnvironmentObject var appearance: AppearanceSettings
     @State private var baseURL = ""
     @State private var apiKey = ""
     @State private var label = "My Hermes"
@@ -17,12 +18,8 @@ struct ConnectionSetupView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                appearance.activeTheme.backgroundView
+                    .ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: GlassTheme.spacingXL) {

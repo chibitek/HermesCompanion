@@ -1,20 +1,62 @@
 import SwiftUI
 
-/// Appearance settings: theme, font size, accent color, density.
+/// Appearance settings: theme picker, font size, accent color, density.
 struct AppearanceSettingsView: View {
     @ObservedObject var appearance: AppearanceSettings
 
     var body: some View {
         ScrollView {
-            VStack(spacing: GlassTheme.spacingM) {
+            VStack(spacing: appearance.activeTheme.spacingM) {
+
+                // MARK: - Theme Picker
+
+                glassCard {
+                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
+                        Label("Theme", systemImage: "paintbrush.fill")
+                            .font(.headline)
+
+                        ForEach(ThemeRegistry.allThemes, id: \.id) { theme in
+                            themeRow(theme)
+                        }
+                    }
+                    .padding(appearance.activeTheme.spacingL)
+                }
+
+                // MARK: - Live Preview
+
+                glassCard {
+                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingS) {
+                        Text("Preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        GlassBubble(
+                            content: "Hey, what can you do?",
+                            isUser: true,
+                            fontScale: appearance.fontScaleDouble,
+                            fixedFontSize: appearance.messageFontSizeDouble,
+                            accentColor: appearance.accent,
+                            compact: appearance.compactModeBool,
+                            showTimestamp: false
+                        )
+
+                        GlassBubble(
+                            content: "I can send messages, run tools, manage sessions, create cron jobs, and much more. What do you need?",
+                            isUser: false,
+                            isStreaming: true,
+                            fontScale: appearance.fontScaleDouble,
+                            fixedFontSize: appearance.messageFontSizeDouble,
+                            accentColor: appearance.accent,
+                            compact: appearance.compactModeBool
+                        )
+                    }
+                    .padding(appearance.activeTheme.spacingL)
+                }
 
                 // MARK: - Color Scheme
+
                 glassCard {
-                    VStack(alignment: .leading, spacing: GlassTheme.spacingM) {
-        #if DEBUG
-                        Text("Theme")
-                            .font(.headline)
-        #endif
+                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
                         Label("Appearance", systemImage: "circle.lefthalf.filled")
                             .font(.headline)
 
@@ -25,43 +67,42 @@ struct AppearanceSettingsView: View {
                         }
                         .pickerStyle(.segmented)
                     }
-                    .padding(GlassTheme.spacingL)
-                    .glassEffect(.regular)
-                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
+                    .padding(appearance.activeTheme.spacingL)
                 }
 
-                // MARK: - Accent Color
-                glassCard {
-                    VStack(alignment: .leading, spacing: GlassTheme.spacingM) {
-                        Label("Accent Color", systemImage: "paintpalette")
-                            .font(.headline)
+                // MARK: - Accent Color (only for Hermes theme)
 
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible()),
-                            GridItem(.flexible()),
-                        ], spacing: GlassTheme.spacingS) {
+                if appearance.activeThemeId == "hermes" {
+                    glassCard {
+                        VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
+                            Label("Accent Color", systemImage: "paintpalette")
+                                .font(.headline)
 
-                            accentSwatch("teal", color: Color(red: 0.176, green: 0.831, blue: 0.749))
-                            accentSwatch("blue", color: .blue)
-                            accentSwatch("purple", color: .purple)
-                            accentSwatch("green", color: .green)
-                            accentSwatch("orange", color: Color(red: 0.96, green: 0.62, blue: 0.04))
-                            accentSwatch("red", color: Color(red: 0.81, green: 0.27, blue: 0.13))
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                            ], spacing: appearance.activeTheme.spacingS) {
+
+                                accentSwatch("teal", color: Color(red: 0.176, green: 0.831, blue: 0.749))
+                                accentSwatch("blue", color: .blue)
+                                accentSwatch("purple", color: .purple)
+                                accentSwatch("green", color: .green)
+                                accentSwatch("orange", color: Color(red: 0.96, green: 0.62, blue: 0.04))
+                                accentSwatch("red", color: Color(red: 0.81, green: 0.27, blue: 0.13))
+                            }
                         }
+                        .padding(appearance.activeTheme.spacingL)
                     }
-                    .padding(GlassTheme.spacingL)
-                    .glassEffect(.regular)
-                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
                 }
 
                 // MARK: - Font Size
+
                 glassCard {
-                    VStack(alignment: .leading, spacing: GlassTheme.spacingM) {
+                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
                         Label("Text Size", systemImage: "textformat.size")
                             .font(.headline)
 
-                        // Quick presets
                         Picker("Size", selection: $appearance.fontScale) {
                             Text("S").tag(0.85)
                             Text("M").tag(1.0)
@@ -70,7 +111,6 @@ struct AppearanceSettingsView: View {
                         }
                         .pickerStyle(.segmented)
 
-                        // Fine slider
                         HStack {
                             Text("A")
                                 .font(.system(size: 11))
@@ -79,7 +119,6 @@ struct AppearanceSettingsView: View {
                                 .font(.system(size: 20))
                         }
 
-                        // Preview
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Preview")
                                 .font(.caption)
@@ -88,18 +127,19 @@ struct AppearanceSettingsView: View {
                                 .font(.system(size: 15 * appearance.fontScale))
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(GlassTheme.spacingM)
-                        .glassEffect(.regular.tint(appearance.accent.opacity(0.06)))
-                        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
+                        .padding(appearance.activeTheme.spacingM)
+                        .if(appearance.activeTheme.usesGlass) { view in
+                            view.glassEffect(.regular.tint(appearance.accent.opacity(0.06)))
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: appearance.activeTheme.radiusM, style: .continuous))
                     }
-                    .padding(GlassTheme.spacingL)
-                    .glassEffect(.regular)
-                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
+                    .padding(appearance.activeTheme.spacingL)
                 }
 
                 // MARK: - Message Font Override
+
                 glassCard {
-                    VStack(alignment: .leading, spacing: GlassTheme.spacingM) {
+                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
                         Label("Message Font Size", systemImage: "character.textbox")
                             .font(.headline)
 
@@ -126,26 +166,23 @@ struct AppearanceSettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(GlassTheme.spacingL)
-                    .glassEffect(.regular)
-                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
+                    .padding(appearance.activeTheme.spacingL)
                 }
 
                 // MARK: - Layout
+
                 glassCard {
-                    VStack(alignment: .leading, spacing: GlassTheme.spacingM) {
+                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
                         Label("Layout", systemImage: "rectangle.compress.vertical")
                             .font(.headline)
 
                         Toggle("Compact Mode", isOn: $appearance.compactMode)
                         Toggle("Show Timestamps", isOn: $appearance.showTimestamps)
                     }
-                    .padding(GlassTheme.spacingL)
-                    .glassEffect(.regular)
-                    .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
+                    .padding(appearance.activeTheme.spacingL)
                 }
             }
-            .padding(GlassTheme.spacingL)
+            .padding(appearance.activeTheme.spacingL)
         }
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
@@ -153,15 +190,92 @@ struct AppearanceSettingsView: View {
 
     // MARK: - Helpers
 
+    @ViewBuilder
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        let theme = appearance.activeTheme
         content()
+            .padding(theme.spacingL)
+            .if(theme.usesGlass) { view in
+                view.glassEffect(.regular)
+            }
+            .if(!theme.usesGlass) { view in
+                view.background(Color(.tertiarySystemFill))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: theme.radiusXL, style: .continuous))
+    }
+
+    private func themeRow(_ theme: any HermesTheme) -> some View {
+        let isSelected = appearance.activeThemeId == theme.id
+
+        return Button {
+            appearance.activeThemeId = theme.id
+        } label: {
+            HStack(spacing: appearance.activeTheme.spacingM) {
+                // Color preview swatches
+                HStack(spacing: -8) {
+                    Circle()
+                        .fill(theme.accent)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Circle()
+                                .stroke(.white.opacity(0.2), lineWidth: 2)
+                        )
+                    Circle()
+                        .fill(theme.accentSecondary)
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Circle()
+                                .stroke(.white.opacity(0.2), lineWidth: 2)
+                        )
+                    if !theme.usesGlass {
+                        Circle()
+                            .fill(Color.black)
+                            .frame(width: 28, height: 28)
+                            .overlay(
+                                Circle()
+                                    .stroke(.white.opacity(0.2), lineWidth: 2)
+                            )
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(theme.displayName)
+                        .font(.body)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                    Text(theme.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(appearance.accent)
+                        .font(.title3)
+                }
+            }
+            .padding(appearance.activeTheme.spacingM)
+            .if(appearance.activeTheme.usesGlass) { view in
+                view.glassEffect(isSelected ? .regular.tint(appearance.accent.opacity(0.12)) : .regular)
+            }
+            .if(!appearance.activeTheme.usesGlass) { view in
+                view.background(isSelected ? appearance.accent.opacity(0.08) : Color.clear)
+                view.overlay(
+                    RoundedRectangle(cornerRadius: appearance.activeTheme.radiusL, style: .continuous)
+                        .stroke(isSelected ? appearance.accent.opacity(0.3) : Color.clear, lineWidth: 1)
+                )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: appearance.activeTheme.radiusL, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private func accentSwatch(_ name: String, color: Color) -> some View {
         Button {
             appearance.accentColor = name
         } label: {
-            RoundedRectangle(cornerRadius: GlassTheme.radiusS, style: .continuous)
+            RoundedRectangle(cornerRadius: appearance.activeTheme.radiusS, style: .continuous)
                 .fill(color)
                 .frame(height: 40)
                 .overlay {

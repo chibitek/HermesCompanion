@@ -9,12 +9,8 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                appearance.activeTheme.backgroundView
+                    .ignoresSafeArea()
 
                 ScrollView {
                     LazyVStack(spacing: GlassTheme.spacingM) {
