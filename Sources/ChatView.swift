@@ -87,10 +87,17 @@ struct ChatView: View {
         .onChange(of: photoPickerItems) { _, newItems in
             Task {
                 for item in newItems {
-                    if let data = try? await item.loadTransferable(type: Data.self) {
-                        let fileName = "photo_\(UUID().uuidString.prefix(8)).jpg"
-                        let mimeType = detectImageMimeType(data)
-                        attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: mimeType))
+                    do {
+                        if let data = try await item.loadTransferable(type: Data.self) {
+                            // Convert to JPEG to avoid HEIC compatibility issues.
+                            // PhotosPicker often returns HEIC on iOS, which many
+                            // LLM vision APIs do not support.
+                            let jpegData = convertToJPEG(data) ?? data
+                            let fileName = "photo_\(UUID().uuidString.prefix(8)).jpg"
+                            attachments.append(AttachmentData(data: jpegData, fileName: fileName, mimeType: "image/jpeg"))
+                        }
+                    } catch {
+                        // Ignore individual failures, continue processing others
                     }
                 }
                 photoPickerItems = []
@@ -255,5 +262,32 @@ struct ChatView: View {
             }
         }
         return "image/jpeg"
+    }
+
+    /// Convert image data to JPEG, resizing if needed to keep payload reasonable.
+    /// Handles HEIC, PNG, GIF, etc. Returns nil if data cannot be decoded.
+    private func convertToJPEG(_ data: Data, quality: CGFloat = 0.8, maxDimension: CGFloat = 1568) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+
+        // Resize if the image is larger than maxDimension on any side.
+        // 1568px is OpenAI's recommended max for vision (keeps base64 under ~1MB).
+        let size = image.size
+        let scale: CGFloat
+        if max(size.width, size.height) > maxDimension {
+            scale = maxDimension / max(size.width, size.height)
+        } else {
+            scale = 1.0
+        }
+
+        if scale < 1.0 {
+            let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            let resized = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+            return resized.jpegData(compressionQuality: quality)
+        }
+
+        return image.jpegData(compressionQuality: quality)
     }
 }
