@@ -123,7 +123,8 @@ struct ChatView: View {
                             fixedFontSize: appearance.messageFontSizeDouble,
                             accentColor: appearance.accent,
                             compact: appearance.compactModeBool,
-                            showTimestamp: appearance.showTimestampsBool
+                            showTimestamp: appearance.showTimestampsBool,
+                            images: msg.images
                         )
                             .id(msg.id)
                     }
