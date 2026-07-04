@@ -159,42 +159,65 @@ final class HermesAPIClient: Sendable {
                 var eventBuffer = ""
                 var dataBuffer = ""
 
+                // Flush the currently-buffered SSE frame (event: + data:) as one payload.
+                func flush() {
+                    // A frame with neither an event type nor data is a bare boundary
+                    // (e.g. the blank line that follows a `: keepalive` comment). Skip it.
+                    guard !eventBuffer.isEmpty || !dataBuffer.isEmpty else { return }
+                    defer { eventBuffer = ""; dataBuffer = "" }
+
+                    guard let data = dataBuffer.data(using: .utf8) else { return }
+                    var payload = try? JSONDecoder().decode(SSEEventPayload.self, from: data)
+                    if payload == nil {
+                        // Fallback for done/error frames whose data isn't full JSON.
+                        payload = SSEEventPayload(
+                            event: eventBuffer,
+                            sessionId: nil, runId: nil, message_id: nil,
+                            delta: nil, content: nil, toolName: nil,
+                            preview: nil, args: nil,
+                            completed: nil, partial: nil, interrupted: nil,
+                            usage: nil, message: dataBuffer
+                        )
+                    } else {
+                        // The event type comes from the SSE `event:` line, not the JSON.
+                        payload!.event = eventBuffer
+                    }
+                    if let payload = payload {
+                        continuation.yield(payload)
+                    }
+                }
+
                 do {
-                    for try await line in bytes.lines {
+                    for try await rawLine in bytes.lines {
                         if Task.isCancelled { break }
 
-                        if line.hasPrefix("event: ") {
-                            eventBuffer = String(line.dropFirst("event: ".count))
-                        } else if line.hasPrefix("data: ") {
-                            dataBuffer = String(line.dropFirst("data: ".count))
-                        } else if line.isEmpty && !eventBuffer.isEmpty {
-                            // Empty line = event boundary
-                            // Parse the event
-                            if let data = dataBuffer.data(using: .utf8) {
-                                var payload = try? JSONDecoder().decode(SSEEventPayload.self, from: data)
-                                if payload == nil {
-                                    // Minimal fallback for done/error events with empty or simple data
-                                    payload = SSEEventPayload(
-                                        event: eventBuffer,
-                                        sessionId: nil, runId: nil, message_id: nil,
-                                        delta: nil, content: nil, toolName: nil,
-                                        preview: nil, args: nil,
-                                        completed: nil, partial: nil, interrupted: nil,
-                                        usage: nil, message: dataBuffer
-                                    )
-                                } else {
-                                    // Inject the event type from the SSE protocol line
-                                    // (the JSON data doesn't include an "event" field)
-                                    payload!.event = eventBuffer
-                                }
-                                if let payload = payload {
-                                    continuation.yield(payload)
-                                }
-                            }
-                            eventBuffer = ""
-                            dataBuffer = ""
+                        // Tolerate CRLF line endings — strip a trailing CR so an
+                        // otherwise-empty boundary line isn't misread as "\r".
+                        let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
+
+                        if line.isEmpty {
+                            // Blank line = end of the current SSE frame.
+                            flush()
+                            continue
                         }
+
+                        // SSE comment line (keepalive). Ignore — do NOT let it
+                        // clobber a partially-built frame.
+                        if line.hasPrefix(":") {
+                            continue
+                        }
+
+                        if line.hasPrefix("event:") {
+                            eventBuffer = trimSSEValue(line, field: "event")
+                        } else if line.hasPrefix("data:") {
+                            let value = trimSSEValue(line, field: "data")
+                            // SSE allows multiple data: lines per frame; concatenate with \n.
+                            dataBuffer = dataBuffer.isEmpty ? value : dataBuffer + "\n" + value
+                        }
+                        // id:/retry: and unknown fields are intentionally ignored.
                     }
+                    // Flush any frame left unterminated when the stream ends.
+                    flush()
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -204,6 +227,13 @@ final class HermesAPIClient: Sendable {
                 task.cancel()
             }
         }
+    }
+
+    /// Extract an SSE field value, tolerating both "field: value" and "field:value".
+    private func trimSSEValue(_ line: String, field: String) -> String {
+        var value = String(line.dropFirst(field.count + 1)) // drop "field:"
+        if value.hasPrefix(" ") { value.removeFirst() }      // drop one optional leading space
+        return value
     }
 
     // MARK: - Runs (async execution)

@@ -246,6 +246,8 @@ final class AppStore: ObservableObject {
 
         streamTask = Task { [weak self] in
             guard let self = self else { return }
+            var receivedContent = false
+            var reachedEnd = false
             do {
                 let stream = try await client.streamChat(
                     sessionId: session.id,
@@ -254,7 +256,24 @@ final class AppStore: ObservableObject {
 
                 for try await event in stream {
                     if Task.isCancelled { break }
+                    switch event.event {
+                    case "assistant.delta", "assistant.completed":
+                        receivedContent = true
+                    case "run.completed", "done":
+                        reachedEnd = true
+                    case "error":
+                        receivedContent = true // an error is a delivered outcome, not silence
+                    default:
+                        break
+                    }
                     await self.handleSSEEvent(event)
+                }
+
+                // The stream closed without ever delivering assistant content or a
+                // normal terminator. This is the "sessions visible but reply never
+                // arrives" symptom — surface it instead of leaving a dead spinner.
+                if !receivedContent && !reachedEnd && !Task.isCancelled && self.error == nil {
+                    self.error = AppError(message: "No response received. The connection closed before Hermes replied. Check that the Hermes gateway is running and reachable.")
                 }
             } catch let e as APIError {
                 self.error = AppError(message: e.errorDescription ?? "Stream failed")
