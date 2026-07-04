@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// Main chat view with Liquid Glass design.
 /// Uses .glassEffect() throughout for translucent, depth-heavy UI.
@@ -8,6 +9,9 @@ struct ChatView: View {
     @State private var inputText = ""
     @State private var showSessionPicker = false
     @State private var showSettings = false
+    @State private var attachments: [AttachmentData] = []
+    @State private var showPhotoPicker = false
+    @State private var photoPickerItems: [PhotosPickerItem] = []
 
     var body: some View {
         NavigationStack {
@@ -34,7 +38,9 @@ struct ChatView: View {
                         isStreaming: store.isStreaming,
                         onSend: sendMessage,
                         onStop: { store.stopStreaming() },
-                        onCamera: { /* phase 2 */ }
+                        onCamera: { showPhotoPicker = true },
+                        attachments: attachments,
+                        onRemoveAttachment: removeAttachment
                     )
                 }
             }
@@ -69,6 +75,25 @@ struct ChatView: View {
                 Button("OK") { store.clearError() }
             } message: {
                 Text(store.error?.message ?? "")
+            }
+        }
+        // Photo picker — triggered by the input bar attachment menu
+        .photosPicker(
+            isPresented: $showPhotoPicker,
+            selection: $photoPickerItems,
+            maxSelectionCount: 10,
+            matching: .images
+        )
+        .onChange(of: photoPickerItems) { _, newItems in
+            Task {
+                for item in newItems {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        let fileName = "photo_\(UUID().uuidString.prefix(8)).jpg"
+                        let mimeType = detectImageMimeType(data)
+                        attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: mimeType))
+                    }
+                }
+                photoPickerItems = []
             }
         }
     }
@@ -203,8 +228,32 @@ struct ChatView: View {
 
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return }
+        let images = attachments.filter { $0.isImage }.map { $0.data }
+        guard !text.isEmpty || !images.isEmpty else { return }
         inputText = ""
-        Task { await store.sendMessage(text) }
+        attachments = []
+        Task { await store.sendMessage(text, images: images) }
+    }
+
+    // MARK: - Attachment Helpers
+
+    private func removeAttachment(_ index: Int) {
+        attachments.remove(at: index)
+    }
+
+    private func detectImageMimeType(_ data: Data) -> String {
+        guard data.count >= 2 else { return "image/jpeg" }
+        let bytes = [UInt8](data.prefix(12))
+        if bytes[0] == 0xFF && bytes[1] == 0xD8 { return "image/jpeg" }
+        if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 {
+            return "image/png"
+        }
+        if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 { return "image/gif" }
+        if data.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 {
+            if bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 {
+                return "image/webp"
+            }
+        }
+        return "image/jpeg"
     }
 }
