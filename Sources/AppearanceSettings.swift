@@ -3,6 +3,9 @@ import SwiftUI
 /// User appearance preferences — stored in UserDefaults via @AppStorage.
 /// These are purely client-side, no server interaction needed.
 final class AppearanceSettings: ObservableObject {
+    // Theme
+    @AppStorage("activeThemeId") var activeThemeId: String = ThemeRegistry.defaultThemeId
+
     // Color scheme
     @AppStorage("colorScheme") var colorScheme: String = "system"  // system, dark, light
 
@@ -28,7 +31,14 @@ final class AppearanceSettings: ObservableObject {
     var fontScaleDouble: Double { fontScale }
     var messageFontSizeDouble: Double { messageFontSize }
 
-    // MARK: - Computed
+    // MARK: - Theme
+
+    /// The resolved active theme. Re-read this whenever activeThemeId changes.
+    var activeTheme: any HermesTheme {
+        ThemeRegistry.theme(for: activeThemeId)
+    }
+
+    // MARK: - Computed (legacy compat — delegates to active theme)
 
     var preferredColorScheme: ColorScheme? {
         switch colorScheme {
@@ -38,7 +48,18 @@ final class AppearanceSettings: ObservableObject {
         }
     }
 
+    /// Accent color from the active theme, unless the user has a custom accent
+    /// override that differs from the theme default.
     var accent: Color {
+        // For themes with locked accents (matrix = green only), use the theme accent.
+        // For the default Hermes theme, respect the user's accent color picker.
+        if activeThemeId == "hermes" {
+            return customAccentColor
+        }
+        return activeTheme.accent
+    }
+
+    private var customAccentColor: Color {
         switch accentColor {
         case "blue": return .blue
         case "purple": return .purple
@@ -70,9 +91,13 @@ final class AppearanceSettings: ObservableObject {
         .system(size: max(10, 13 * fontScale))
     }
 
-    var spacingV: CGFloat { compactMode ? 6 : 12 }
-    var spacingH: CGFloat { compactMode ? 12 : 16 }
-    var bubblePaddingV: CGFloat { compactMode ? 8 : 12 }
-    var bubblePaddingH: CGFloat { compactMode ? 12 : 16 }
-    var bubbleRadius: CGFloat { compactMode ? 14 : 22 }
+    // MARK: - Layout helpers (delegate spacing to active theme)
+
+    var spacingV: CGFloat { compactMode ? activeTheme.spacingS : activeTheme.spacingM }
+    var spacingH: CGFloat { compactMode ? activeTheme.spacingM : activeTheme.spacingL }
+    var bubblePaddingV: CGFloat { compactMode ? activeTheme.spacingS : activeTheme.spacingM }
+    var bubblePaddingH: CGFloat { compactMode ? activeTheme.spacingM : activeTheme.spacingL }
+    var bubbleRadius: CGFloat {
+        compactMode ? activeTheme.bubbleRadius * 0.7 : activeTheme.bubbleRadius
+    }
 }
