@@ -394,7 +394,7 @@ struct GlassInputBar: View {
     let attachments: [AttachmentData]
     let onRemoveAttachment: (Int) -> Void
 
-    // Voice conversation callback - called when a transcription is ready in live modes
+    // Voice conversation callback - called when a transcription is ready in live modes (remote mode)
     var onVoiceConversationTranscription: ((String) -> Void)?
     // Callback to speak a response (set by ChatView when in live conversation mode)
     var onSpeakResponse: ((String) -> Void)?
@@ -402,7 +402,8 @@ struct GlassInputBar: View {
     @FocusState private var focused: Bool
     @EnvironmentObject private var appearance: AppearanceSettings
     @StateObject private var voiceTranscriber = VoiceTranscriber()
-    @StateObject private var voiceConversation = VoiceConversationManager()
+    // External VoiceConversationManager passed from ChatView so overlay state stays in sync
+    var voiceConversation: VoiceConversationManager
     @State private var showAttachmentMenu = false
     @State private var voiceMode: VoiceInputMode = .voiceToText
 
@@ -477,7 +478,7 @@ struct GlassInputBar: View {
                 }
             }
 
-            // Live conversation indicator
+            // Live conversation indicator (compact bar — shown when overlay is visible)
             if voiceConversation.isConversing {
                 HStack(spacing: theme.spacingS) {
                     // Pulsing indicator
@@ -496,13 +497,28 @@ struct GlassInputBar: View {
                                     .modifier(SpeakingBarAnimation(delay: Double(i) * 0.15))
                             }
                         }
+                    } else if voiceConversation.isThinking {
+                        // Thinking indicator
+                        HStack(spacing: 4) {
+                            ForEach(0..<3, id: \.self) { i in
+                                Circle()
+                                    .fill(theme.accent.opacity(0.6))
+                                    .frame(width: 5, height: 5)
+                                    .modifier(PulsingAnimation())
+                            }
+                        }
                     } else {
                         Circle()
                             .fill(.secondary)
                             .frame(width: 8, height: 8)
                     }
 
-                    if voiceConversation.isSpeaking {
+                    if voiceConversation.isThinking {
+                        Text("Thinking...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else if voiceConversation.isSpeaking {
                         Text(voiceConversation.spokenResponse.isEmpty ? "Speaking..." : String(voiceConversation.spokenResponse.prefix(50)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -515,7 +531,7 @@ struct GlassInputBar: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     } else {
-                        Text("Conversation active")
+                        Text("Conversation active · \(voiceConversation.conversationMode.rawValue)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -574,9 +590,15 @@ struct GlassInputBar: View {
                             voiceTranscriber.startTranscription()
                         } else {
                             // Start live conversation
-                            voiceConversation.startConversation { transcription in
-                                onVoiceConversationTranscription?(transcription)
-                            }
+                            voiceConversation.startConversation(
+                                onTranscription: { transcription in
+                                    onVoiceConversationTranscription?(transcription)
+                                },
+                                onLocalResponse: { _ in
+                                    // Response is already spoken by the VoiceConversationManager
+                                    // This callback is for any additional handling
+                                }
+                            )
                         }
                     } label: {
                         Image(systemName: voiceMode == .liveConversation ? "waveform.badge.mic" : "mic.fill")
@@ -689,6 +711,250 @@ struct GlassInputBar: View {
             }
             .buttonStyle(.plain)
             .offset(x: 6, y: -6)
+        }
+    }
+}
+
+// MARK: - Voice Conversation Overlay (Liquid Glass, full-screen)
+
+/// A beautiful full-screen voice conversation overlay with animated waveform.
+/// Shows listening/speaking/thinking states with Liquid Glass aesthetic.
+/// Tap anywhere or press the stop button to exit.
+struct VoiceConversationOverlay: View {
+    @ObservedObject var voiceConversation: VoiceConversationManager
+    @EnvironmentObject private var appearance: AppearanceSettings
+
+    private var theme: any HermesTheme { appearance.activeTheme }
+
+    var body: some View {
+        ZStack {
+            // Semi-transparent backdrop
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    voiceConversation.stopConversation()
+                }
+
+            // Main content
+            VStack(spacing: 32) {
+                Spacer()
+
+                // Mode indicator
+                HStack(spacing: 8) {
+                    Image(systemName: voiceConversation.conversationMode.icon)
+                        .font(.subheadline)
+                    Text(voiceConversation.conversationMode.rawValue)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    if voiceConversation.conversationMode == .local && !voiceConversation.localLLM.isAvailable {
+                        Text("(unavailable)")
+                            .font(.caption)
+                            .foregroundStyle(theme.warning)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .glassEffect(.regular)
+                .clipShape(Capsule())
+
+                // State label
+                Text(stateLabel)
+                    .font(.title3)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+
+                // Waveform animation
+                waveformView
+                    .frame(height: 100)
+
+                // Live transcript / response preview
+                VStack(spacing: 8) {
+                    if !voiceConversation.transcribedText.isEmpty && voiceConversation.isListening {
+                        Text(voiceConversation.transcribedText)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
+
+                    if !voiceConversation.spokenResponse.isEmpty && voiceConversation.isSpeaking {
+                        Text(voiceConversation.spokenResponse)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .lineLimit(4)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
+                }
+
+                Spacer()
+
+                // Mode toggle + stop button
+                VStack(spacing: 16) {
+                    // Mode toggle
+                    Button {
+                        voiceConversation.toggleMode()
+                    } label: {
+                        HStack(spacing: 6) {
+                            ForEach(ConversationMode.allCases, id: \.self) { mode in
+                                HStack(spacing: 4) {
+                                    Image(systemName: mode.icon)
+                                        .font(.caption)
+                                    Text(mode.rawValue)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .foregroundStyle(voiceConversation.conversationMode == mode ? .white : .secondary)
+                                .background {
+                                    if voiceConversation.conversationMode == mode {
+                                        Capsule().fill(theme.accent)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(3)
+                        .glassEffect(.regular)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(voiceConversation.isSpeaking || voiceConversation.isThinking)
+
+                    // Stop button
+                    Button {
+                        voiceConversation.stopConversation()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(theme.danger)
+                                .frame(width: 64, height: 64)
+                                .glassEffect(.regular.tint(theme.danger.opacity(0.3)))
+                                .clipShape(Circle())
+
+                            Image(systemName: "stop.fill")
+                                .font(.title2)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.bottom, 60)
+            }
+        }
+        .animation(.smooth, value: voiceConversation.isListening)
+        .animation(.smooth, value: voiceConversation.isSpeaking)
+        .animation(.smooth, value: voiceConversation.isThinking)
+    }
+
+    // MARK: - State Label
+
+    private var stateLabel: String {
+        if voiceConversation.isThinking {
+            return "Thinking..."
+        } else if voiceConversation.isSpeaking {
+            return "Speaking..."
+        } else if voiceConversation.isListening {
+            return "Listening..."
+        } else if voiceConversation.isConversing {
+            return "Starting..."
+        } else {
+            return "Tap to stop"
+        }
+    }
+
+    // MARK: - Waveform
+
+    @ViewBuilder
+    private var waveformView: some View {
+        let barCount = 7
+        HStack(spacing: 6) {
+            ForEach(0..<barCount, id: \.self) { i in
+                WaveformBar(
+                    index: i,
+                    total: barCount,
+                    isActive: voiceConversation.isListening || voiceConversation.isSpeaking || voiceConversation.isThinking,
+                    isListening: voiceConversation.isListening,
+                    isSpeaking: voiceConversation.isSpeaking,
+                    isThinking: voiceConversation.isThinking,
+                    accentColor: theme.accent
+                )
+            }
+        }
+    }
+}
+
+/// Individual waveform bar with animated amplitude.
+struct WaveformBar: View {
+    let index: Int
+    let total: Int
+    let isActive: Bool
+    let isListening: Bool
+    let isSpeaking: Bool
+    let isThinking: Bool
+    let accentColor: Color
+
+    @State private var amplitude: CGFloat = 0.3
+
+    var body: some View {
+        Capsule()
+            .fill(accentColor.gradient)
+            .frame(width: 6, height: maxHeight)
+            .scaleEffect(y: isActive ? amplitude : 0.15)
+            .animation(
+                isActive ? animation : .smooth(duration: 0.3),
+                value: amplitude
+            )
+            .onAppear {
+                if isActive {
+                    animateBar()
+                }
+            }
+            .onChange(of: isActive) { _, active in
+                if active {
+                    animateBar()
+                } else {
+                    amplitude = 0.15
+                }
+            }
+    }
+
+    private var maxHeight: CGFloat {
+        // Vary base height slightly per bar for organic look
+        40 + CGFloat(index % 3) * 15
+    }
+
+    private var animation: Animation {
+        let duration: Double
+        let autoReverse: Bool
+
+        if isSpeaking {
+            duration = 0.25 + Double(index % 3) * 0.08
+            autoReverse = true
+        } else if isThinking {
+            duration = 0.6
+            autoReverse = true
+        } else {
+            // Listening — gentle, slower
+            duration = 0.8 + Double(index % 4) * 0.12
+            autoReverse = true
+        }
+
+        return .easeInOut(duration: duration)
+            .repeatForever(autoreverses: autoReverse)
+    }
+
+    private func animateBar() {
+        // Stagger start per bar
+        let delay = Double(index) * 0.05
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            amplitude = CGFloat.random(in: 0.5...1.0)
+            // Keep animating
+            withAnimation(animation) {
+                amplitude = CGFloat.random(in: 0.3...1.0)
+            }
         }
     }
 }
