@@ -4,6 +4,7 @@ import SwiftUI
 struct HermesCompanionApp: App {
     @StateObject private var store = AppStore()
     @StateObject private var appearance = AppearanceSettings()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -11,6 +12,21 @@ struct HermesCompanionApp: App {
                 .environmentObject(appearance)
                 .preferredColorScheme(effectiveColorScheme)
                 .tint(appearance.accent)
+                .onChange(of: scenePhase) { _, newPhase in
+                    switch newPhase {
+                    case .active:
+                        // App returned to foreground. Reconnect if needed.
+                        Task { await store.reconnectIfNeeded() }
+                    case .background:
+                        // App went to background. Start a brief background task
+                        // to keep the connection alive during quick app switches.
+                        store.beginBackgroundKeepAlive()
+                    case .inactive:
+                        break
+                    @unknown default:
+                        break
+                    }
+                }
         }
     }
 

@@ -395,6 +395,74 @@ final class AppStore: ObservableObject {
     func clearError() {
         self.error = nil
     }
+
+    // MARK: - Background/Foreground Persistence
+
+    /// Called when the app returns to the foreground. Checks if the Hermes
+    /// server is still reachable and silently reconnects if the connection
+    /// dropped while in the background. Preserves the active session and
+    /// messages so the user doesn't lose context.
+    func reconnectIfNeeded() async {
+        guard connectionConfig != nil else { return }
+
+        // Quick health check — if it passes, we're still connected.
+        do {
+            let client = try self.client()
+            let health = try await client.checkHealth()
+            guard health.status == "ok" else {
+                // Server is up but unhealthy. Mark disconnected.
+                self.error = AppError(message: "Server unhealthy: \(health.status)")
+                return
+            }
+            // Connection is alive. Refresh sessions silently in case
+            // anything changed while we were in the background.
+            await refreshSessions()
+        } catch {
+            // Connection dropped while in background. Reconnect using
+            // the saved config so the user doesn't have to re-enter it.
+            guard let config = connectionConfig else { return }
+            do {
+                let newClient = HermesAPIClient(config: config)
+                let health = try await newClient.checkHealth()
+                guard health.status == "ok" else {
+                    self.error = AppError(message: "Server returned: \(health.status)")
+                    return
+                }
+                self.apiClient = newClient
+                await refreshCapabilities()
+                await refreshSessions()
+                // Restore the active session's messages if we had one.
+                if let active = activeSession {
+                    await selectSession(active)
+                }
+            } catch {
+                // Server is unreachable. Show the connection setup screen
+                // by clearing connectionConfig, but keep the saved keychain
+                // entry so the user can reconnect with one tap.
+                self.connectionConfig = nil
+                self.error = AppError(message: "Lost connection to Hermes. Reconnect to continue.")
+            }
+        }
+    }
+
+    private var backgroundTaskId: UIBackgroundTaskIdentifier?
+
+    /// Begins a short background task to keep the network connection alive
+    /// during quick app switches (e.g., checking a message in another app).
+    /// iOS will eventually kill the task, but this buys ~30 seconds.
+    func beginBackgroundKeepAlive() {
+        endBackgroundTask()
+        backgroundTaskId = UIApplication.shared.beginBackgroundTask(expirationHandler: { [weak self] in
+            self?.endBackgroundTask()
+        })
+    }
+
+    private func endBackgroundTask() {
+        if let taskId = backgroundTaskId {
+            UIApplication.shared.endBackgroundTask(taskId)
+            backgroundTaskId = nil
+        }
+    }
 }
 
 // MARK: - Display Models
