@@ -370,7 +370,7 @@ struct ChatDisplayMessage: Identifiable, Equatable {
         self.role = msg.role
         self.content = msg.content
         self.images = []
-        self.timestamp = ISO8601DateFormatter().date(from: msg.timestamp ?? "") ?? Date()
+        self.timestamp = msg.date ?? Date()
     }
 }
 
