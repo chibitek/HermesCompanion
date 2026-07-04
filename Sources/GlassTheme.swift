@@ -344,7 +344,7 @@ struct GlassButton: View {
     }
 }
 
-// MARK: - Glass Input Bar (theme-aware)
+// MARK: - Glass Input Bar (theme-aware, with attachments + voice)
 
 struct GlassInputBar: View {
     @Binding var text: String
@@ -352,66 +352,250 @@ struct GlassInputBar: View {
     let onSend: () -> Void
     let onStop: () -> Void
     let onCamera: () -> Void
+    let attachments: [AttachmentData]
+    let onRemoveAttachment: (Int) -> Void
 
     @FocusState private var focused: Bool
     @EnvironmentObject private var appearance: AppearanceSettings
+    @StateObject private var voiceTranscriber = VoiceTranscriber()
+    @State private var showAttachmentMenu = false
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
     var body: some View {
-        HStack(spacing: theme.spacingS) {
-            Button(action: onCamera) {
-                Image(systemName: "camera")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .disabled(true)
-
-            TextField("Message", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...6)
-                .focused($focused)
-                .submitLabel(.send)
-                .onSubmit(onSend)
-
-            if isStreaming {
-                Button(action: onStop) {
-                    Image(systemName: "stop.fill")
-                        .font(.title3)
-                        .foregroundStyle(theme.danger)
+        VStack(spacing: 0) {
+            // Attachment thumbnail strip
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: theme.spacingS) {
+                        ForEach(attachments.indices, id: \.self) { index in
+                            attachmentThumbnail(index)
+                        }
+                    }
+                    .padding(.horizontal, theme.spacingL)
+                    .padding(.top, theme.spacingS)
                 }
-                .buttonStyle(.plain)
-            } else {
-                Button(action: onSend) {
-                    Image(systemName: "arrow.up.circle.fill")
+            }
+
+            // Voice transcription indicator
+            if voiceTranscriber.isRecording {
+                HStack(spacing: theme.spacingS) {
+                    // Pulsing red dot
+                    Circle()
+                        .fill(theme.danger)
+                        .frame(width: 8, height: 8)
+                        .opacity(0.8)
+                        .modifier(PulsingAnimation())
+
+                    Text(voiceTranscriber.transcribedText.isEmpty ? "Listening..." : voiceTranscriber.transcribedText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer()
+
+                    Button {
+                        // Insert transcribed text and stop
+                        if !voiceTranscriber.transcribedText.isEmpty {
+                            if text.isEmpty {
+                                text = voiceTranscriber.transcribedText
+                            } else {
+                                text += " " + voiceTranscriber.transcribedText
+                            }
+                        }
+                        voiceTranscriber.stopTranscription()
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(theme.accent)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        voiceTranscriber.stopTranscription()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, theme.spacingL)
+                .padding(.vertical, theme.spacingS)
+                .if(theme.usesGlass) { view in
+                    view.glassEffect(.regular.tint(theme.danger.opacity(0.05)))
+                }
+                .if(!theme.usesGlass) { view in
+                    view.background(theme.danger.opacity(0.05))
+                }
+            }
+
+            // Main input row
+            HStack(spacing: theme.spacingS) {
+                // Plus button — attachment menu
+                Button {
+                    showAttachmentMenu = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(canSend ? theme.accent : .secondary)
+                        .foregroundStyle(theme.accent.opacity(0.7))
                 }
                 .buttonStyle(.plain)
-                .disabled(!canSend)
+                .confirmationDialog("Attach", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
+                    Button("Photo Library") { onCamera() }
+                    Button("Cancel", role: .cancel) {}
+                }
+
+                // Text input
+                TextField("Message", text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .submitLabel(.send)
+                    .onSubmit(onSend)
+
+                // Voice button
+                if !voiceTranscriber.isRecording && text.isEmpty && attachments.isEmpty {
+                    Button {
+                        voiceTranscriber.startTranscription()
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Send / Stop button
+                if isStreaming {
+                    Button(action: onStop) {
+                        Image(systemName: "stop.fill")
+                            .font(.title3)
+                            .foregroundStyle(theme.danger)
+                    }
+                    .buttonStyle(.plain)
+                } else if canSend {
+                    Button(action: onSend) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                }
+            }
+            .padding(.horizontal, theme.spacingL)
+            .padding(.vertical, theme.spacingM)
+            .if(theme.usesGlass) { view in
+                view.glassEffect(.regular)
+            }
+            .if(!theme.usesGlass) { view in
+                view
+                    .background(Color(.tertiarySystemFill))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous)
+                            .stroke(theme.accent.opacity(0.15), lineWidth: 1)
+                    )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous))
+            .padding(.horizontal, theme.spacingL)
+            .padding(.bottom, theme.spacingS)
+        }
+        .onAppear {
+            Task { await voiceTranscriber.requestAuthorization() }
+        }
+        .onChange(of: voiceTranscriber.transcribedText) { _, newValue in
+            if voiceTranscriber.isRecording && !newValue.isEmpty {
+                text = newValue
             }
         }
-        .padding(.horizontal, theme.spacingL)
-        .padding(.vertical, theme.spacingM)
-        .if(theme.usesGlass) { view in
-            view.glassEffect(.regular)
-        }
-        .if(!theme.usesGlass) { view in
-            view
-                .background(Color(.tertiarySystemFill))
-                .overlay(
-                    RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous)
-                        .stroke(theme.accent.opacity(0.15), lineWidth: 1)
-                )
-        }
-        .clipShape(RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous))
-        .padding(.horizontal, theme.spacingL)
-        .padding(.bottom, theme.spacingS)
     }
 
     private var canSend: Bool {
-        !text.trimmingCharacters(in: .whitespaces).isEmpty
+        !text.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty
+    }
+
+    private func attachmentThumbnail(_ index: Int) -> some View {
+        let attachment = attachments[index]
+        return ZStack(alignment: .topTrailing) {
+            // Thumbnail
+            if let image = UIImage(data: attachment.data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous))
+            } else {
+                // File icon for non-image attachments
+                RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous)
+                    .fill(Color(.tertiarySystemFill))
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        VStack(spacing: 4) {
+                            Image(systemName: attachment.fileIcon)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                            Text(attachment.fileExtension.uppercased())
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    )
+            }
+
+            // Remove button
+            Button {
+                onRemoveAttachment(index)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .background(Circle().fill(.black.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+            .offset(x: 6, y: -6)
+        }
+    }
+}
+
+// MARK: - Pulsing Animation Modifier
+
+struct PulsingAnimation: ViewModifier {
+    @State private var pulsing = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(pulsing ? 1.3 : 0.8)
+            .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: pulsing)
+            .onAppear { pulsing = true }
+    }
+}
+
+// MARK: - Attachment Data Model
+
+struct AttachmentData: Identifiable, Equatable {
+    let id = UUID()
+    let data: Data
+    let fileName: String
+    let mimeType: String
+    var isImage: Bool { mimeType.hasPrefix("image/") }
+
+    var fileExtension: String {
+        (fileName as NSString).pathExtension
+    }
+
+    var fileIcon: String {
+        let ext = fileExtension.lowercased()
+        switch ext {
+        case "pdf": return "doc.text.fill"
+        case "txt", "md", "log": return "doc.text"
+        case "json", "xml", "yaml", "yml": return "curlybraces"
+        case "swift", "py", "js", "ts", "go", "rs", "java", "c", "cpp": return "chevron.left.forwardslash.chevron.right"
+        case "zip", "tar", "gz", "rar": return "archivebox.fill"
+        case "csv", "xls", "xlsx": return "tablecells.fill"
+        case "doc", "docx": return "doc.richtext.fill"
+        default: return "doc.fill"
+        }
     }
 }
 

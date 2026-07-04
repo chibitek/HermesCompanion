@@ -225,18 +225,7 @@ final class AppStore: ObservableObject {
         messages.append(userMsg)
 
         // Build the message payload for the API
-        let messagePayload: String
-        if images.isEmpty {
-            messagePayload = text
-        } else {
-            // For multimodal, we send text with embedded data URLs
-            // The Hermes API accepts image_url parts in the content array
-            // But the session chat endpoint takes a string message, so we
-            // use the chat/completions endpoint for multimodal instead.
-            // For now, send text only through session chat.
-            // TODO: Use /v1/chat/completions for multimodal when images are present
-            messagePayload = text
-        }
+        let messagePayload = text
 
         // Prepare streaming state
         isStreaming = true
@@ -248,10 +237,12 @@ final class AppStore: ObservableObject {
             guard let self = self else { return }
             do {
                 // Use the reliable JSON chat endpoint as the primary iOS send path.
-                // The SSE endpoint works from curl, but iOS/Tailscale can eventually
-                // tear down the streaming transport and show "Stream failed" even
-                // though normal API calls still work.
-                let response = try await client.sendChat(sessionId: session.id, message: messagePayload)
+                // When images are attached, sends multimodal content (text + image_url parts).
+                let response = try await client.sendChat(
+                    sessionId: session.id,
+                    message: messagePayload,
+                    images: images
+                )
                 if Task.isCancelled { return }
 
                 let content = response.message.content

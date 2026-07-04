@@ -120,17 +120,72 @@ final class HermesAPIClient: Sendable {
     // MARK: - Chat (non-streaming)
 
     /// POST /api/sessions/{id}/chat
-    func sendChat(sessionId: String, message: String, systemMessage: String? = nil) async throws -> SessionChatResponse {
+    /// When images are provided, sends multimodal content (text + image_url parts).
+    func sendChat(sessionId: String, message: String, systemMessage: String? = nil, images: [Data] = []) async throws -> SessionChatResponse {
         var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)/chat"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
-        let body = SessionChatRequest(message: message, systemMessage: systemMessage)
-        req.httpBody = try JSONEncoder().encode(body)
+        let body: Data
+        if images.isEmpty {
+            // Plain text message
+            let chatBody = SessionChatRequest(message: message, systemMessage: systemMessage)
+            body = try JSONEncoder().encode(chatBody)
+        } else {
+            // Multimodal: build content parts array
+            var contentParts: [[String: Any]] = []
+            if !message.isEmpty {
+                contentParts.append(["type": "text", "text": message])
+            }
+            for imageData in images {
+                let base64 = imageData.base64EncodedString()
+                // Detect MIME type from data header
+                let mimeType = detectMimeType(imageData)
+                let dataUrl = "data:\(mimeType);base64,\(base64)"
+                contentParts.append([
+                    "type": "image_url",
+                    "image_url": ["url": dataUrl]
+                ])
+            }
+            // Build the request with multimodal message field
+            var bodyDict: [String: Any] = ["message": contentParts]
+            if let sys = systemMessage {
+                bodyDict["system_message"] = sys
+            }
+            body = try JSONSerialization.data(withJSONObject: bodyDict)
+        }
+        req.httpBody = body
 
         let (data, response) = try await session.data(for: req)
         try checkHTTPStatus(response)
         return try JSONDecoder().decode(SessionChatResponse.self, from: data)
+    }
+
+    /// Detect MIME type from image data header bytes.
+    private func detectMimeType(_ data: Data) -> String {
+        guard data.count >= 2 else { return "image/jpeg" }
+        let bytes = [UInt8](data.prefix(12))
+        // JPEG: FF D8
+        if bytes[0] == 0xFF && bytes[1] == 0xD8 { return "image/jpeg" }
+        // PNG: 89 50 4E 47
+        if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 {
+            return "image/png"
+        }
+        // GIF: 47 49 46
+        if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 {
+            return "image/gif"
+        }
+        // WebP: 52 49 46 46 ... 57 45 42 50
+        if data.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 {
+            if bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 {
+                return "image/webp"
+            }
+        }
+        // HEIC: starts with EXIF header
+        if data.count >= 12 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
+            return "image/heic"
+        }
+        return "image/jpeg"
     }
 
     // MARK: - Chat (streaming via SSE)
