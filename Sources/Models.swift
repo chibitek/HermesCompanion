@@ -405,3 +405,233 @@ struct ApprovalResponse: Codable {
     let choice: String  // "once", "session", "always", "deny"
     let all: Bool?
 }
+
+// MARK: - Models (/v1/models)
+
+struct ModelInfo: Codable, Identifiable, Hashable {
+    let id: String
+    let object: String
+    let created: Int?
+    let ownedBy: String?
+    let root: String?
+    let parent: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, object, created, root, parent
+        case ownedBy = "owned_by"
+    }
+}
+
+struct ModelsResponse: Codable {
+    let object: String
+    let data: [ModelInfo]
+}
+
+// MARK: - Toolsets (/v1/toolsets)
+
+struct ToolsetInfo: Codable, Identifiable, Hashable {
+    let name: String
+    let label: String
+    let description: String
+    let enabled: Bool
+    let configured: Bool
+    let tools: [String]
+
+    var id: String { name }
+}
+
+struct ToolsetsResponse: Codable {
+    let object: String
+    let platform: String
+    let data: [ToolsetInfo]
+}
+
+// MARK: - Session Detail (/api/sessions/{id} GET)
+
+/// Extended session metadata returned by GET /api/sessions/{id}.
+/// The list endpoint returns a subset; the single-session endpoint returns
+/// the full _session_response payload including token counts and cost.
+struct SessionDetail: Codable, Identifiable, Hashable {
+    let id: String
+    let source: String?
+    let userId: String?
+    let model: String?
+    let title: String?
+    let startedAt: Double?
+    let endedAt: Double?
+    let endReason: String?
+    let messageCount: Int?
+    let toolCallCount: Int?
+    let inputTokens: Int?
+    let outputTokens: Int?
+    let cacheReadTokens: Int?
+    let cacheWriteTokens: Int?
+    let reasoningTokens: Int?
+    let estimatedCostUsd: Double?
+    let actualCostUsd: Double?
+    let apiCallCount: Int?
+    let parentSessionId: String?
+    let lastActive: Double?
+    let preview: String?
+    let lineageRootId: String?
+    let hasSystemPrompt: Bool?
+    let hasModelConfig: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, source, model, title, preview
+        case userId = "user_id"
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+        case endReason = "end_reason"
+        case messageCount = "message_count"
+        case toolCallCount = "tool_call_count"
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case cacheReadTokens = "cache_read_tokens"
+        case cacheWriteTokens = "cache_write_tokens"
+        case reasoningTokens = "reasoning_tokens"
+        case estimatedCostUsd = "estimated_cost_usd"
+        case actualCostUsd = "actual_cost_usd"
+        case apiCallCount = "api_call_count"
+        case parentSessionId = "parent_session_id"
+        case lastActive = "last_active"
+        case lineageRootId = "_lineage_root_id"
+        case hasSystemPrompt = "has_system_prompt"
+        case hasModelConfig = "has_model_config"
+    }
+
+    var date: Date? {
+        guard let ts = startedAt else { return nil }
+        return Date(timeIntervalSince1970: ts)
+    }
+
+    var lastActiveDate: Date? {
+        guard let ts = lastActive else { return nil }
+        return Date(timeIntervalSince1970: ts)
+    }
+}
+
+/// Wrapper for GET /api/sessions/{id} response: {"object": "hermes.session", "session": {...}}
+struct GetSessionResponse: Codable {
+    let object: String
+    let session: SessionDetail
+}
+
+// MARK: - Session Patch (rename)
+
+struct PatchSessionRequest: Codable {
+    let title: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+    }
+}
+
+// MARK: - Session Fork
+
+struct ForkSessionRequest: Codable {
+    let title: String?
+
+    // The server accepts an optional id/session_id but we let it auto-generate.
+}
+
+struct ForkSessionResponse: Codable {
+    let object: String
+    let session: HermesSession
+}
+
+// MARK: - Cron Jobs (/api/jobs)
+
+struct CronJob: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let schedule: String
+    let prompt: String
+    let enabled: Bool
+    let deliver: String?
+    let skills: [String]?
+    let skill: String?
+    let `repeat`: Int?
+    let lastRun: Double?
+    let nextRun: Double?
+    let lastOutput: String?
+    let status: String?
+    let createdAt: Double?
+    let origin: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, schedule, prompt, enabled, deliver, skills, skill, status, origin
+        case `repeat` = "repeat"
+        case lastRun = "last_run"
+        case nextRun = "next_run"
+        case lastOutput = "last_output"
+        case createdAt = "created_at"
+    }
+
+    var idHash: String { id }
+}
+
+struct CronJobListResponse: Codable {
+    let jobs: [CronJob]
+}
+
+struct CronJobResponse: Codable {
+    let job: CronJob
+}
+
+struct CreateCronJobRequest: Codable {
+    let name: String
+    let schedule: String
+    let prompt: String
+    let deliver: String?
+    let skills: [String]?
+    let `repeat`: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case name, schedule, prompt, deliver, skills, `repeat`
+    }
+}
+
+struct UpdateCronJobRequest: Codable {
+    // All fields optional — only send what changes.
+    // Server whitelist: name, schedule, prompt, deliver, skills, skill, repeat, enabled
+    let name: String?
+    let schedule: String?
+    let prompt: String?
+    let deliver: String?
+    let skills: [String]?
+    let `repeat`: Int?
+    let enabled: Bool?
+}
+
+struct CronDeleteResponse: Codable {
+    let ok: Bool
+}
+
+// MARK: - Run Status (enriched)
+
+/// Full run status as returned by GET /v1/runs/{id}.
+/// The server stores this as a dict with these fields:
+///   object, run_id, status, updated_at, created_at, last_event, model,
+///   session_id, and optionally error/result fields.
+struct RunStatusResponse: Codable {
+    let object: String
+    let runId: String
+    let status: String
+    let updatedAt: Double?
+    let createdAt: Double?
+    let lastEvent: String?
+    let model: String?
+    let sessionId: String?
+    let error: String?
+    let result: String?
+
+    enum CodingKeys: String, CodingKey {
+        case object, status, model, error, result
+        case runId = "run_id"
+        case updatedAt = "updated_at"
+        case createdAt = "created_at"
+        case lastEvent = "last_event"
+        case sessionId = "session_id"
+    }
+}
