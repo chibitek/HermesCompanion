@@ -157,6 +157,9 @@ enum ThemeRegistry {
     static let allThemes: [any HermesTheme] = [
         HermesDefaultTheme(),
         MatrixTheme(),
+        RetroAmberTheme(),
+        NeonTheme(),
+        BlueHackerTheme(),
         CyberpunkTheme(),
     ]
 
@@ -231,7 +234,13 @@ struct MatrixTheme: HermesTheme {
     let warning = Color(red: 1.0, green: 0.804, blue: 0.0)  // #FFCC00
 
     var backgroundView: AnyView {
-        AnyView(Color.black)
+        AnyView(
+            ZStack {
+                Color.black
+                CRTGlowOverlay(color: accent, intensity: 0.04)
+                CRTScanlineOverlay(opacity: 0.10)
+            }
+        )
     }
 
     let userBubbleBackground = Color(red: 0.0, green: 1.0, blue: 0.254).opacity(0.12)  // dim green tint

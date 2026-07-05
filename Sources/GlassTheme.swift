@@ -395,6 +395,8 @@ struct GlassInputBar: View {
     var onVoiceConversationTranscription: ((String) -> Void)?
     // Callback to speak a response (set by ChatView when in live conversation mode)
     var onSpeakResponse: ((String) -> Void)?
+    // Callback to open the full-screen voice conversation page
+    var onOpenVoicePage: (() -> Void)? = nil
 
     @FocusState private var focused: Bool
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -615,21 +617,17 @@ struct GlassInputBar: View {
                 // 2-way voice conversation button (dark/black background)
                 if !voiceTranscriber.isRecording {
                     Button {
-                        if voiceConversation.isConversing {
-                            voiceConversation.stopConversation()
-                        } else {
-                            startVoiceConversation()
-                        }
+                        onOpenVoicePage?()
                     } label: {
-                        Image(systemName: voiceConversation.isConversing ? "stop.fill" : "waveform")
+                        Image(systemName: "waveform")
                             .font(.body)
                             .foregroundStyle(.white)
                             .frame(width: 32, height: 32)
-                            .background(voiceConversation.isConversing ? theme.danger : Color.primary)
+                            .background(Color.primary)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Two-way voice conversation")
+                    .accessibilityLabel("Open voice conversation page")
                 }
 
                 // Send / Stop button
@@ -674,12 +672,6 @@ struct GlassInputBar: View {
         .onChange(of: voiceTranscriber.transcribedText) { _, newValue in
             if voiceTranscriber.isRecording && !newValue.isEmpty {
                 text = newValue
-            }
-        }
-        .onChange(of: voiceConversation.spokenResponse) { _, response in
-            // When in live conversation and a response comes back, speak it
-            if voiceConversation.isConversing && !response.isEmpty {
-                voiceConversation.speakResponse(response)
             }
         }
     }
