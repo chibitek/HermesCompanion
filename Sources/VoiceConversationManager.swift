@@ -474,8 +474,8 @@ final class VoiceConversationManager: ObservableObject {
             return
         }
 
-        isFinalizing = true
         stopListening()
+        isFinalizing = true
 
         switch conversationMode {
         case .local:
