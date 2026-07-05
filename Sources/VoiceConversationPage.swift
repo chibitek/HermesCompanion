@@ -204,10 +204,10 @@ struct VoiceConversationPage: View {
     }
 
     private var statusLabel: String {
-        if voiceConversation.voiceError != nil { return "VOICE UNAVAILABLE" }
         if voiceConversation.isThinking { return "THINKING..." }
         if voiceConversation.isSpeaking { return "SPEAKING..." }
         if voiceConversation.isListening { return "LISTENING..." }
+        if voiceConversation.voiceError != nil { return "MIC NEEDS ATTENTION" }
         if voiceConversation.isConversing { return "TAP TO TALK" }
         return "SAY SOMETHING"
     }
@@ -222,8 +222,11 @@ struct VoiceConversationPage: View {
             if !voiceConversation.spokenResponse.isEmpty {
                 cardView(label: "HERMES", text: voiceConversation.spokenResponse, color: preset.primary)
             }
-            if let voiceError = voiceConversation.voiceError, !voiceError.isEmpty {
-                cardView(label: "VOICE", text: voiceError, color: preset.primary)
+            if let voiceError = voiceConversation.voiceError,
+               !voiceError.isEmpty,
+               !voiceConversation.isSpeaking,
+               !voiceConversation.isThinking {
+                cardView(label: "MIC", text: voiceError, color: preset.primary)
             }
         }
     }
