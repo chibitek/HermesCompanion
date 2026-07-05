@@ -47,6 +47,7 @@ final class VoiceConversationManager: ObservableObject {
     @Published var hasPermission = false
     @Published var conversationMode: ConversationMode = .local
     @Published var audioLevel: Float = 0.0
+    @Published var voiceError: String?
 
     // Voice settings (persisted via @AppStorage in VoiceConversationPage)
     var voiceSpeed: Float = 0.5
@@ -61,6 +62,7 @@ final class VoiceConversationManager: ObservableObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var hasInstalledInputTap = false
 
     // Audio level monitoring
     private var levelTimer: Timer?
@@ -188,12 +190,15 @@ final class VoiceConversationManager: ObservableObject {
                         onTranscription: onTranscription,
                         onLocalResponse: onLocalResponse
                     )
+                } else {
+                    voiceError = "Microphone and speech recognition permissions are required."
                 }
             }
             return
         }
 
         isConversing = true
+        voiceError = nil
         self.onTranscriptionComplete = onTranscription
         self.onLocalResponse = onLocalResponse
         startListening()
@@ -206,6 +211,7 @@ final class VoiceConversationManager: ObservableObject {
         stopBargeInMonitoring()
         isThinking = false
         isFinalizing = false
+        voiceError = nil
         onTranscriptionComplete = nil
         onLocalResponse = nil
     }
@@ -232,7 +238,11 @@ final class VoiceConversationManager: ObservableObject {
         }
         guard !isThinking else { return }
         guard !isListening else { return }  // Prevent double-start
-        guard let speechRecognizer, speechRecognizer.isAvailable else { return }
+        guard let speechRecognizer, speechRecognizer.isAvailable else {
+            voiceError = "Speech recognition is unavailable."
+            return
+        }
+        voiceError = nil
 
         // CRITICAL: Stop the engine and remove any existing tap BEFORE setting
         // up a new tap. AVAudioEngine throws an Objective-C exception
@@ -242,7 +252,7 @@ final class VoiceConversationManager: ObservableObject {
         if audioEngine.isRunning {
             audioEngine.stop()
         }
-        audioEngine.inputNode.removeTap(onBus: 0)
+        removeInputTapIfNeeded()
 
         cancelRecognition()
 
@@ -253,9 +263,12 @@ final class VoiceConversationManager: ObservableObject {
         do {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try? audioSession.setPreferredSampleRate(44_100)
+            try? audioSession.setPreferredInputNumberOfChannels(1)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             isListening = false
+            voiceError = "Microphone unavailable."
             return
         }
 
@@ -274,10 +287,11 @@ final class VoiceConversationManager: ObservableObject {
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
 
-            if error != nil {
+            if let error {
                 // Don't auto-restart on error -- this was causing infinite loops
                 // and crashes. Just stop listening and let the user tap to resume.
                 self.stopListening()
+                self.voiceError = error.localizedDescription
                 return
             }
 
@@ -298,7 +312,15 @@ final class VoiceConversationManager: ObservableObject {
         // at the top of this function to avoid the "tap already installed"
         // crash, so we just install the new one here.
         let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        let recordingFormat = validRecordingFormat(for: inputNode)
+        guard let recordingFormat else {
+            isListening = false
+            voiceError = "Microphone input is unavailable."
+            self.recognitionRequest = nil
+            recognitionTask?.cancel()
+            recognitionTask = nil
+            return
+        }
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
@@ -311,6 +333,7 @@ final class VoiceConversationManager: ObservableObject {
                 }
             }
         }
+        hasInstalledInputTap = true
 
         do {
             if !audioEngine.isRunning {
@@ -319,8 +342,23 @@ final class VoiceConversationManager: ObservableObject {
             }
             startLevelMonitoring()
         } catch {
+            voiceError = "Could not start microphone."
             stopListening()
         }
+    }
+
+    private func validRecordingFormat(for inputNode: AVAudioInputNode) -> AVAudioFormat? {
+        let outputFormat = inputNode.outputFormat(forBus: 0)
+        if outputFormat.sampleRate > 0, outputFormat.channelCount > 0 {
+            return outputFormat
+        }
+
+        let inputFormat = inputNode.inputFormat(forBus: 0)
+        if inputFormat.sampleRate > 0, inputFormat.channelCount > 0 {
+            return inputFormat
+        }
+
+        return nil
     }
 
     /// Calculate RMS audio level from an audio buffer for the visualizer.
@@ -369,8 +407,8 @@ final class VoiceConversationManager: ObservableObject {
 
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+        removeInputTapIfNeeded()
 
         recognitionRequest?.endAudio()
         recognitionRequest = nil
@@ -378,6 +416,12 @@ final class VoiceConversationManager: ObservableObject {
         recognitionTask = nil
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func removeInputTapIfNeeded() {
+        guard hasInstalledInputTap else { return }
+        audioEngine.inputNode.removeTap(onBus: 0)
+        hasInstalledInputTap = false
     }
 
     /// Finalize the current transcription and trigger the conversation flow.
