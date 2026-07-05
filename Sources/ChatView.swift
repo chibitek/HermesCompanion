@@ -45,10 +45,10 @@ struct ChatView: View {
                         onFilePick: { showFilePicker = true },
                         attachments: attachments,
                         onRemoveAttachment: removeAttachment,
-                        currentModel: store.capabilities?.model ?? "",
+                        currentModel: store.effectiveCurrentModel,
                         availableModels: store.availableModels,
                         onSelectModel: { model in
-                            UserDefaults.standard.set(model, forKey: "preferred_model")
+                            store.selectPreferredModel(model)
                         },
                         onVoiceConversationTranscription: { transcription in
                             handleVoiceTranscription(transcription)
@@ -102,10 +102,10 @@ struct ChatView: View {
                 VoiceConversationPage(
                     voiceConversation: voiceConversation,
                     store: store,
-                    currentModel: store.capabilities?.model ?? "",
+                    currentModel: store.effectiveCurrentModel,
                     availableModels: store.availableModels,
                     onSelectModel: { model in
-                        UserDefaults.standard.set(model, forKey: "preferred_model")
+                        store.selectPreferredModel(model)
                     },
                     onVoiceTranscription: { transcription in
                         handleVoiceTranscription(transcription)
