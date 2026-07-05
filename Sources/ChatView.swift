@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showFilePicker = false
     @StateObject private var voiceConversation = VoiceConversationManager()
+    @State private var showVoicePage = false
 
     var body: some View {
         NavigationStack {
@@ -64,6 +65,9 @@ struct ChatView: View {
                         onSpeakResponse: { text in
                             voiceConversation.speakResponse(text)
                         },
+                        onOpenVoicePage: {
+                            showVoicePage = true
+                        },
                         voiceConversation: voiceConversation
                     )
                 }
@@ -102,6 +106,29 @@ struct ChatView: View {
                 Button("OK") { store.clearError() }
             } message: {
                 Text(store.error?.message ?? "")
+            }
+            .fullScreenCover(isPresented: $showVoicePage) {
+                VoiceConversationPage(
+                    voiceConversation: voiceConversation,
+                    currentModel: store.capabilities?.model ?? "",
+                    availableModels: store.availableModels,
+                    onSelectModel: { model in
+                        UserDefaults.standard.set(model, forKey: "preferred_model")
+                    },
+                    onVoiceTranscription: { transcription in
+                        Task {
+                            voiceConversation.isThinking = true
+                            await store.sendMessage(transcription)
+                            voiceConversation.isThinking = false
+                            if let lastMsg = store.messages.last, lastMsg.isAssistant {
+                                voiceConversation.speakResponse(lastMsg.content)
+                            }
+                        }
+                    },
+                    onClose: {
+                        showVoicePage = false
+                    }
+                )
             }
         }
         // Photo picker — triggered by the input bar attachment menu

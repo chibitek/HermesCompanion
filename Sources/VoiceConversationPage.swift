@@ -31,6 +31,7 @@ struct VoiceConversationPage: View {
     var currentModel: String = ""
     var availableModels: [String] = []
     var onSelectModel: ((String) -> Void)? = nil
+    var onVoiceTranscription: ((String) -> Void)? = nil
     var onClose: (() -> Void)? = nil
 
     @State private var preset: CyberpunkVoicePreset = .matrix
@@ -47,7 +48,6 @@ struct VoiceConversationPage: View {
                 Spacer()
                 visualizer
                 Spacer()
-                statusText
                 transcriptionCards
                 bottomControls
             }
@@ -56,6 +56,20 @@ struct VoiceConversationPage: View {
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showSettings) {
             VoiceSettingsSheet(preset: preset)
+        }
+        .onAppear {
+            // Auto-start conversation when page opens
+            voiceConversation.startConversation(
+                onTranscription: { text in
+                    onVoiceTranscription?(text)
+                },
+                onLocalResponse: { response in
+                    voiceConversation.speakResponse(response)
+                }
+            )
+        }
+        .onDisappear {
+            voiceConversation.stopConversation()
         }
     }
 
@@ -99,34 +113,49 @@ struct VoiceConversationPage: View {
     // MARK: - Visualizer
 
     private var visualizer: some View {
-        VStack(spacing: 4) {
-            if voiceConversation.isListening {
-                AudioVisualizerBar(color: preset.primary, isActive: true)
-                    .frame(height: 80)
-            } else if voiceConversation.isSpeaking {
+        VStack(spacing: 8) {
+            // Large central orb that reacts to audio
+            ZStack {
+                // Outer glow ring
                 Circle()
-                    .stroke(preset.primary, lineWidth: 3)
-                    .frame(width: 80, height: 80)
-                    .scaleEffect(micPulse ? 1.1 : 0.9)
-                    .opacity(micPulse ? 0.8 : 0.4)
-                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: micPulse)
-                    .onAppear { micPulse = true }
-            } else {
+                    .stroke(preset.primary.opacity(0.2), lineWidth: 2)
+                    .frame(width: 140, height: 140)
+                    .scaleEffect(voiceConversation.isListening || voiceConversation.isSpeaking ? 1.15 : 1.0)
+                    .animation(.easeInOut(duration: 0.3).repeatForever(autoreverses: true), value: voiceConversation.isListening)
+
+                // Middle ring
                 Circle()
-                    .stroke(preset.primary.opacity(0.3), lineWidth: 2)
-                    .frame(width: 80, height: 80)
+                    .stroke(preset.primary.opacity(0.4), lineWidth: 2)
+                    .frame(width: 110, height: 110)
+                    .scaleEffect(voiceConversation.isSpeaking ? 1.1 : 0.95)
+                    .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: voiceConversation.isSpeaking)
+
+                // Inner orb
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [preset.primary.opacity(0.3), preset.primary.opacity(0.05)],
+                            center: .center,
+                            startRadius: 10,
+                            endRadius: 45
+                        )
+                    )
+                    .frame(width: 90, height: 90)
+
+                // Audio level bars inside the orb
+                AudioVisualizerBar(
+                    color: preset.primary,
+                    isActive: voiceConversation.isListening || voiceConversation.isSpeaking
+                )
+                .frame(width: 60, height: 40)
             }
+
+            // Status label below the orb
+            Text(statusLabel)
+                .font(.system(.title3, design: .monospaced).weight(.bold))
+                .foregroundStyle(preset.primary)
+                .shadow(color: preset.primary.opacity(0.5), radius: 3)
         }
-    }
-
-    // MARK: - Status Text
-
-    private var statusText: some View {
-        Text(statusLabel)
-            .font(.system(.title3, design: .monospaced).weight(.bold))
-            .foregroundStyle(preset.primary)
-            .shadow(color: preset.primary.opacity(0.5), radius: 3)
-            .padding(.vertical, 8)
     }
 
     private var statusLabel: String {
@@ -229,6 +258,7 @@ struct VoiceConversationPage: View {
 
 struct AudioVisualizerBar: View {
     let color: Color
+    var secondaryColor: Color = .gray
     let isActive: Bool
     @State private var levels: [CGFloat] = Array(repeating: 0.3, count: 24)
 
@@ -237,7 +267,7 @@ struct AudioVisualizerBar: View {
             HStack(spacing: 3) {
                 ForEach(0..<levels.count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(color)
+                        .fill(i % 3 == 2 ? secondaryColor : color)
                         .frame(width: max(3, geo.size.width / CGFloat(levels.count) - 3))
                         .frame(height: max(4, geo.size.height * levels[i]))
                         .animation(.easeInOut(duration: 0.1), value: levels[i])
