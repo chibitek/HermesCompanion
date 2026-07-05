@@ -201,6 +201,7 @@ final class VoiceConversationManager: ObservableObject {
             stopSpeaking()
         }
         guard !isThinking else { return }
+        guard !isListening else { return }  // Prevent double-start
         guard let speechRecognizer, speechRecognizer.isAvailable else { return }
 
         cancelRecognition()
@@ -220,7 +221,10 @@ final class VoiceConversationManager: ObservableObject {
 
         // Set up recognition
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-        guard let recognitionRequest else { return }
+        guard let recognitionRequest else {
+            isListening = false
+            return
+        }
         recognitionRequest.shouldReportPartialResults = true
         if #available(iOS 16, *) {
             recognitionRequest.addsPunctuation = true
@@ -254,6 +258,8 @@ final class VoiceConversationManager: ObservableObject {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
+        // Remove any existing tap before installing a new one
+        inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
             recognitionRequest.append(buffer)
@@ -265,8 +271,10 @@ final class VoiceConversationManager: ObservableObject {
         }
 
         do {
-            audioEngine.prepare()
-            try audioEngine.start()
+            if !audioEngine.isRunning {
+                audioEngine.prepare()
+                try audioEngine.start()
+            }
             startLevelMonitoring()
         } catch {
             stopListening()

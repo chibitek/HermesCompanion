@@ -110,6 +110,7 @@ struct ChatView: View {
             .fullScreenCover(isPresented: $showVoicePage) {
                 VoiceConversationPage(
                     voiceConversation: voiceConversation,
+                    store: store,
                     currentModel: store.capabilities?.model ?? "",
                     availableModels: store.availableModels,
                     onSelectModel: { model in
