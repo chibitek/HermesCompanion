@@ -45,14 +45,20 @@ struct SettingsView: View {
             }
             .onAppear {
                 Task {
+                    await store.refreshCapabilities()
                     await store.refreshSkills()
+                    await store.refreshToolsets()
                     await loadModels()
                     primePickers()
                 }
             }
             .onChange(of: store.connectionConfig?.baseURL) { _, _ in
                 primePickers()
-                Task { await loadModels() }
+                Task {
+                    await store.refreshCapabilities()
+                    await loadModels()
+                    primePickers()
+                }
             }
             .sheet(isPresented: $showingAddServer) {
                 ConnectionSetupView(store: store)
@@ -130,7 +136,11 @@ struct SettingsView: View {
     /// (so a new provider slug added server-side shows up automatically).
     private var availableProviders: [String] {
         let fromModels = Set(availableModels.compactMap { $0.ownedBy })
-        let combined = Self.knownProviders + Array(fromModels.subtracting(Self.knownProviders))
+        let reportedProvider = store.capabilities?.currentProvider ?? store.effectiveCurrentProvider
+        var combined = Self.knownProviders + Array(fromModels.subtracting(Self.knownProviders)).sorted()
+        if !reportedProvider.isEmpty && !combined.contains(reportedProvider) {
+            combined.append(reportedProvider)
+        }
         if preferredOrEmpty.isEmpty { return combined }
         // Always include the currently selected one even if not in either list
         var withCurrent = combined
@@ -246,6 +256,12 @@ struct SettingsView: View {
             Section("Server") {
                 settingRow("Platform", caps.platform)
                 settingRow("Default Model", caps.model)
+                if let provider = caps.currentProvider, !provider.isEmpty {
+                    settingRow("Current Provider", displayName(for: provider))
+                }
+                if let model = caps.currentModel, !model.isEmpty {
+                    settingRow("Current Model", model)
+                }
                 settingRow("Auth", caps.auth.type)
             }
             Section("Features") {
@@ -272,6 +288,19 @@ struct SettingsView: View {
                         Text("Skills")
                         Spacer()
                         Text("\(store.skills.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                NavigationLink {
+                    ToolsetsListView(store: store)
+                } label: {
+                    HStack {
+                        Image(systemName: "wrench.and.screwdriver")
+                            .foregroundStyle(appearance.accent)
+                        Text("Toolsets")
+                        Spacer()
+                        Text("\(store.toolsets.filter(\.enabled).count)/\(store.toolsets.count)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -361,19 +390,21 @@ struct SettingsView: View {
 
         do {
             availableModels = try await client.getModels()
+            addCurrentModelIfNeeded()
             // After models load, if our selected model isn't in the new list,
             // try to fall back to the server's default.
             if !availableModels.contains(where: { $0.id == selectedModel }) {
-                if let caps = store.capabilities,
-                   availableModels.contains(where: { $0.id == caps.model }) {
-                    selectedModel = caps.model
-                    store.preferredModel = caps.model
+                let effectiveModel = store.effectiveCurrentModel
+                if !effectiveModel.isEmpty,
+                   availableModels.contains(where: { $0.id == effectiveModel }) {
+                    selectedModel = effectiveModel
                 } else if let first = modelsForSelectedProvider.first {
                     selectedModel = first.id
-                    store.preferredModel = first.id
                 }
             }
         } catch {
+            availableModels = []
+            addCurrentModelIfNeeded()
             // Silently fail — models list is optional
         }
     }
@@ -383,18 +414,20 @@ struct SettingsView: View {
     private func primePickers() {
         selectedServerURL = store.connectionConfig?.baseURL ?? ""
 
-        if !store.preferredProvider.isEmpty {
+        if let provider = store.capabilities?.currentProvider, !provider.isEmpty {
+            selectedProvider = provider
+        } else if !store.preferredProvider.isEmpty {
             selectedProvider = store.preferredProvider
         } else if let owner = modelForSelection(store.preferredModel)?.ownedBy {
             selectedProvider = owner
-        } else if let owner = modelForSelection(store.capabilities?.model ?? "")?.ownedBy {
+        } else if let owner = modelForSelection(store.effectiveCurrentModel)?.ownedBy {
             selectedProvider = owner
         }
 
-        if !store.preferredModel.isEmpty && availableModels.contains(where: { $0.id == store.preferredModel }) {
+        if availableModels.contains(where: { $0.id == store.effectiveCurrentModel }) {
+            selectedModel = store.effectiveCurrentModel
+        } else if !store.preferredModel.isEmpty && availableModels.contains(where: { $0.id == store.preferredModel }) {
             selectedModel = store.preferredModel
-        } else if let caps = store.capabilities, availableModels.contains(where: { $0.id == caps.model }) {
-            selectedModel = caps.model
         } else if let first = modelsForSelectedProvider.first {
             selectedModel = first.id
         }
@@ -426,6 +459,18 @@ struct SettingsView: View {
 
     private func modelForSelection(_ id: String) -> ModelInfo? {
         availableModels.first(where: { $0.id == id })
+    }
+
+    private func addCurrentModelIfNeeded() {
+        let model = store.effectiveCurrentModel
+        guard !model.isEmpty, !availableModels.contains(where: { $0.id == model }) else { return }
+        let owner = store.capabilities?.currentProvider ?? providerFromModelID(model) ?? selectedProvider
+        availableModels.insert(ModelInfo(id: model, ownedBy: owner.isEmpty ? nil : owner), at: 0)
+    }
+
+    private func providerFromModelID(_ id: String) -> String? {
+        guard let slash = id.firstIndex(of: "/"), slash > id.startIndex else { return nil }
+        return String(id[..<slash])
     }
 
     /// Display name for a model. Strips the "provider/" prefix and falls back
@@ -519,6 +564,85 @@ struct SkillsListView: View {
                     Image(systemName: "arrow.clockwise")
                 }
             }
+        }
+    }
+}
+
+struct ToolsetsListView: View {
+    @ObservedObject var store: AppStore
+    @State private var searchText = ""
+
+    private var filteredToolsets: [ToolsetInfo] {
+        let sorted = store.toolsets.sorted {
+            if $0.enabled != $1.enabled { return $0.enabled && !$1.enabled }
+            return $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending
+        }
+        guard !searchText.isEmpty else { return sorted }
+        return sorted.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.label.localizedCaseInsensitiveContains(searchText) ||
+            $0.description.localizedCaseInsensitiveContains(searchText) ||
+            $0.tools.contains { $0.localizedCaseInsensitiveContains(searchText) }
+        }
+    }
+
+    var body: some View {
+        List {
+            if filteredToolsets.isEmpty {
+                ContentUnavailableView(
+                    "No Toolsets",
+                    systemImage: "wrench.and.screwdriver",
+                    description: Text("No toolsets are reported by this server.")
+                )
+            } else {
+                ForEach(filteredToolsets) { toolset in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(toolset.label)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Text(toolset.name)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Label(toolset.enabled ? "Enabled" : "Disabled",
+                                  systemImage: toolset.enabled ? "checkmark.circle.fill" : "circle")
+                                .labelStyle(.iconOnly)
+                                .foregroundStyle(toolset.enabled ? .green : .secondary)
+                        }
+
+                        Text(toolset.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if !toolset.tools.isEmpty {
+                            Text(toolset.tools.joined(separator: ", "))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Toolsets")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Search toolsets")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await store.refreshToolsets() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+        }
+        .task {
+            await store.refreshToolsets()
         }
     }
 }

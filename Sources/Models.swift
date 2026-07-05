@@ -36,9 +36,17 @@ struct CapabilitiesResponse: Codable {
     let object: String
     let platform: String
     let model: String
+    let currentProvider: String?
+    let currentModel: String?
     let auth: AuthInfo
     let features: Features
     let endpoints: [String: EndpointInfo]
+
+    enum CodingKeys: String, CodingKey {
+        case object, platform, model, auth, features, endpoints
+        case currentProvider = "current_provider"
+        case currentModel = "current_model"
+    }
 
     struct AuthInfo: Codable {
         let type: String
@@ -59,6 +67,22 @@ struct CapabilitiesResponse: Codable {
         let sessionResources: Bool
         let sessionFork: Bool
         let skillsAPI: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case chatCompletions = "chat_completions"
+            case chatCompletionsStreaming = "chat_completions_streaming"
+            case sessionChat = "session_chat"
+            case sessionChatStreaming = "session_chat_streaming"
+            case runSubmission = "run_submission"
+            case runEventsSSE = "run_events_sse"
+            case runStop = "run_stop"
+            case runApprovalResponse = "run_approval_response"
+            case toolProgressEvents = "tool_progress_events"
+            case approvalEvents = "approval_events"
+            case sessionResources = "session_resources"
+            case sessionFork = "session_fork"
+            case skillsAPI = "skills_api"
+        }
     }
 
     struct EndpointInfo: Codable {
@@ -419,6 +443,15 @@ struct ModelInfo: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, object, created, root, parent
         case ownedBy = "owned_by"
+    }
+
+    init(id: String, object: String = "model", created: Int? = nil, ownedBy: String? = nil, root: String? = nil, parent: String? = nil) {
+        self.id = id
+        self.object = object
+        self.created = created
+        self.ownedBy = ownedBy
+        self.root = root
+        self.parent = parent
     }
 }
 
