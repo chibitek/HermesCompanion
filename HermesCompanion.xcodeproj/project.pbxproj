@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		06BDC2D2907A6188CDF10CDE /* VoiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */; };
 		090713634A1A6AA642140833 /* HermesAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497EB3A78A1FA95B37C99AB4 /* HermesAPIClient.swift */; };
 		159D645ED21E0A0B268E972B /* AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73744DD7755B96A455966F0B /* AppearanceSettings.swift */; };
 		1CEEEA7AA202CFB1EACF6FBA /* HermesThemes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A7E7C23745B5ED58953167 /* HermesThemes.swift */; };
@@ -31,6 +32,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSettingsView.swift; sourceTree = "<group>"; };
 		12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesCompanionApp.swift; sourceTree = "<group>"; };
 		13839144B0503760269527F6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		2028A3E91C21B0A78D04F0BC /* TerminalThemes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemes.swift; sourceTree = "<group>"; };
@@ -93,6 +95,7 @@
 				90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */,
 				6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */,
 				86EA7AA684EE78863AEC2F0A /* VoiceConversationPage.swift */,
+				111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */,
 				323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */,
 				862E65AB22578E282334728E /* Themes */,
 			);
@@ -198,6 +201,7 @@
 				DF0FB0C835B0C2295CADEA9F /* TerminalThemes.swift in Sources */,
 				67280C486BF59EDE78845066 /* VoiceConversationManager.swift in Sources */,
 				6880344859436CE0F8CC146A /* VoiceConversationPage.swift in Sources */,
+				06BDC2D2907A6188CDF10CDE /* VoiceSettingsView.swift in Sources */,
 				5DC81AF16C507C454840EB47 /* VoiceTranscriber.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -211,7 +215,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = DF9FB764AR;
 				ENABLE_PREVIEWS = YES;
@@ -222,7 +226,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -236,7 +240,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = DF9FB764AR;
 				ENABLE_PREVIEWS = YES;
@@ -247,7 +251,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
