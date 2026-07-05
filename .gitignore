@@ -27,3 +27,4 @@ HermesCompanion.xcodeproj
 # Build outputs
 build/
 DerivedData/.env
+.env
