@@ -32,12 +32,12 @@ final class AppStore: ObservableObject {
     /// Persisted provider slug (e.g. "nous", "openrouter", "ollama-local", "custom").
     /// Synced with macOS Hermes; locally scoped per-connection.
     @Published var preferredProvider: String = "" {
-        didSet { UserDefaults.standard.set(preferredProvider, forKey: Self.providerKey) }
+        didSet { savePreference(preferredProvider, key: Self.providerKey) }
     }
 
     /// Persisted model id. Locally scoped per-connection.
     @Published var preferredModel: String = "" {
-        didSet { UserDefaults.standard.set(preferredModel, forKey: Self.modelKey) }
+        didSet { savePreference(preferredModel, key: Self.modelKey) }
     }
 
     /// Persisted reasoning effort: "", "low", "medium", "high".
@@ -45,7 +45,7 @@ final class AppStore: ObservableObject {
     /// override today — this is a local preference only, surfaced in the UI and
     /// ready for the server to honor when support lands.
     @Published var preferredThinking: String = "" {
-        didSet { UserDefaults.standard.set(preferredThinking, forKey: Self.thinkingKey) }
+        didSet { savePreference(preferredThinking, key: Self.thinkingKey) }
     }
 
     private static let providerKey = "preferred_provider"
@@ -74,12 +74,6 @@ final class AppStore: ObservableObject {
     // MARK: - Init
 
     init() {
-        // Load provider/model/thinking preferences from UserDefaults
-        let defaults = UserDefaults.standard
-        self.preferredProvider = defaults.string(forKey: Self.providerKey) ?? ""
-        self.preferredModel = defaults.string(forKey: Self.modelKey) ?? ""
-        self.preferredThinking = defaults.string(forKey: Self.thinkingKey) ?? ""
-
         // Load all saved connections for the multi-connection picker
         self.savedConnections = KeychainManager.shared.loadAll()
 
@@ -94,6 +88,9 @@ final class AppStore: ObservableObject {
             let reachableConfig = Self.debugReachableConfig(initialConfig)
             connectionConfig = reachableConfig
             apiClient = HermesAPIClient(config: reachableConfig)
+            loadPreferences(for: reachableConfig)
+        } else {
+            loadPreferences(for: nil)
         }
     }
 
@@ -161,6 +158,7 @@ final class AppStore: ObservableObject {
                 self.error = AppError(message: "Failed to save connection: \(error.localizedDescription)")
             }
             self.connectionConfig = config
+            loadPreferences(for: config)
             // Load capabilities
             await refreshCapabilities()
             await refreshSessions()
@@ -178,6 +176,7 @@ final class AppStore: ObservableObject {
         streamTask?.cancel()
         apiClient = nil
         connectionConfig = nil
+        loadPreferences(for: nil)
         capabilities = nil
         sessions = []
         activeSession = nil
@@ -212,6 +211,7 @@ final class AppStore: ObservableObject {
         pendingApproval = nil
 
         self.connectionConfig = config
+        loadPreferences(for: config)
         self.apiClient = HermesAPIClient(config: config)
         await autoConnect()
     }
@@ -276,6 +276,29 @@ final class AppStore: ObservableObject {
     private func nonEmpty(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
         return value
+    }
+
+    private func savePreference(_ value: String, key: String) {
+        UserDefaults.standard.set(value, forKey: preferenceKey(key, for: connectionConfig))
+    }
+
+    private func loadPreferences(for config: ConnectionConfig?) {
+        preferredProvider = savedPreference(Self.providerKey, for: config)
+        preferredModel = savedPreference(Self.modelKey, for: config)
+        preferredThinking = savedPreference(Self.thinkingKey, for: config)
+    }
+
+    private func savedPreference(_ key: String, for config: ConnectionConfig?) -> String {
+        let defaults = UserDefaults.standard
+        if let scopedValue = defaults.string(forKey: preferenceKey(key, for: config)) {
+            return scopedValue
+        }
+        return defaults.string(forKey: key) ?? ""
+    }
+
+    private func preferenceKey(_ key: String, for config: ConnectionConfig?) -> String {
+        guard let config else { return key }
+        return "\(key).\(config.normalizedBaseURL)"
     }
 
     // MARK: - Sessions
