@@ -21,7 +21,7 @@ enum GlassTheme {
     static let radiusL: CGFloat = 22
     static let radiusXL: CGFloat = 28
 
-    static let bubbleMaxWidthRatio: CGFloat = 0.82
+    static let bubbleMaxWidthRatio: CGFloat = 0.94
 }
 
 // MARK: - Theme Environment Key
@@ -80,6 +80,8 @@ struct GlassBubble: View {
                         .font(messageFont)
                         .textSelection(.enabled)
                         .foregroundStyle(isUser ? .white : .primary)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if showTimestamp {
@@ -134,7 +136,7 @@ struct GlassBubble: View {
         if fixedFontSize > 0 {
             return .system(size: fixedFontSize, design: isUser ? .default : monospacedDesign)
         }
-        return isUser ? theme.userMessageFont : theme.assistantMessageFont
+        return .system(size: max(10, min(18, 14 * fontScale)), design: isUser ? .default : monospacedDesign)
     }
 
     private var renderedContent: AttributedString {
