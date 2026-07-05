@@ -395,7 +395,7 @@ struct GlassInputBar: View {
     var onVoiceConversationTranscription: ((String) -> Void)?
     // Callback to speak a response (set by ChatView when in live conversation mode)
     var onSpeakResponse: ((String) -> Void)?
-    // Callback to open the full-screen voice conversation page
+    // Callback to open the full-screen cyberpunk voice page
     var onOpenVoicePage: (() -> Void)? = nil
 
     @FocusState private var focused: Bool
@@ -709,7 +709,7 @@ struct GlassInputBar: View {
                         Label("Voice-to-Text", systemImage: "text.mic.fill")
                     }
                     Button {
-                        startVoiceConversation()
+                        onOpenVoicePage?()
                     } label: {
                         Label("2-Way Voice", systemImage: "waveform.badge.mic")
                     }
@@ -719,8 +719,8 @@ struct GlassInputBar: View {
             .accessibilityLabel("Microphone")
             .accessibilityHint("Tap for voice-to-text. Long-press for 2-way voice conversation.")
             .onLongPressGesture(minimumDuration: 0.5) {
-                // Long-press = start 2-way voice conversation
-                startVoiceConversation()
+                // Long-press = open full-screen voice conversation page
+                onOpenVoicePage?()
             }
         }
         .overlay(alignment: .top) {
@@ -744,6 +744,8 @@ struct GlassInputBar: View {
     }
 
     private func startVoiceConversation() {
+        // This is now triggered from the full-screen VoiceConversationPage
+        // but we keep the method for any external callers
         voiceConversation.startConversation(
             onTranscription: { transcription in
                 onVoiceConversationTranscription?(transcription)
