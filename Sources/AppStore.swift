@@ -21,6 +21,36 @@ final class AppStore: ObservableObject {
     @Published var isLoadingConnection = false
     @Published var pendingApproval: PendingApproval?
 
+    // MARK: - Multi-connection
+
+    /// All saved server connections (most-recently-used first).
+    @Published var savedConnections: [ConnectionConfig] = []
+
+    // MARK: - Provider / Model / Thinking preferences
+
+    /// Persisted provider slug (e.g. "nous", "openrouter", "ollama-local", "custom").
+    /// Synced with macOS Hermes; locally scoped per-connection.
+    @Published var preferredProvider: String = "" {
+        didSet { UserDefaults.standard.set(preferredProvider, forKey: Self.providerKey) }
+    }
+
+    /// Persisted model id. Locally scoped per-connection.
+    @Published var preferredModel: String = "" {
+        didSet { UserDefaults.standard.set(preferredModel, forKey: Self.modelKey) }
+    }
+
+    /// Persisted reasoning effort: "", "low", "medium", "high".
+    /// Note: the gateway chat endpoint doesn't honor a per-message reasoning_effort
+    /// override today — this is a local preference only, surfaced in the UI and
+    /// ready for the server to honor when support lands.
+    @Published var preferredThinking: String = "" {
+        didSet { UserDefaults.standard.set(preferredThinking, forKey: Self.thinkingKey) }
+    }
+
+    private static let providerKey = "preferred_provider"
+    private static let modelKey = "preferred_model"
+    private static let thinkingKey = "preferred_thinking"
+
     // MARK: - Private
 
     private(set) var apiClient: HermesAPIClient?
@@ -29,21 +59,26 @@ final class AppStore: ObservableObject {
     // MARK: - Init
 
     init() {
+        // Load provider/model/thinking preferences from UserDefaults
+        let defaults = UserDefaults.standard
+        self.preferredProvider = defaults.string(forKey: Self.providerKey) ?? ""
+        self.preferredModel = defaults.string(forKey: Self.modelKey) ?? ""
+        self.preferredThinking = defaults.string(forKey: Self.thinkingKey) ?? ""
+
+        // Load all saved connections for the multi-connection picker
+        self.savedConnections = KeychainManager.shared.loadAll()
+
+        var initialConfig = KeychainManager.shared.loadActive()
         #if DEBUG
-        // Debug auto-connect for simulator testing
-        let debugConfig = ConnectionConfig(
-            baseURL: "http://100.81.23.33:8642",
-            apiKey: "62af1798d1b5479a8f73ad5d0988c90e.234AfZQD4G91oNoeRJMI4Ewq",
-            label: "Hermes Debug"
-        )
-        connectionConfig = debugConfig
-        apiClient = HermesAPIClient(config: debugConfig)
-        #else
-        if let savedConfig = KeychainManager.shared.loadActive() {
-            connectionConfig = savedConfig
-            apiClient = HermesAPIClient(config: savedConfig)
+        if initialConfig == nil {
+            initialConfig = Self.debugConnectionFromEnvironment()
         }
         #endif
+
+        if let initialConfig {
+            connectionConfig = initialConfig
+            apiClient = HermesAPIClient(config: initialConfig)
+        }
     }
 
     // MARK: - Connection
@@ -75,6 +110,7 @@ final class AppStore: ObservableObject {
                 self.isLoadingConnection = false
                 return
             }
+            _ = try await client.getCapabilities()
             self.apiClient = client
             await refreshCapabilities()
             await refreshSessions()
@@ -99,9 +135,12 @@ final class AppStore: ObservableObject {
                 self.error = AppError(message: "Server returned status: \(health.status)")
                 return false
             }
-            // Save to keychain -- propagate error if it fails
+            _ = try await client.getCapabilities()
+            // Persist: add/update in the multi-connection list, then mark as active.
             do {
-                try KeychainManager.shared.save(config)
+                let updated = try KeychainManager.shared.addOrUpdate(config)
+                self.savedConnections = updated
+                try KeychainManager.shared.setActive(baseURL: config.baseURL)
             } catch {
                 self.error = AppError(message: "Failed to save connection: \(error.localizedDescription)")
             }
@@ -129,6 +168,48 @@ final class AppStore: ObservableObject {
         messages = []
         skills = []
         KeychainManager.shared.deleteActive()
+    }
+
+    // MARK: - Multi-connection helpers
+
+    /// Switch the active connection to one of the saved servers. Tears down
+    /// the current session state and reconnects to the new server.
+    func switchToConnection(_ config: ConnectionConfig) async {
+        do {
+            try KeychainManager.shared.setActive(baseURL: config.baseURL)
+        } catch {
+            self.error = AppError(message: "Failed to set active: \(error.localizedDescription)")
+            return
+        }
+        // Tear down current state
+        streamTask?.cancel()
+        apiClient = nil
+        capabilities = nil
+        sessions = []
+        activeSession = nil
+        messages = []
+        toolEvents = []
+        streamingText = ""
+        skills = []
+        pendingApproval = nil
+
+        self.connectionConfig = config
+        self.apiClient = HermesAPIClient(config: config)
+        await autoConnect()
+    }
+
+    /// Remove a saved connection. If it was active, disconnects.
+    func deleteConnection(_ config: ConnectionConfig) async {
+        do {
+            let updated = try KeychainManager.shared.remove(baseURL: config.baseURL)
+            self.savedConnections = updated
+        } catch {
+            self.error = AppError(message: "Failed to delete: \(error.localizedDescription)")
+            return
+        }
+        if connectionConfig?.baseURL == config.baseURL {
+            disconnect()
+        }
     }
 
     // MARK: - Capabilities
@@ -310,37 +391,59 @@ final class AppStore: ObservableObject {
         // Cancel any existing stream task before starting a new one
         streamTask?.cancel()
 
-        streamTask = Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self = self else { return }
             do {
-                // Use the reliable JSON chat endpoint as the primary iOS send path.
-                // When images are attached, sends multimodal content (text + image_url parts).
-                let response = try await client.sendChat(
-                    sessionId: session.id,
-                    message: messagePayload,
-                    images: images,
-                    attachments: attachments
-                )
-                if Task.isCancelled { return }
+                if images.isEmpty && attachments.isEmpty {
+                    let stream = try await client.streamChat(sessionId: session.id, message: messagePayload)
+                    for try await event in stream {
+                        if Task.isCancelled { return }
+                        await self.handleSSEEvent(event)
+                    }
 
-                let content = response.message.content
-                if !content.isEmpty {
-                    messages.append(ChatDisplayMessage(
-                        id: UUID().uuidString,
-                        role: response.message.role,
-                        content: content,
-                        timestamp: Date()
-                    ))
+                    if !streamingText.isEmpty {
+                        messages.append(ChatDisplayMessage(
+                            id: UUID().uuidString,
+                            role: "assistant",
+                            content: streamingText,
+                            timestamp: Date()
+                        ))
+                        streamingText = ""
+                    }
+                } else {
+                    // File and image attachments still use the JSON endpoint because
+                    // the current stream endpoint only accepts plain text messages.
+                    let response = try await client.sendChat(
+                        sessionId: session.id,
+                        message: messagePayload,
+                        images: images,
+                        attachments: attachments
+                    )
+                    if Task.isCancelled { return }
+
+                    let content = response.message.content
+                    if !content.isEmpty {
+                        messages.append(ChatDisplayMessage(
+                            id: UUID().uuidString,
+                            role: response.message.role,
+                            content: content,
+                            timestamp: Date()
+                        ))
+                    }
                 }
-                streamingText = ""
+                let history = try await client.getMessages(sessionId: session.id)
+                self.messages = history.map { ChatDisplayMessage(from: $0) }
                 await refreshSessions()
             } catch let e as APIError {
                 self.error = AppError(message: e.errorDescription ?? "Message failed")
             } catch {
                 self.error = AppError(message: "Message failed: \(error.localizedDescription)")
             }
+            self.streamingText = ""
             self.isStreaming = false
         }
+        streamTask = task
+        await task.value
     }
 
     func stopStreaming() {
@@ -464,6 +567,25 @@ final class AppStore: ObservableObject {
     func clearError() {
         self.error = nil
     }
+
+    #if DEBUG
+    private static func debugConnectionFromEnvironment() -> ConnectionConfig? {
+        let env = ProcessInfo.processInfo.environment
+        guard let apiKey = env["API_SERVER_KEY"], !apiKey.isEmpty else { return nil }
+
+        let baseURL: String
+        if let explicitURL = env["HERMES_BASE_URL"], !explicitURL.isEmpty {
+            baseURL = explicitURL
+        } else {
+            let host = env["API_SERVER_HOST"].flatMap { $0.isEmpty ? nil : $0 } ?? "100.81.23.33"
+            let port = env["API_SERVER_PORT"].flatMap { $0.isEmpty ? nil : $0 } ?? "\(AppConfig.defaultPort)"
+            let scheme = env["API_SERVER_SCHEME"].flatMap { $0.isEmpty ? nil : $0 } ?? "http"
+            baseURL = "\(scheme)://\(host):\(port)"
+        }
+
+        return ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: env["HERMES_LABEL"] ?? "Hermes Debug")
+    }
+    #endif
 
     // MARK: - Background/Foreground Persistence
 

@@ -99,8 +99,11 @@ final class VoiceConversationManager: ObservableObject {
         if voicePitch == 0 { voicePitch = 1.0 }
         voiceIdentifier = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
 
-        // Auto-select local mode if available, otherwise remote
-        if localLLM.isAvailable {
+        // Default to local mode only if the on-device LLM is available AND
+        // there's no Hermes server connection. When connected, always prefer
+        // remote (Hermes) so the voice conversation has the same session
+        // context and memory as the typed chat.
+        if localLLM.isAvailable && !isHermesConnected {
             conversationMode = .local
         } else {
             conversationMode = .remote
@@ -113,6 +116,21 @@ final class VoiceConversationManager: ObservableObject {
             name: AVAudioSession.interruptionNotification,
             object: nil
         )
+    }
+
+    /// Whether a Hermes server is connected. Set by ChatView / AppStore.
+    /// When true, voice mode should default to remote so the conversation
+    /// shares context with the typed chat.
+    var isHermesConnected: Bool = true
+
+    /// Re-evaluate the default mode based on current connection state.
+    /// Call when the Hermes connection state changes.
+    func refreshDefaultMode() {
+        if localLLM.isAvailable && !isHermesConnected {
+            conversationMode = .local
+        } else {
+            conversationMode = .remote
+        }
     }
 
     @objc private func handleAudioSessionInterruption(_ notification: Notification) {
@@ -137,7 +155,7 @@ final class VoiceConversationManager: ObservableObject {
     func requestAuthorization() async {
         // Microphone
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            AVAudioSession.sharedInstance().requestRecordPermission { _ in
+            AVAudioApplication.requestRecordPermission { _ in
                 continuation.resume()
             }
         }
@@ -149,7 +167,7 @@ final class VoiceConversationManager: ObservableObject {
             }
         }
 
-        let micGranted = AVAudioSession.sharedInstance().recordPermission == .granted
+        let micGranted = AVAudioApplication.shared.recordPermission == .granted
         let speechGranted = SFSpeechRecognizer.authorizationStatus() == .authorized
         hasPermission = micGranted && speechGranted
     }
@@ -190,6 +208,18 @@ final class VoiceConversationManager: ObservableObject {
         isFinalizing = false
         onTranscriptionComplete = nil
         onLocalResponse = nil
+    }
+
+    /// Finish a remote Hermes turn after the caller has sent the transcription
+    /// and reconciled the session messages.
+    func completeRemoteTurn(response: String?) {
+        isThinking = false
+        let cleanResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if cleanResponse.isEmpty {
+            isFinalizing = false
+            return
+        }
+        speakResponse(cleanResponse)
     }
 
     // MARK: - Listening
@@ -244,7 +274,7 @@ final class VoiceConversationManager: ObservableObject {
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
 
-            if let error = error {
+            if error != nil {
                 // Don't auto-restart on error -- this was causing infinite loops
                 // and crashes. Just stop listening and let the user tap to resume.
                 self.stopListening()
@@ -274,10 +304,12 @@ final class VoiceConversationManager: ObservableObject {
             guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
             recognitionRequest.append(buffer)
 
-            // Calculate RMS audio level for visualizer
-            buffer.frameLength > 0 ? Task { @MainActor [weak self] in
-                self?.updateAudioLevel(from: buffer)
-            } : nil
+            // Calculate RMS audio level for visualizer.
+            if buffer.frameLength > 0 {
+                Task { @MainActor [weak self] in
+                    self?.updateAudioLevel(from: buffer)
+                }
+            }
         }
 
         do {
