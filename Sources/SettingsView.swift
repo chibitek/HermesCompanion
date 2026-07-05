@@ -163,12 +163,8 @@ struct SettingsView: View {
             .pickerStyle(.menu)
             .onChange(of: selectedProvider) { _, newValue in
                 store.preferredProvider = newValue
-                // If the current model doesn't belong to this provider, clear it.
-                if let m = modelForSelection(selectedModel),
-                   let owner = m.ownedBy,
-                   owner != newValue {
-                    selectedModel = ""
-                    store.preferredModel = ""
+                Task {
+                    await loadModels(forProvider: newValue, preferExistingSelection: false)
                 }
             }
         } header: {
@@ -182,8 +178,7 @@ struct SettingsView: View {
 
     /// Models filtered to the selected provider, or all if no provider is set.
     private var modelsForSelectedProvider: [ModelInfo] {
-        if selectedProvider.isEmpty { return availableModels }
-        return availableModels.filter { ($0.ownedBy ?? "") == selectedProvider }
+        models(for: selectedProvider)
     }
 
     private var modelSection: some View {
@@ -218,6 +213,10 @@ struct SettingsView: View {
             }
         } header: {
             Text("Model")
+        } footer: {
+            if !selectedProvider.isEmpty {
+                Text("Models refresh from the connected Hermes server whenever you choose a provider.")
+            }
         }
     }
 
@@ -383,28 +382,20 @@ struct SettingsView: View {
 
     // MARK: - Model Loading
 
-    private func loadModels() async {
+    private func loadModels(forProvider provider: String? = nil, preferExistingSelection: Bool = true) async {
         guard let client = store.apiClient else { return }
+        let targetProvider = provider ?? selectedProvider
         isLoadingModels = true
         defer { isLoadingModels = false }
 
         do {
             availableModels = try await client.getModels()
             addCurrentModelIfNeeded()
-            // After models load, if our selected model isn't in the new list,
-            // try to fall back to the server's default.
-            if !availableModels.contains(where: { $0.id == selectedModel }) {
-                let effectiveModel = store.effectiveCurrentModel
-                if !effectiveModel.isEmpty,
-                   availableModels.contains(where: { $0.id == effectiveModel }) {
-                    selectedModel = effectiveModel
-                } else if let first = modelsForSelectedProvider.first {
-                    selectedModel = first.id
-                }
-            }
+            selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
         } catch {
             availableModels = []
             addCurrentModelIfNeeded()
+            selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
             // Silently fail — models list is optional
         }
     }
@@ -414,22 +405,20 @@ struct SettingsView: View {
     private func primePickers() {
         selectedServerURL = store.connectionConfig?.baseURL ?? ""
 
-        if let provider = store.capabilities?.currentProvider, !provider.isEmpty {
-            selectedProvider = provider
-        } else if !store.preferredProvider.isEmpty {
+        if !store.preferredProvider.isEmpty {
             selectedProvider = store.preferredProvider
+        } else if let provider = store.capabilities?.currentProvider, !provider.isEmpty {
+            selectedProvider = provider
         } else if let owner = modelForSelection(store.preferredModel)?.ownedBy {
             selectedProvider = owner
         } else if let owner = modelForSelection(store.effectiveCurrentModel)?.ownedBy {
             selectedProvider = owner
         }
 
-        if availableModels.contains(where: { $0.id == store.effectiveCurrentModel }) {
-            selectedModel = store.effectiveCurrentModel
-        } else if !store.preferredModel.isEmpty && availableModels.contains(where: { $0.id == store.preferredModel }) {
+        if !store.preferredModel.isEmpty && models(for: selectedProvider).contains(where: { $0.id == store.preferredModel }) {
             selectedModel = store.preferredModel
-        } else if let first = modelsForSelectedProvider.first {
-            selectedModel = first.id
+        } else {
+            selectCurrentModel(forProvider: selectedProvider, preferExistingSelection: true)
         }
 
         selectedThinking = store.preferredThinking
@@ -459,6 +448,49 @@ struct SettingsView: View {
 
     private func modelForSelection(_ id: String) -> ModelInfo? {
         availableModels.first(where: { $0.id == id })
+    }
+
+    private func models(for provider: String) -> [ModelInfo] {
+        if provider.isEmpty { return availableModels }
+        return availableModels.filter { model in
+            if let owner = model.ownedBy, owner == provider {
+                return true
+            }
+            return providerFromModelID(model.id) == provider
+        }
+    }
+
+    private func selectCurrentModel(forProvider provider: String, preferExistingSelection: Bool) {
+        let providerModels = models(for: provider)
+
+        if preferExistingSelection,
+           !selectedModel.isEmpty,
+           providerModels.contains(where: { $0.id == selectedModel }) {
+            store.preferredModel = selectedModel
+            return
+        }
+
+        if !store.preferredModel.isEmpty,
+           providerModels.contains(where: { $0.id == store.preferredModel }) {
+            selectedModel = store.preferredModel
+            return
+        }
+
+        let serverModel = store.capabilities?.currentModel ?? ""
+        if !serverModel.isEmpty,
+           providerModels.contains(where: { $0.id == serverModel }) {
+            selectedModel = serverModel
+            store.preferredModel = serverModel
+            return
+        }
+
+        if let first = providerModels.first {
+            selectedModel = first.id
+            store.preferredModel = first.id
+        } else {
+            selectedModel = ""
+            store.preferredModel = ""
+        }
     }
 
     private func addCurrentModelIfNeeded() {
