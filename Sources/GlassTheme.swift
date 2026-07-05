@@ -617,17 +617,21 @@ struct GlassInputBar: View {
                 // 2-way voice conversation button (dark/black background)
                 if !voiceTranscriber.isRecording {
                     Button {
-                        onOpenVoicePage?()
+                        if voiceConversation.isConversing {
+                            voiceConversation.stopConversation()
+                        } else {
+                            startVoiceConversation()
+                        }
                     } label: {
-                        Image(systemName: "waveform")
+                        Image(systemName: voiceConversation.isConversing ? "stop.fill" : "waveform")
                             .font(.body)
                             .foregroundStyle(.white)
                             .frame(width: 32, height: 32)
-                            .background(Color.primary)
+                            .background(voiceConversation.isConversing ? theme.danger : Color.primary)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open voice conversation page")
+                    .accessibilityLabel("Two-way voice conversation")
                 }
 
                 // Send / Stop button

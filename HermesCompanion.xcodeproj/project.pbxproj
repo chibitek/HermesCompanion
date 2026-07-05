@@ -132,8 +132,6 @@
 			dependencies = (
 			);
 			name = HermesCompanion;
-			packageProductDependencies = (
-			);
 			productName = HermesCompanion;
 			productReference = A64856389980D1D73A2DC3C3 /* HermesCompanion.app */;
 			productType = "com.apple.product-type.application";
