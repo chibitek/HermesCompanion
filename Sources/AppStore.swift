@@ -487,14 +487,14 @@ final class AppStore: ObservableObject {
             }
         }
 
-        // Capture current assistant message count and latest timestamp before
-        // the send. The empty-stream guard below uses this to tell a successful
-        // turn (server has a new assistant row) from a connection that closed
-        // early (no new row). Local ChatDisplayMessage.id values are local
-        // UUIDs that don't match the server's integer id, so we can't diff by
-        // id — count + timestamp is a robust proxy.
+        // Capture the assistant message count before the send. The empty-stream
+        // guard below uses this to tell a successful turn (server has a new
+        // assistant row after reload) from a connection that closed early (no
+        // new row). Local ChatDisplayMessage.id values are local UUIDs that
+        // don't match the server's integer id, so we diff by count, not id.
+        // (Count is captured before appending the user message, which is not
+        // an assistant message and so does not affect the assistant count.)
         let existingAssistantCount = messages.filter(\.isAssistant).count
-        let latestKnownTimestamp = messages.map(\.timestamp).max() ?? .distantPast
 
         // Build display message (user's text + any images)
         let userMsg = ChatDisplayMessage(
@@ -582,19 +582,18 @@ final class AppStore: ObservableObject {
 
                 // Empty-stream guard: if no terminal completion event arrived
                 // (assistant.completed / run.completed) AND the reloaded server
-                // history shows no new assistant message for this turn, the
+                // history has no new assistant message for this turn, the
                 // connection almost certainly closed early (transient gateway
                 // error or network drop). Surface an error. Placed AFTER the
                 // getMessages reload so it never fires on a legitimate empty
                 // reply or a tool-heavy turn whose content landed in history.
                 // User-initiated cancellation returns earlier via Task.isCancelled,
-                // so it never reaches here.
+                // so it never reaches here. Count-only: local UUIDs don't match
+                // server integer ids, and a timestamp diff would always be true
+                // because the reloaded user message carries a fresh timestamp.
                 if !receivedCompletion {
                     let newAssistantCount = self.messages.filter(\.isAssistant).count
-                    let newLatestTimestamp = self.messages.map(\.timestamp).max() ?? .distantPast
-                    let hasNewAssistant = newAssistantCount > existingAssistantCount ||
-                        newLatestTimestamp > latestKnownTimestamp
-                    if !hasNewAssistant {
+                    if newAssistantCount <= existingAssistantCount {
                         self.error = AppError(message: "No response received — the server may have closed the connection early. Please try again.")
                     }
                 }
