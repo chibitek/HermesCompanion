@@ -104,19 +104,18 @@ struct AppearanceSettingsView: View {
                             .font(.headline)
 
                         Picker("Size", selection: $appearance.fontScale) {
+                            Text("XS").tag(0.7)
                             Text("S").tag(0.85)
                             Text("M").tag(1.0)
-                            Text("L").tag(1.15)
-                            Text("XL").tag(1.3)
                         }
                         .pickerStyle(.segmented)
 
                         HStack {
                             Text("A")
                                 .font(.system(size: 11))
-                            Slider(value: $appearance.fontScale, in: 0.7...1.6, step: 0.05)
+                            Slider(value: $appearance.fontScale, in: 0.7...1.0, step: 0.05)
                             Text("A")
-                                .font(.system(size: 20))
+                                .font(.system(size: 16))
                         }
 
                         VStack(alignment: .leading, spacing: 4) {
@@ -124,7 +123,7 @@ struct AppearanceSettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Text("The quick brown fox jumps over the lazy dog. Hermes Companion uses your preferred text size for all messages and UI elements.")
-                                .font(.system(size: 15 * appearance.fontScale))
+                                .font(.system(size: 14 * appearance.fontScale))
                                 .foregroundStyle(.secondary)
                         }
                         .padding(appearance.activeTheme.spacingM)
@@ -144,12 +143,12 @@ struct AppearanceSettingsView: View {
                             .font(.headline)
 
                         HStack {
-                            Text("Auto (System)")
+                            Text("Use fixed message size")
                                 .font(.subheadline)
                             Spacer()
                             Toggle("", isOn: Binding(
                                 get: { appearance.messageFontSize > 0 },
-                                set: { appearance.messageFontSize = $0 ? 16 : 0 }
+                                set: { appearance.messageFontSize = $0 ? 11 : 0 }
                             ))
                         }
 
@@ -158,7 +157,7 @@ struct AppearanceSettingsView: View {
                                 Text("\(Int(appearance.messageFontSize))pt")
                                     .font(.subheadline)
                                     .monospacedDigit()
-                                Slider(value: $appearance.messageFontSize, in: 12...24, step: 1)
+                                Slider(value: $appearance.messageFontSize, in: 10...18, step: 1)
                             }
 
                             Text("Overrides Dynamic Type with a fixed size for message bubbles only.")
@@ -186,6 +185,7 @@ struct AppearanceSettingsView: View {
         }
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
+        .dynamicTypeSize(.xSmall ... .large)
     }
 
     // MARK: - Helpers
@@ -210,49 +210,30 @@ struct AppearanceSettingsView: View {
         return Button {
             appearance.activeThemeId = theme.id
         } label: {
-            HStack(spacing: appearance.activeTheme.spacingM) {
-                // Color preview swatches
-                HStack(spacing: -8) {
-                    Circle()
-                        .fill(theme.accent)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            Circle()
-                                .stroke(.white.opacity(0.2), lineWidth: 2)
-                        )
-                    Circle()
-                        .fill(theme.accentSecondary)
-                        .frame(width: 28, height: 28)
-                        .overlay(
-                            Circle()
-                                .stroke(.white.opacity(0.2), lineWidth: 2)
-                        )
-                    if !theme.usesGlass {
-                        Circle()
-                            .fill(Color.black)
-                            .frame(width: 28, height: 28)
-                            .overlay(
-                                Circle()
-                                    .stroke(.white.opacity(0.2), lineWidth: 2)
-                            )
+            VStack(alignment: .leading, spacing: appearance.activeTheme.spacingS) {
+                HStack(alignment: .center, spacing: appearance.activeTheme.spacingM) {
+                    themeSwatches(theme)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(theme.displayName)
+                            .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                            .lineLimit(1)
+                        Text(theme.subtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.displayName)
-                        .font(.body)
-                        .fontWeight(isSelected ? .semibold : .regular)
-                    Text(theme.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(appearance.accent)
-                        .font(.title3)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(appearance.accent)
+                            .font(.title3)
+                            .frame(width: 28, height: 28)
+                    } else {
+                        Color.clear.frame(width: 28, height: 28)
+                    }
                 }
             }
             .padding(appearance.activeTheme.spacingM)
@@ -269,6 +250,26 @@ struct AppearanceSettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: appearance.activeTheme.radiusL, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    private func themeSwatches(_ theme: any HermesTheme) -> some View {
+        HStack(spacing: -8) {
+            Circle()
+                .fill(theme.accent)
+                .frame(width: 28, height: 28)
+                .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
+            Circle()
+                .fill(theme.accentSecondary)
+                .frame(width: 28, height: 28)
+                .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
+            if !theme.usesGlass {
+                Circle()
+                    .fill(Color.black)
+                    .frame(width: 28, height: 28)
+                    .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
+            }
+        }
+        .frame(width: theme.usesGlass ? 48 : 68, alignment: .leading)
     }
 
     private func accentSwatch(_ name: String, color: Color) -> some View {
