@@ -300,13 +300,20 @@ struct ChatView: View {
 
     private func handleVoiceTranscription(_ transcription: String) {
         let priorAssistantIDs = Set(store.messages.filter(\.isAssistant).map(\.id))
+        let priorErrorID = store.error?.id
         Task {
             voiceConversation.isThinking = true
             await store.sendMessage(transcription)
             let response = store.messages.last {
                 $0.isAssistant && !priorAssistantIDs.contains($0.id)
             }?.content
-            voiceConversation.completeRemoteTurn(response: response)
+            if let response, !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                voiceConversation.completeRemoteTurn(response: response)
+            } else if let error = store.error, error.id != priorErrorID {
+                voiceConversation.failRemoteTurn(message: error.message)
+            } else {
+                voiceConversation.failRemoteTurn(message: "Hermes did not return a voice response.")
+            }
         }
     }
 
