@@ -587,7 +587,8 @@ struct GlassInputBar: View {
                     .onSubmit(onSend)
 
                 // Voice mic button: tap = voice-to-text, long-press = 2-way conversation
-                if !voiceTranscriber.isRecording && !voiceConversation.isConversing && text.isEmpty && attachments.isEmpty {
+                // Always visible so user can access voice features
+                if !voiceTranscriber.isRecording && !voiceConversation.isConversing {
                     micButton
                 }
 
