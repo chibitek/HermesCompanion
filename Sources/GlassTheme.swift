@@ -102,6 +102,8 @@ struct GlassBubble: View {
                         .padding(.vertical, 2)
                 }
             }
+            .accessibilityLabel(isUser ? "Your message: \(content)" : "Hermes response: \(content)")
+            .accessibilityHint(isUser ? "" : "Assistant reply")
             .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : theme.bubbleRadius, style: .continuous))
             .if(isUser) { view in
                 if theme.usesGlass {
@@ -170,6 +172,7 @@ struct GlassBubble: View {
 struct BlinkingCursor: View {
     @State private var visible = true
     @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -178,8 +181,8 @@ struct BlinkingCursor: View {
             .font(.caption2)
             .foregroundStyle(theme.cursorColor)
             .opacity(visible ? 1 : 0)
-            .animation(.easeInOut(duration: 0.5).repeatForever(), value: visible)
-            .onAppear { visible.toggle() }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.5).repeatForever(), value: visible)
+            .onAppear { if !reduceMotion { visible.toggle() } }
     }
 }
 
@@ -239,6 +242,7 @@ struct GlassToolChip: View {
 struct GlassThinkingIndicator: View {
     @State private var animate = false
     @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -248,10 +252,10 @@ struct GlassThinkingIndicator: View {
                 Circle()
                     .fill(theme.accent.opacity(0.6))
                     .frame(width: 7, height: 7)
-                    .scaleEffect(animate ? 1.0 : 0.4)
-                    .opacity(animate ? 1.0 : 0.3)
+                    .scaleEffect(reduceMotion ? 0.8 : (animate ? 1.0 : 0.4))
+                    .opacity(reduceMotion ? 0.6 : (animate ? 1.0 : 0.3))
                     .animation(
-                        .easeInOut(duration: 0.7)
+                        reduceMotion ? nil : .easeInOut(duration: 0.7)
                             .repeatForever()
                             .delay(Double(i) * 0.25),
                         value: animate
@@ -267,7 +271,7 @@ struct GlassThinkingIndicator: View {
             view.background(Color(.tertiarySystemFill))
         }
         .clipShape(RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous))
-        .onAppear { animate = true }
+        .onAppear { if !reduceMotion { animate = true } }
     }
 }
 
