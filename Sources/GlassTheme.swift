@@ -406,6 +406,7 @@ struct GlassInputBar: View {
     var voiceConversation: VoiceConversationManager
     @State private var showAttachmentMenu = false
     @State private var voiceMode: VoiceInputMode = .voiceToText
+    @State private var showVoiceHint = true
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -574,47 +575,16 @@ struct GlassInputBar: View {
                     Button("Cancel", role: .cancel) {}
                 }
 
-                // Text input
-                TextField("Message", text: $text, axis: .vertical)
+                // Text input - single line so Return key sends
+                TextField("Message", text: $text)
                     .textFieldStyle(.plain)
-                    .lineLimit(1...6)
                     .focused($focused)
                     .submitLabel(.send)
                     .onSubmit(onSend)
 
-                // Voice mode toggle + mic button
+                // Voice mic button: tap = voice-to-text, long-press = 2-way conversation
                 if !voiceTranscriber.isRecording && !voiceConversation.isConversing && text.isEmpty && attachments.isEmpty {
-                    // Mic button with context menu for mode toggle
-                    Button {
-                        if voiceMode == .voiceToText {
-                            voiceTranscriber.startTranscription()
-                        } else {
-                            // Start live conversation
-                            voiceConversation.startConversation(
-                                onTranscription: { transcription in
-                                    onVoiceConversationTranscription?(transcription)
-                                },
-                                onLocalResponse: { _ in
-                                    // Response is already spoken by the VoiceConversationManager
-                                    // This callback is for any additional handling
-                                }
-                            )
-                        }
-                    } label: {
-                        Image(systemName: voiceMode == .liveConversation ? "waveform.badge.mic" : "mic.fill")
-                            .font(.title3)
-                            .foregroundStyle(voiceMode == .liveConversation ? theme.accent : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        ForEach(VoiceInputMode.allCases, id: \.self) { mode in
-                            Button {
-                                voiceMode = mode
-                            } label: {
-                                Label(mode.rawValue, systemImage: mode.icon)
-                            }
-                        }
-                    }
+                    micButton
                 }
 
                 // Send / Stop button
@@ -671,6 +641,72 @@ struct GlassInputBar: View {
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty
+    }
+
+    // MARK: - Mic Button (tap = voice-to-text, long-press = 2-way conversation)
+
+    private var micButton: some View {
+        VStack(spacing: 2) {
+            Button {
+                // Tap = voice-to-text (dictation)
+                voiceTranscriber.startTranscription()
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+                ControlGroup {
+                    Button {
+                        voiceTranscriber.startTranscription()
+                    } label: {
+                        Label("Voice-to-Text", systemImage: "text.mic.fill")
+                    }
+                    Button {
+                        startVoiceConversation()
+                    } label: {
+                        Label("2-Way Voice", systemImage: "waveform.badge.mic")
+                    }
+                }
+                .controlGroupStyle(.compactMenu)
+            }
+            .accessibilityLabel("Microphone")
+            .accessibilityHint("Tap for voice-to-text. Long-press for 2-way voice conversation.")
+            .onLongPressGesture(minimumDuration: 0.5) {
+                // Long-press = start 2-way voice conversation
+                startVoiceConversation()
+            }
+        }
+        .overlay(alignment: .top) {
+            // Hint tooltip that appears briefly
+            if showVoiceHint {
+                Text("Hold for 2-way voice")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .offset(y: -28)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .task {
+                        try? await Task.sleep(for: .seconds(4))
+                        withAnimation { showVoiceHint = false }
+                    }
+            }
+        }
+    }
+
+    private func startVoiceConversation() {
+        voiceConversation.startConversation(
+            onTranscription: { transcription in
+                onVoiceConversationTranscription?(transcription)
+            },
+            onLocalResponse: { _ in
+                // Response is already spoken by the VoiceConversationManager
+            }
+        )
     }
 
     private func attachmentThumbnail(_ index: Int) -> some View {
