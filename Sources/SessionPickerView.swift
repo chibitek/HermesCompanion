@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// Session picker with Liquid Glass styling.
+/// Session picker with clean, Apple-like styling.
 struct SessionPickerView: View {
     @ObservedObject var store: AppStore
     @EnvironmentObject var appearance: AppearanceSettings
     @State private var isCreating = false
     @State private var newSessionTitle = ""
+    @State private var renamingSession: HermesSession?
+    @State private var renameText = ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -22,32 +24,37 @@ struct SessionPickerView: View {
                             description: Text("Create a new session to start chatting.")
                         )
                     } else {
-                        ScrollView {
-                            LazyVStack(spacing: GlassTheme.spacingS) {
-                                ForEach(store.sessions) { session in
-                                    Button {
-                                        Task {
-                                            await store.selectSession(session)
-                                            dismiss()
-                                        }
-                                    } label: {
-                                        GlassSessionRow(
-                                            session: session,
-                                            isActive: store.activeSession?.id == session.id
-                                        )
+                        List {
+                            ForEach(store.sessions) { session in
+                                Button {
+                                    Task {
+                                        await store.selectSession(session)
+                                        dismiss()
                                     }
-                                    .buttonStyle(.plain)
-                                    .contextMenu {
-                                        Button(role: .destructive) {
-                                            Task { await store.deleteSession(session) }
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
+                                } label: {
+                                    SessionRow(
+                                        session: session,
+                                        isActive: store.activeSession?.id == session.id
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button {
+                                        renamingSession = session
+                                        renameText = session.title ?? ""
+                                    } label: {
+                                        Label("Rename", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        Task { await store.deleteSession(session) }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
                                     }
                                 }
                             }
-                            .padding(GlassTheme.spacingL)
                         }
+                        .listStyle(.insetGrouped)
+                        .scrollContentBackground(.hidden)
                         .refreshable {
                             await store.refreshSessions()
                         }
@@ -81,17 +88,32 @@ struct SessionPickerView: View {
                     newSessionTitle = ""
                 }
             }
+            .alert("Rename Session", isPresented: Binding(
+                get: { renamingSession != nil },
+                set: { if !$0 { renamingSession = nil } }
+            )) {
+                TextField("Session Title", text: $renameText)
+                Button("Rename") {
+                    if let session = renamingSession, !renameText.isEmpty {
+                        Task { await store.renameSession(session, newTitle: renameText) }
+                    }
+                    renamingSession = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    renamingSession = nil
+                }
+            }
         }
     }
 }
 
-struct GlassSessionRow: View {
+struct SessionRow: View {
     let session: HermesSession
     let isActive: Bool
 
     var body: some View {
-        HStack(spacing: GlassTheme.spacingM) {
-            VStack(alignment: .leading, spacing: GlassTheme.spacingXS) {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(session.title ?? "Untitled")
                     .font(.body)
                     .fontWeight(isActive ? .semibold : .regular)
@@ -113,11 +135,9 @@ struct GlassSessionRow: View {
 
             if isActive {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(GlassTheme.accent)
+                    .foregroundStyle(.tint)
             }
         }
-        .padding(GlassTheme.spacingM)
-        .glassEffect(isActive ? .regular.tint(GlassTheme.accent.opacity(0.12)) : .regular)
-        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusL, style: .continuous))
+        .padding(.vertical, 4)
     }
 }

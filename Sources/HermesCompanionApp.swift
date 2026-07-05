@@ -12,6 +12,15 @@ struct HermesCompanionApp: App {
                 .environmentObject(appearance)
                 .preferredColorScheme(effectiveColorScheme)
                 .tint(appearance.accent)
+                .task {
+                    // Auto-connect if a saved config exists in Keychain.
+                    // AppStore.init already loads it into connectionConfig;
+                    // here we verify the server is reachable and populate
+                    // capabilities/sessions so the user goes straight to chat.
+                    if store.connectionConfig != nil && !store.isConnected {
+                        await store.autoConnect()
+                    }
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .active:
@@ -50,7 +59,19 @@ struct RootView: View {
     @EnvironmentObject var appearance: AppearanceSettings
 
     var body: some View {
-        if store.isConnected {
+        if store.isLoadingConnection {
+            // Auto-login in progress — show a clean loading screen
+            VStack(spacing: 16) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                Text("Connecting to Hermes...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.systemBackground))
+            .ignoresSafeArea()
+        } else if store.isConnected {
             ChatView(store: store)
                 .task {
                     // Delay to avoid publishing changes during view update
