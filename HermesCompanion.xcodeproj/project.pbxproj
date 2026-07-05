@@ -16,6 +16,7 @@
 		46B86EDE872B162DFABA640A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */; };
 		5DC81AF16C507C454840EB47 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */; };
 		61377F4AC5E3A85BA6402496 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A7511EED5D149EE15F396D2F /* Assets.xcassets */; };
+		6231ACD41D2D13F127B531BB /* TerminalThemes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8088994E01B609381D1541BB /* TerminalThemes.swift */; };
 		65563F266A0294EAAF0008E5 /* GlassTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53907E499DA24C590A36DA7A /* GlassTheme.swift */; };
 		67280C486BF59EDE78845066 /* VoiceConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */; };
 		6B6F48425CBD5DB39DFA0D17 /* LocalLLMManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4647E786299A5ADBD2D24D /* LocalLLMManager.swift */; };
@@ -42,6 +43,7 @@
 		6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConversationManager.swift; sourceTree = "<group>"; };
 		66A7E7C23745B5ED58953167 /* HermesThemes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesThemes.swift; sourceTree = "<group>"; };
 		73744DD7755B96A455966F0B /* AppearanceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettings.swift; sourceTree = "<group>"; };
+		8088994E01B609381D1541BB /* TerminalThemes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalThemes.swift; sourceTree = "<group>"; };
 		90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		93E26F58E842815866FD9986 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		9E4647E786299A5ADBD2D24D /* LocalLLMManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLLMManager.swift; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				66A7E7C23745B5ED58953167 /* HermesThemes.swift */,
+				8088994E01B609381D1541BB /* TerminalThemes.swift */,
 			);
 			path = Themes;
 			sourceTree = "<group>";
@@ -117,8 +120,6 @@
 			dependencies = (
 			);
 			name = HermesCompanion;
-			packageProductDependencies = (
-			);
 			productName = HermesCompanion;
 			productReference = A64856389980D1D73A2DC3C3 /* HermesCompanion.app */;
 			productType = "com.apple.product-type.application";
@@ -191,6 +192,7 @@
 				46B86EDE872B162DFABA640A /* SettingsView.swift in Sources */,
 				67280C486BF59EDE78845066 /* VoiceConversationManager.swift in Sources */,
 				5DC81AF16C507C454840EB47 /* VoiceTranscriber.swift in Sources */,
+				6231ACD41D2D13F127B531BB /* TerminalThemes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
