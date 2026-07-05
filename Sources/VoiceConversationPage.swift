@@ -83,6 +83,7 @@ struct VoiceConversationPage: View {
         .onAppear {
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
+            voiceConversation.conversationMode = .remote
             startVoiceConversationIfNeeded()
 
             // Don't auto-pick a session. Use the active session from ChatView
@@ -248,27 +249,6 @@ struct VoiceConversationPage: View {
 
     private var bottomControls: some View {
         VStack(spacing: 12) {
-            // Mode toggle
-            HStack(spacing: 8) {
-                ForEach(ConversationMode.allCases, id: \.self) { mode in
-                    Button {
-                        voiceConversation.conversationMode = mode
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: mode.icon)
-                            Text(mode.rawValue)
-                        }
-                        .font(.system(.caption, design: .monospaced).weight(.bold))
-                        .foregroundStyle(voiceConversation.conversationMode == mode ? preset.background : preset.primary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(voiceConversation.conversationMode == mode ? preset.primary : Color.clear)
-                        .overlay(Capsule().stroke(preset.primary.opacity(0.4), lineWidth: 1))
-                        .clipShape(Capsule())
-                    }
-                }
-            }
-
             // Mic button
             Button {
                 if voiceConversation.isConversing {
@@ -298,6 +278,7 @@ struct VoiceConversationPage: View {
 
     private func startVoiceConversationIfNeeded() {
         guard !voiceConversation.isConversing else { return }
+        voiceConversation.conversationMode = .remote
         voiceConversation.startConversation(
             onTranscription: { text in
                 // Forward to ChatView so it sends through the active Hermes
@@ -401,9 +382,9 @@ extension View {
 
 struct VoiceSettingsSheet: View {
     var preset: CyberpunkVoicePreset = .neon
-    @State private var speed: Double = 0.5
-    @State private var pitch: Double = 1.0
-    @State private var selectedVoiceId: String = ""
+    @AppStorage("voice_speed") private var speed: Double = 0.5
+    @AppStorage("voice_pitch") private var pitch: Double = 1.0
+    @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @Environment(\.dismiss) private var dismiss
 
@@ -431,11 +412,10 @@ struct VoiceSettingsSheet: View {
             }
         }
         .onAppear {
-            availableVoices = AVSpeechSynthesisVoice.speechVoices()
-                .filter { $0.quality == .enhanced }
-                .sorted { $0.name < $1.name }
+            availableVoices = VoiceDefaults.sortedVoices()
+                .filter { $0.quality == .enhanced || $0.quality == .premium }
             if selectedVoiceId.isEmpty {
-                selectedVoiceId = AVSpeechSynthesisVoice.speechVoices().first?.identifier ?? ""
+                selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
             }
         }
     }

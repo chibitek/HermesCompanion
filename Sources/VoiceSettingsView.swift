@@ -1,13 +1,82 @@
 import SwiftUI
 import AVFoundation
 
+enum VoiceDefaults {
+    static let voiceIdentifierKey = "voice_identifier"
+
+    static func bestAvailableVoice(
+        voices: [AVSpeechSynthesisVoice] = AVSpeechSynthesisVoice.speechVoices(),
+        locale: Locale = .current
+    ) -> AVSpeechSynthesisVoice? {
+        let languageCode = locale.language.languageCode?.identifier ?? "en"
+        let preferredLanguage = locale.identifier.replacingOccurrences(of: "_", with: "-")
+
+        return voices.sorted { lhs, rhs in
+            score(lhs, languageCode: languageCode, preferredLanguage: preferredLanguage) >
+                score(rhs, languageCode: languageCode, preferredLanguage: preferredLanguage)
+        }.first
+    }
+
+    static func ensureBestVoiceSelected() -> String {
+        let defaults = UserDefaults.standard
+        if let existing = defaults.string(forKey: voiceIdentifierKey),
+           !existing.isEmpty,
+           AVSpeechSynthesisVoice(identifier: existing) != nil {
+            return existing
+        }
+
+        let identifier = bestAvailableVoice()?.identifier ?? ""
+        if !identifier.isEmpty {
+            defaults.set(identifier, forKey: voiceIdentifierKey)
+        }
+        return identifier
+    }
+
+    static func sortedVoices(_ voices: [AVSpeechSynthesisVoice] = AVSpeechSynthesisVoice.speechVoices()) -> [AVSpeechSynthesisVoice] {
+        let languageCode = Locale.current.language.languageCode?.identifier ?? "en"
+        let preferredLanguage = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
+        return voices.sorted {
+            let lhs = score($0, languageCode: languageCode, preferredLanguage: preferredLanguage)
+            let rhs = score($1, languageCode: languageCode, preferredLanguage: preferredLanguage)
+            if lhs != rhs { return lhs > rhs }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    private static func score(_ voice: AVSpeechSynthesisVoice, languageCode: String, preferredLanguage: String) -> Int {
+        var score = 0
+
+        if voice.language == preferredLanguage { score += 250 }
+        if voice.language.hasPrefix(languageCode) { score += 200 }
+        if voice.language.hasPrefix("en") { score += 50 }
+
+        switch voice.quality {
+        case .premium:
+            score += 1_000
+        case .enhanced:
+            score += 700
+        default:
+            score += 100
+        }
+
+        let lowerName = voice.name.lowercased()
+        if lowerName.contains("siri") { score += 90 }
+        if lowerName.contains("samantha") { score += 70 }
+        if lowerName.contains("ava") { score += 65 }
+        if lowerName.contains("allison") { score += 55 }
+        if lowerName.contains("alex") { score += 45 }
+
+        return score
+    }
+}
+
 /// Voice settings page accessible from the main Settings.
 /// Lets the user pick a system TTS voice, adjust speed and pitch,
 /// and preview how it sounds.
 struct VoiceSettingsView: View {
     @AppStorage("voice_speed") private var speed: Double = 0.5
     @AppStorage("voice_pitch") private var pitch: Double = 1.0
-    @AppStorage("voice_identifier") private var selectedVoiceId: String = ""
+    @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
 
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @State private var filterQuality: Bool = true
@@ -18,6 +87,26 @@ struct VoiceSettingsView: View {
     var body: some View {
         Form {
             Section {
+                if let selectedVoice {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Current Voice")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(selectedVoice.name)
+                                .font(.subheadline)
+                        }
+                        Spacer()
+                        qualityBadge(selectedVoice.quality)
+                    }
+                }
+
+                Button {
+                    selectedVoiceId = VoiceDefaults.bestAvailableVoice(voices: availableVoices)?.identifier ?? selectedVoiceId
+                } label: {
+                    Label("Use Most Realistic Local Voice", systemImage: "sparkles")
+                }
+
                 Toggle("Prefer enhanced quality", isOn: $filterQuality)
                     .onChange(of: filterQuality) { _, _ in
                         refreshVoices()
@@ -85,13 +174,12 @@ struct VoiceSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             refreshVoices()
-            if selectedVoiceId.isEmpty {
-                let defaultVoice = availableVoices.first(where: {
-                    $0.quality == .enhanced && $0.language.hasPrefix("en")
-                }) ?? availableVoices.first
-                selectedVoiceId = defaultVoice?.identifier ?? ""
-            }
+            selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
         }
+    }
+
+    private var selectedVoice: AVSpeechSynthesisVoice? {
+        AVSpeechSynthesisVoice(identifier: selectedVoiceId)
     }
 
     private var filteredVoices: [AVSpeechSynthesisVoice] {
@@ -102,16 +190,7 @@ struct VoiceSettingsView: View {
     }
 
     private func refreshVoices() {
-        let langCode = Locale.current.language.languageCode?.identifier ?? "en"
-        availableVoices = AVSpeechSynthesisVoice.speechVoices().sorted { a, b in
-            let aEn = a.language.hasPrefix(langCode) ? 0 : 1
-            let bEn = b.language.hasPrefix(langCode) ? 0 : 1
-            if aEn != bEn { return aEn < bEn }
-            if a.quality != b.quality {
-                return a.quality.rawValue > b.quality.rawValue
-            }
-            return a.name < b.name
-        }
+        availableVoices = VoiceDefaults.sortedVoices()
     }
 
     private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
