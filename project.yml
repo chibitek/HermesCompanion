@@ -33,9 +33,10 @@ targets:
         NSCameraUsageDescription: "Camera is used to send photos to Hermes for analysis."
         NSSpeechRecognitionUsageDescription: "Speech recognition is used to transcribe your voice messages."
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UILaunchScreen: {}
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion

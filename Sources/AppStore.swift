@@ -49,15 +49,20 @@ final class AppStore: ObservableObject {
     }
 
     func connect(config: ConnectionConfig) async -> Bool {
-        self.apiClient = HermesAPIClient(config: config)
+        let client = HermesAPIClient(config: config)
+        self.apiClient = client
         do {
-            let health = try await apiClient!.checkHealth()
+            let health = try await client.checkHealth()
             guard health.status == "ok" else {
                 self.error = AppError(message: "Server returned status: \(health.status)")
                 return false
             }
-            // Save to keychain
-            try? KeychainManager.shared.save(config)
+            // Save to keychain -- propagate error if it fails
+            do {
+                try KeychainManager.shared.save(config)
+            } catch {
+                self.error = AppError(message: "Failed to save connection: \(error.localizedDescription)")
+            }
             self.connectionConfig = config
             // Load capabilities
             await refreshCapabilities()
@@ -233,6 +238,9 @@ final class AppStore: ObservableObject {
         toolEvents = []
         pendingApproval = nil
 
+        // Cancel any existing stream task before starting a new one
+        streamTask?.cancel()
+
         streamTask = Task { [weak self] in
             guard let self = self else { return }
             do {
@@ -394,8 +402,12 @@ final class AppStore: ObservableObject {
     /// server is still reachable and silently reconnects if the connection
     /// dropped while in the background. Preserves the active session and
     /// messages so the user doesn't lose context.
+    private var isReconnecting = false
+
     func reconnectIfNeeded() async {
-        guard connectionConfig != nil else { return }
+        guard connectionConfig != nil, !isReconnecting else { return }
+        isReconnecting = true
+        defer { isReconnecting = false }
 
         // Quick health check — if it passes, we're still connected.
         do {
