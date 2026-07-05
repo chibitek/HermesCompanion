@@ -38,10 +38,26 @@ struct VoiceConversationPage: View {
     @State private var showSettings = false
     @State private var micPulse = false
 
+    // Rain intensity changes with conversation state
+    private var rainIntensity: Double {
+        if voiceConversation.isListening { return 1.0 }      // Fast rain
+        if voiceConversation.isSpeaking { return 0.7 }       // Medium, glowing
+        if voiceConversation.isThinking { return 0.3 }       // Slow
+        return 0.5                                            // Idle
+    }
+
     var body: some View {
         ZStack {
-            preset.background.ignoresSafeArea()
-            ScanlineOverlay(lineColor: preset.primary)
+            // Matrix digital rain background
+            MatrixRainView(
+                color: preset.primary,
+                secondaryColor: preset.secondary,
+                intensity: rainIntensity
+            )
+            .ignoresSafeArea()
+
+            // Subtle scanlines on top of rain
+            ScanlineOverlay(lineColor: preset.primary, lineOpacity: 0.05)
 
             VStack(spacing: 0) {
                 topBar
@@ -85,7 +101,7 @@ struct VoiceConversationPage: View {
 
             Spacer()
 
-            Text("HERMES VOICE")
+            Text("MATRIX MODE")
                 .font(.system(.headline, design: .monospaced).weight(.bold))
                 .foregroundStyle(preset.primary)
                 .shadow(color: preset.primary.opacity(0.6), radius: 4)
@@ -142,12 +158,14 @@ struct VoiceConversationPage: View {
                     )
                     .frame(width: 90, height: 90)
 
-                // Audio level bars inside the orb
+                // Audio level bars inside the orb -- react to real mic input
                 AudioVisualizerBar(
                     color: preset.primary,
+                    secondaryColor: preset.secondary,
+                    audioLevel: voiceConversation.audioLevel,
                     isActive: voiceConversation.isListening || voiceConversation.isSpeaking
                 )
-                .frame(width: 60, height: 40)
+                .frame(width: 80, height: 50)
             }
 
             // Status label below the orb
@@ -259,31 +277,45 @@ struct VoiceConversationPage: View {
 struct AudioVisualizerBar: View {
     let color: Color
     var secondaryColor: Color = .gray
+    var audioLevel: Float = 0
     let isActive: Bool
-    @State private var levels: [CGFloat] = Array(repeating: 0.3, count: 24)
+    private let barCount = 24
 
     var body: some View {
-        GeometryReader { geo in
-            HStack(spacing: 3) {
-                ForEach(0..<levels.count, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(i % 3 == 2 ? secondaryColor : color)
-                        .frame(width: max(3, geo.size.width / CGFloat(levels.count) - 3))
-                        .frame(height: max(4, geo.size.height * levels[i]))
-                        .animation(.easeInOut(duration: 0.1), value: levels[i])
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        }
-        .onAppear {
-            if isActive { startAnimation() }
-        }
-    }
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let barWidth = max(3, size.width / CGFloat(barCount) - 3)
+                let spacing: CGFloat = 3
+                let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * spacing
+                let startX = (size.width - totalWidth) / 2
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let level = CGFloat(audioLevel)
 
-    private func startAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            for i in 0..<levels.count {
-                levels[i] = CGFloat.random(in: 0.1...1.0)
+                for i in 0..<barCount {
+                    let center = Double(barCount) / 2.0
+                    let dist = abs(Double(i) - center) / center
+                    let base = 1.0 - dist * 0.35
+
+                    let h: CGFloat
+                    if isActive {
+                        let wave = sin(t * 4 + Double(i) * 0.6) * 0.12
+                        let noise = Double.random(in: -0.08...0.08)
+                        h = CGFloat(max(0.05, min(1.0, base + Double(level) * 0.9 + wave + noise)))
+                    } else {
+                        let breath = sin(t * 1.2 + Double(i) * 0.4) * 0.04 + 0.06
+                        h = CGFloat(breath)
+                    }
+
+                    let x = startX + CGFloat(i) * (barWidth + spacing)
+                    let barHeight = max(3, size.height * h)
+                    let y = (size.height - barHeight) / 2
+
+                    let barColor = i % 3 == 2 ? secondaryColor : color
+                    context.fill(
+                        Path(CGRect(x: x, y: y, width: barWidth, height: barHeight)),
+                        with: .color(barColor)
+                    )
+                }
             }
         }
     }
@@ -444,5 +476,66 @@ struct VoiceSettingsSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Matrix Digital Rain
+
+struct MatrixRainView: View {
+    let color: Color
+    let secondaryColor: Color
+    let intensity: Double  // 0.0 to 1.0, controls speed and brightness
+
+    private let columns = 30
+    private let charset: [Character] = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*(){}[]|:;<>,.?/~`")
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let columnWidth = size.width / CGFloat(columns)
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let speed = 50.0 + intensity * 150.0  // pixels per second
+                let charSize: CGFloat = 14
+
+                for col in 0..<columns {
+                    let xPos = CGFloat(col) * columnWidth
+                    let seed = Double(col) * 7.3
+                    let offset = (t * speed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
+                    let trailLength = Int(8 + Int(intensity * 12))
+                    let start = Int(offset / charSize)
+
+                    for i in 0..<trailLength {
+                        let y = CGFloat(start - i) * charSize
+                        guard y >= -charSize && y <= size.height else { continue }
+
+                        // Random character that changes over time
+                        let charIdx = Int((t * 3 + seed + Double(i) * 1.7)) % charset.count
+                        let char = charset[abs(charIdx) % charset.count]
+
+                        // Fade trail: head is bright, tail fades
+                        let fade = 1.0 - Double(i) / Double(trailLength)
+                        let brightness = fade * (0.3 + intensity * 0.7)
+
+                        // Head of trail is white/bright, rest is colored
+                        let charColor: Color
+                        if i == 0 {
+                            charColor = Color.white.opacity(brightness)
+                        } else if i < 3 {
+                            charColor = color.opacity(brightness)
+                        } else {
+                            charColor = color.opacity(brightness * 0.6)
+                        }
+
+                        context.draw(
+                            Text(String(char))
+                                .font(.system(size: charSize, weight: .medium, design: .monospaced))
+                                .foregroundColor(charColor),
+                            at: CGPoint(x: xPos + columnWidth / 2, y: y + charSize / 2)
+                        )
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
