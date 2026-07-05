@@ -28,6 +28,7 @@ struct CyberpunkVoicePreset: Identifiable, CaseIterable, Equatable {
 
 struct VoiceConversationPage: View {
     @ObservedObject var voiceConversation: VoiceConversationManager
+    var store: AppStore? = nil
     var currentModel: String = ""
     var availableModels: [String] = []
     var onSelectModel: ((String) -> Void)? = nil
@@ -36,6 +37,7 @@ struct VoiceConversationPage: View {
 
     @State private var preset: CyberpunkVoicePreset = .matrix
     @State private var showSettings = false
+    @State private var showSessionPicker = false
     @State private var micPulse = false
 
     // Rain intensity changes with conversation state
@@ -73,9 +75,29 @@ struct VoiceConversationPage: View {
         .sheet(isPresented: $showSettings) {
             VoiceSettingsSheet(preset: preset)
         }
+        .sheet(isPresented: $showSessionPicker) {
+            if let store = store {
+                SessionPickerView(store: store)
+            }
+        }
         .onAppear {
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
+
+            // Auto-select the most recent session from the server.
+            // This gives continuity across devices -- if you were chatting
+            // on macOS or web, the voice mode picks up that session.
+            if let store = store {
+                Task {
+                    await store.refreshSessions()
+                    // If no active session, pick the most recently active one
+                    if store.activeSession == nil, !store.sessions.isEmpty {
+                        // Sessions are sorted by lastActive from the API
+                        // (most recent first). Pick the first one.
+                        await store.selectSession(store.sessions[0])
+                    }
+                }
+            }
 
             // Auto-start conversation when page opens
             voiceConversation.startConversation(
@@ -106,10 +128,29 @@ struct VoiceConversationPage: View {
 
             Spacer()
 
-            Text("MATRIX MODE")
-                .font(.system(.headline, design: .monospaced).weight(.bold))
-                .foregroundStyle(preset.primary)
-                .shadow(color: preset.primary.opacity(0.6), radius: 4)
+            // Session picker -- shows current session title, tap to change
+            if let store = store {
+                Button {
+                    showSessionPicker = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.caption)
+                        Text(store.activeSession?.title?.prefix(20) ?? "Latest")
+                            .font(.system(.caption, design: .monospaced).weight(.bold))
+                    }
+                    .foregroundStyle(preset.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(preset.primary.opacity(0.1))
+                    .clipShape(Capsule())
+                }
+            } else {
+                Text("MATRIX MODE")
+                    .font(.system(.headline, design: .monospaced).weight(.bold))
+                    .foregroundStyle(preset.primary)
+                    .shadow(color: preset.primary.opacity(0.6), radius: 4)
+            }
 
             Spacer()
 
