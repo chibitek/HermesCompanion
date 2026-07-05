@@ -3,226 +3,236 @@ import AVFoundation
 
 // MARK: - Voice Conversation Page
 
-/// Full-screen cyberpunk-themed voice conversation page.
-/// Replaces the old overlay with a dedicated immersive experience
-/// featuring real-time audio visualizer, neon styling, and voice settings.
+/// Full-screen cyberpunk voice conversation page with scan lines, CRT glow,
+/// glitch text, equalizer bars, and 4 switchable presets.
 struct VoiceConversationPage: View {
     @ObservedObject var voiceConversation: VoiceConversationManager
     var currentModel: String = ""
     var availableModels: [String] = []
     var onSelectModel: ((String) -> Void)? = nil
-    var onRemoteTranscription: ((String) -> Void)? = nil
+    var onVoiceTranscription: ((String) -> Void)? = nil
+    var onClose: (() -> Void)? = nil
 
-    @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var appearance: AppearanceSettings
+    @State private var preset: CyberpunkVoicePreset = .matrix
+    @State private var showSettings = false
+    @State private var showModelPicker = false
+    @State private var micPulse = false
 
-    // Voice settings
+    // Voice settings persisted via @AppStorage
     @AppStorage("voiceSpeed") private var voiceSpeed: Double = 0.5
     @AppStorage("voicePitch") private var voicePitch: Double = 1.0
     @AppStorage("voiceIdentifier") private var voiceIdentifier: String = ""
-    @State private var showSettings = false
-
-    // Cyberpunk colors
-    private let neonCyan = Color(red: 0.0, green: 0.941, blue: 1.0)
-    private let neonMagenta = Color(red: 1.0, green: 0.0, blue: 0.898)
-    private let darkBg = Color(red: 0.031, green: 0.031, blue: 0.059)
 
     var body: some View {
         ZStack {
-            // Deep dark background
-            darkBg
+            // 1. Deep black background
+            preset.background.ignoresSafeArea()
+
+            // 2. Subtle grid pattern
+            GridPattern(color: preset.primary, spacing: 36, opacity: 0.03)
                 .ignoresSafeArea()
 
-            // Matrix grid background
-            CyberGridBackground()
-                .ignoresSafeArea()
-                .opacity(0.15)
-
+            // 3. Main content
             VStack(spacing: 0) {
                 topBar
+                Spacer(minLength: 16)
 
-                Spacer()
-
-                // Center visualizer
                 visualizerSection
+                    .frame(height: 220)
 
-                Spacer()
+                Spacer(minLength: 12)
 
-                // Status + text cards
-                statusAndCards
+                statusText
 
-                Spacer()
+                cardsSection
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
 
-                // Bottom controls
+                Spacer(minLength: 12)
+
                 bottomControls
+                    .padding(.bottom, 40)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 40)
+            .padding(.top, 8)
+
+            // 4. Scanline overlay (top-most)
+            ScanlineOverlay(lineSpacing: 3, lineOpacity: 0.05, lineColor: .white)
+                .ignoresSafeArea()
         }
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showSettings) {
-            VoiceSettingsSheet(
-                speed: $voiceSpeed,
-                pitch: $voicePitch,
-                voiceIdentifier: $voiceIdentifier
-            )
+        .onAppear {
+            syncVoiceSettings()
+            // Start conversation if not already running
+            if !voiceConversation.isConversing {
+                voiceConversation.startConversation(
+                    onTranscription: { text in onVoiceTranscription?(text) },
+                    onLocalResponse: { _ in }
+                )
+            }
         }
+        .onChange(of: voiceSpeed) { _, _ in syncVoiceSettings() }
+        .onChange(of: voicePitch) { _, _ in syncVoiceSettings() }
+        .onChange(of: voiceIdentifier) { _, _ in syncVoiceSettings() }
+        .onChange(of: voiceConversation.isConversing) { _, active in
+            if active {
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    micPulse = true
+                }
+            } else {
+                micPulse = false
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            VoiceSettingsSheet(speed: $voiceSpeed, pitch: $voicePitch, voiceIdentifier: $voiceIdentifier, preset: preset)
+        }
+        .confirmationDialog("SELECT MODEL", isPresented: $showModelPicker, titleVisibility: .visible) {
+            ForEach(availableModels, id: \.self) { model in
+                Button(model) { onSelectModel?(model) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func syncVoiceSettings() {
+        voiceConversation.updateVoiceSettings(
+            speed: Float(voiceSpeed),
+            pitch: Float(voicePitch),
+            identifier: voiceIdentifier
+        )
     }
 
     // MARK: - Top Bar
 
     private var topBar: some View {
-        HStack {
+        HStack(spacing: 16) {
+            // Close
             Button {
                 voiceConversation.stopConversation()
-                dismiss()
+                onClose?()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.title2)
-                    .foregroundStyle(neonCyan)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(neonCyan.opacity(0.1)))
-                    .overlay(Circle().stroke(neonCyan.opacity(0.4), lineWidth: 1))
+                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .foregroundStyle(preset.primary)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(preset.primary.opacity(0.1)))
+                    .overlay(Circle().stroke(preset.primary.opacity(0.4), lineWidth: 1))
+                    .crtGlow(preset.primary, radius: 5)
             }
             .buttonStyle(.plain)
 
-            Spacer()
-
+            // Title
             Text("HERMES VOICE")
-                .font(.system(.headline, design: .monospaced).weight(.bold))
-                .foregroundStyle(neonCyan)
-                .shadow(color: neonCyan.opacity(0.6), radius: 8)
+                .font(.system(size: 16, weight: .bold, design: .monospaced))
+                .foregroundStyle(preset.primary)
+                .crtGlow(preset.primary, radius: 8)
 
             Spacer()
 
+            // Settings gear
             Button {
                 showSettings = true
             } label: {
                 Image(systemName: "gearshape")
-                    .font(.title2)
-                    .foregroundStyle(neonMagenta)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(neonMagenta.opacity(0.1)))
-                    .overlay(Circle().stroke(neonMagenta.opacity(0.4), lineWidth: 1))
+                    .font(.system(size: 16, design: .monospaced))
+                    .foregroundStyle(preset.secondary)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(preset.secondary.opacity(0.1)))
+                    .overlay(Circle().stroke(preset.secondary.opacity(0.4), lineWidth: 1))
+                    .crtGlow(preset.secondary, radius: 5)
+            }
+            .buttonStyle(.plain)
+
+            // Preset selector pill
+            Button {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    preset = preset.next
+                }
+            } label: {
+                Text(preset.name)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(preset.background)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(preset.primary)
+                    .clipShape(Capsule())
+                    .crtGlow(preset.primary, radius: 5)
             }
             .buttonStyle(.plain)
         }
-        .padding(.top, 10)
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
     }
 
     // MARK: - Visualizer
 
     private var visualizerSection: some View {
-        VStack(spacing: 16) {
-            // Glowing ring + waveform bars
+        VStack(spacing: 12) {
             ZStack {
                 // Outer neon ring
                 Circle()
                     .strokeBorder(
                         LinearGradient(
-                            colors: [neonCyan.opacity(0.6), neonMagenta.opacity(0.4)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                            colors: [preset.primary.opacity(0.5), preset.secondary.opacity(0.3)],
+                            startPoint: .top, endPoint: .bottom
                         ),
                         lineWidth: 2
                     )
                     .frame(width: 200, height: 200)
-                    .shadow(color: neonCyan.opacity(0.3), radius: 12)
-                    .scaleEffect(voiceConversation.isSpeaking ? 1.05 : 1.0)
-                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true),
-                               value: voiceConversation.isSpeaking)
+                    .crtGlow(preset.primary, radius: 10, opacity: 0.4)
 
-                // Inner pulsing ring when listening
+                // Pulsing inner ring when listening
                 if voiceConversation.isListening {
                     Circle()
-                        .stroke(neonCyan.opacity(0.3), lineWidth: 1)
+                        .stroke(preset.primary.opacity(0.2), lineWidth: 1)
                         .frame(width: 160, height: 160)
-                        .scaleEffect(voiceConversation.isListening ? 1.1 : 0.9)
-                        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true),
-                                   value: voiceConversation.isListening)
+                        .scaleEffect(micPulse ? 1.1 : 0.9)
                 }
 
-                // Cyberpunk waveform bars
-                CyberpunkVisualizer(
+                // Equalizer bars
+                EqualizerVisualizer(
                     audioLevel: voiceConversation.audioLevel,
+                    preset: preset,
                     isActive: voiceConversation.isListening || voiceConversation.isSpeaking || voiceConversation.isThinking,
-                    isListening: voiceConversation.isListening,
-                    isSpeaking: voiceConversation.isSpeaking,
-                    isThinking: voiceConversation.isThinking
+                    isSpeaking: voiceConversation.isSpeaking
                 )
-                .frame(width: 140, height: 80)
+                .frame(width: 150, height: 80)
             }
         }
     }
 
-    // MARK: - Status + Cards
+    // MARK: - Status Text
 
-    private var statusAndCards: some View {
-        VStack(spacing: 16) {
-            // Status text
-            Text(statusText)
-                .font(.system(.title2, design: .monospaced).weight(.bold))
-                .foregroundStyle(statusColor)
-                .shadow(color: statusColor.opacity(0.6), radius: 6)
-                .modifier(GlitchEffect(active: voiceConversation.isListening))
-
-            // Transcribed text card
-            if !voiceConversation.transcribedText.isEmpty &&
-                (voiceConversation.isListening || voiceConversation.isThinking) {
-                NeonCard(
-                    title: "YOU",
-                    text: voiceConversation.transcribedText,
-                    borderColor: neonCyan,
-                    bgColor: neonCyan
-                )
-                .transition(.asymmetric(
-                    insertion: .scale.combined(with: .opacity),
-                    removal: .opacity
-                ))
-            }
-
-            // Response text card
-            if !voiceConversation.spokenResponse.isEmpty &&
-                (voiceConversation.isSpeaking || voiceConversation.isListening) {
-                NeonCard(
-                    title: "HERMES",
-                    text: voiceConversation.spokenResponse,
-                    borderColor: neonMagenta,
-                    bgColor: neonMagenta
-                )
-                .transition(.asymmetric(
-                    insertion: .scale.combined(with: .opacity),
-                    removal: .opacity
-                ))
-            }
-        }
-        .animation(.spring(duration: 0.4), value: voiceConversation.transcribedText)
-        .animation(.spring(duration: 0.4), value: voiceConversation.spokenResponse)
+    private var statusText: some View {
+        GlitchText(
+            text: statusLabel,
+            font: .system(size: 26, weight: .bold, design: .monospaced),
+            color: preset.primary,
+            glitchIntensity: 2
+        )
     }
 
-    private var statusText: String {
-        if voiceConversation.isThinking {
-            return "THINKING..."
-        } else if voiceConversation.isSpeaking {
-            return "SPEAKING..."
-        } else if voiceConversation.isListening {
-            return "LISTENING..."
-        } else if voiceConversation.isConversing {
-            return "STARTING..."
-        } else {
-            return "SAY SOMETHING..."
-        }
+    private var statusLabel: String {
+        if voiceConversation.isThinking { return "THINKING..." }
+        if voiceConversation.isSpeaking { return "SPEAKING..." }
+        if voiceConversation.isListening { return "LISTENING..." }
+        if voiceConversation.isConversing { return "STARTING..." }
+        return "STANDBY"
     }
 
-    private var statusColor: Color {
-        if voiceConversation.isThinking {
-            return neonMagenta
-        } else if voiceConversation.isSpeaking {
-            return neonMagenta
-        } else if voiceConversation.isListening {
-            return neonCyan
-        } else {
-            return neonCyan.opacity(0.7)
+    // MARK: - Cards
+
+    @ViewBuilder
+    private var cardsSection: some View {
+        VStack(spacing: 10) {
+            if !voiceConversation.transcribedText.isEmpty && voiceConversation.isListening {
+                NeonCard(label: "> INPUT", text: voiceConversation.transcribedText, color: preset.primary)
+            }
+            if !voiceConversation.spokenResponse.isEmpty && voiceConversation.isSpeaking {
+                NeonCard(label: "> OUTPUT", text: voiceConversation.spokenResponse, color: preset.secondary)
+            }
+            if voiceConversation.isThinking {
+                NeonCard(label: "> PROCESS", text: "Processing request...", color: preset.primary)
+            }
         }
     }
 
@@ -230,116 +240,82 @@ struct VoiceConversationPage: View {
 
     private var bottomControls: some View {
         VStack(spacing: 20) {
-            // Mode toggle
-            HStack(spacing: 4) {
-                ForEach(ConversationMode.allCases, id: \.self) { mode in
-                    Button {
-                        if voiceConversation.conversationMode != mode {
-                            voiceConversation.toggleMode()
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: mode.icon)
-                                .font(.caption)
-                            Text(mode.rawValue.uppercased())
-                                .font(.system(.caption, design: .monospaced).weight(.bold))
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(voiceConversation.conversationMode == mode ? .black : neonCyan)
-                        .background {
-                            if voiceConversation.conversationMode == mode {
-                                Capsule().fill(neonCyan)
-                            } else {
-                                Capsule().fill(neonCyan.opacity(0.08))
-                            }
-                        }
-                        .overlay(
-                            Capsule().stroke(neonCyan.opacity(0.3), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(voiceConversation.isSpeaking || voiceConversation.isThinking)
-                }
-            }
-
-            // Model selector pill
-            if !currentModel.isEmpty {
+            // Mode toggle + model selector
+            HStack(spacing: 12) {
                 Button {
-                    // Cycle through models
-                    if let idx = availableModels.firstIndex(of: currentModel),
-                       idx + 1 < availableModels.count {
-                        onSelectModel?(availableModels[idx + 1])
-                    } else if let first = availableModels.first {
-                        onSelectModel?(first)
-                    }
+                    voiceConversation.toggleMode()
                 } label: {
                     HStack(spacing: 6) {
-                        Circle()
-                            .fill(neonMagenta)
-                            .frame(width: 6, height: 6)
-                        Text(shortModel(currentModel))
-                            .font(.system(.caption, design: .monospaced))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8))
+                        Image(systemName: voiceConversation.conversationMode.icon)
+                            .font(.system(size: 11, design: .monospaced))
+                        Text(voiceConversation.conversationMode.rawValue.uppercased())
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.black.opacity(0.6)))
-                    .overlay(Capsule().stroke(neonMagenta.opacity(0.5), lineWidth: 1))
-                    .foregroundStyle(neonMagenta)
+                    .foregroundStyle(voiceConversation.conversationMode == .local ? preset.primary : preset.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .overlay(Capsule().stroke(voiceConversation.conversationMode == .local ? preset.primary : preset.secondary, lineWidth: 1))
+                    .clipShape(Capsule())
+                    .crtGlow(voiceConversation.conversationMode == .local ? preset.primary : preset.secondary, radius: 3, opacity: 0.4)
                 }
                 .buttonStyle(.plain)
+                .disabled(voiceConversation.isSpeaking || voiceConversation.isThinking)
+
+                Spacer()
+
+                if !currentModel.isEmpty {
+                    Button {
+                        showModelPicker = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(shortModel(currentModel))
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(preset.primary)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(preset.primary)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .overlay(Capsule().stroke(preset.primary.opacity(0.4), lineWidth: 1))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(.horizontal, 24)
 
             // Large mic button
             Button {
                 if voiceConversation.isConversing {
-                    if voiceConversation.isListening {
-                        voiceConversation.stopListening()
-                    } else {
-                        voiceConversation.startListening()
-                    }
+                    voiceConversation.stopConversation()
+                    onClose?()
                 } else {
                     voiceConversation.startConversation(
-                        onTranscription: { text in
-                            onRemoteTranscription?(text)
-                        },
+                        onTranscription: { text in onVoiceTranscription?(text) },
                         onLocalResponse: { _ in }
                     )
                 }
             } label: {
                 ZStack {
-                    // Outer ring
+                    // Outer pulsing ring
                     Circle()
-                        .strokeBorder(
-                            voiceConversation.isListening ? neonCyan : neonCyan.opacity(0.3),
-                            lineWidth: 3
-                        )
-                        .frame(width: 80, height: 80)
-                        .shadow(
-                            color: voiceConversation.isListening ? neonCyan.opacity(0.6) : .clear,
-                            radius: 12
-                        )
-                        .scaleEffect(voiceConversation.isListening ? 1.1 : 1.0)
-                        .animation(
-                            .easeInOut(duration: 1.0).repeatForever(autoreverses: true),
-                            value: voiceConversation.isListening
-                        )
+                        .stroke(preset.primary.opacity(0.3), lineWidth: 2)
+                        .frame(width: 88, height: 88)
+                        .scaleEffect(micPulse ? 1.15 : 0.9)
+                        .opacity(micPulse ? 0 : 1)
 
-                    // Inner circle
+                    // Main ring
                     Circle()
-                        .fill(
-                            voiceConversation.isConversing
-                                ? neonCyan.opacity(0.15)
-                                : Color.white.opacity(0.05)
-                        )
-                        .frame(width: 64, height: 64)
+                        .stroke(preset.primary, lineWidth: 2.5)
+                        .frame(width: 72, height: 72)
+                        .crtGlow(preset.primary, radius: 10, opacity: 0.8)
 
                     // Icon
                     Image(systemName: micIcon)
-                        .font(.title)
-                        .foregroundStyle(neonCyan)
+                        .font(.system(size: 24, weight: .bold, design: .monospaced))
+                        .foregroundStyle(preset.primary)
+                        .crtGlow(preset.primary, radius: 6)
                 }
             }
             .buttonStyle(.plain)
@@ -347,311 +323,171 @@ struct VoiceConversationPage: View {
     }
 
     private var micIcon: String {
-        if voiceConversation.isConversing {
-            if voiceConversation.isListening {
-                return "stop.fill"
-            } else if voiceConversation.isSpeaking {
-                return "waveform"
-            } else if voiceConversation.isThinking {
-                return "brain"
-            }
-            return "waveform"
-        }
+        if voiceConversation.isListening { return "stop.fill" }
+        if voiceConversation.isSpeaking { return "waveform" }
+        if voiceConversation.isThinking { return "brain" }
+        if voiceConversation.isConversing { return "waveform" }
         return "mic.fill"
     }
 
     private func shortModel(_ model: String) -> String {
         if model.contains("/") {
-            return String(model.split(separator: "/").last ?? "")
+            return model.split(separator: "/").last.map { String($0) } ?? model
         }
         return model
     }
 }
 
-// MARK: - Neon Card
+// MARK: - Equalizer Visualizer
 
-/// A card with neon border for displaying transcribed/response text.
-struct NeonCard: View {
-    let title: String
-    let text: String
-    let borderColor: Color
-    let bgColor: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(.caption, design: .monospaced).weight(.bold))
-                .foregroundStyle(borderColor)
-
-            Text(text)
-                .font(.system(.subheadline, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(4)
-                .multilineTextAlignment(.leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color.black.opacity(0.5))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(borderColor.opacity(0.6), lineWidth: 1.5)
-        )
-        .shadow(color: bgColor.opacity(0.2), radius: 6)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// MARK: - Cyberpunk Visualizer
-
-/// Cyberpunk waveform bars that react to mic audio levels.
-struct CyberpunkVisualizer: View {
+/// 24 vertical bars that react to mic audio level.
+struct EqualizerVisualizer: View {
     let audioLevel: Float
+    let preset: CyberpunkVoicePreset
     let isActive: Bool
-    let isListening: Bool
     let isSpeaking: Bool
-    let isThinking: Bool
-
-    @State private var phase: Double = 0
 
     private let barCount = 24
-    private let neonCyan = Color(red: 0.0, green: 0.941, blue: 1.0)
-    private let neonMagenta = Color(red: 1.0, green: 0.0, blue: 0.898)
 
     var body: some View {
         GeometryReader { geo in
             HStack(spacing: 3) {
                 ForEach(0..<barCount, id: \.self) { i in
                     let center = Double(barCount) / 2.0
-                    let distFromCenter = abs(Double(i) - center) / center
-                    let baseHeight = 1.0 - distFromCenter * 0.6
+                    let dist = abs(Double(i) - center) / center
+                    let base = 1.0 - dist * 0.5
+                    let boost = isActive ? Double(audioLevel) * 1.5 : 0
+                    let noise = isActive ? Double.random(in: 0.05...0.2) : 0
+                    let h = max(0.05, min(1.0, base + boost + noise))
 
-                    let audioBoost = isActive ? CGFloat(audioLevel * 2.0) : 0
-                    let randomNoise = isActive ? CGFloat.random(in: 0.1...0.3) : 0
-                    let finalHeight = max(0.05, baseHeight + Double(audioBoost) + Double(randomNoise))
-
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [neonCyan, neonMagenta],
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
-                        )
-                        .frame(width: 4, height: geo.size.height * finalHeight)
-                        .opacity(isActive ? 1.0 : 0.3)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(i % 3 == 2 ? preset.secondary : preset.primary)
+                        .frame(width: 4, height: geo.size.height * h)
+                        .opacity(isActive ? 1.0 : 0.25)
+                        .crtGlow(i % 3 == 2 ? preset.secondary : preset.primary, radius: 3, opacity: 0.5)
                 }
             }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .onAppear {
-                if isActive {
-                    withAnimation(.linear(duration: 0.1).repeatForever(autoreverses: false)) {
-                        phase = 1
-                    }
-                }
-            }
-            .onChange(of: isActive) { _, active in
-                if active {
-                    withAnimation(.linear(duration: 0.1).repeatForever(autoreverses: false)) {
-                        phase = 1
-                    }
-                } else {
-                    phase = 0
-                }
-            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
         }
     }
 }
 
-// MARK: - Cyberpunk Grid Background
+// MARK: - Neon Card
 
-/// Subtle animated grid/matrix background.
-struct CyberGridBackground: View {
-    private let neonCyan = Color(red: 0.0, green: 0.941, blue: 1.0)
+struct NeonCard: View {
+    let label: String
+    let text: String
+    let color: Color
 
     var body: some View {
-        Canvas { context, size in
-            let spacing: CGFloat = 30
-            let cols = Int(size.width / spacing) + 1
-            let rows = Int(size.height / spacing) + 1
-
-            // Vertical lines
-            for i in 0..<cols {
-                let x = CGFloat(i) * spacing
-                var path = Path()
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
-                context.stroke(path, with: .color(neonCyan.opacity(0.06)), lineWidth: 0.5)
-            }
-
-            // Horizontal lines
-            for i in 0..<rows {
-                let y = CGFloat(i) * spacing
-                var path = Path()
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(path, with: .color(neonCyan.opacity(0.06)), lineWidth: 0.5)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(color)
+                .crtGlow(color, radius: 3, opacity: 0.5)
+            Text(text)
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(color.opacity(0.9))
+                .lineLimit(5)
+                .multilineTextAlignment(.leading)
         }
-    }
-}
-
-// MARK: - Glitch Effect
-
-/// Subtle glitch animation for text.
-struct GlitchEffect: ViewModifier {
-    let active: Bool
-    @State private var offset: CGFloat = 0
-
-    func body(content: Content) -> some View {
-        content
-            .offset(x: active ? offset : 0)
-            .onAppear {
-                guard active else { return }
-                withAnimation(.easeInOut(duration: 0.08).repeatForever(autoreverses: true)) {
-                    offset = CGFloat.random(in: -1.5...1.5)
-                }
-            }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(color.opacity(0.05))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(color, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .crtGlow(color, radius: 5, opacity: 0.3)
     }
 }
 
 // MARK: - Voice Settings Sheet
 
-/// Settings sheet for voice speed, pitch, and voice picker.
 struct VoiceSettingsSheet: View {
     @Binding var speed: Double
     @Binding var pitch: Double
     @Binding var voiceIdentifier: String
+    var preset: CyberpunkVoicePreset = .neon
 
     @Environment(\.dismiss) private var dismiss
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
 
-    private let neonCyan = Color(red: 0.0, green: 0.941, blue: 1.0)
-    private let neonMagenta = Color(red: 1.0, green: 0.0, blue: 0.898)
-    private let darkBg = Color(red: 0.031, green: 0.031, blue: 0.059)
-
     var body: some View {
         NavigationStack {
             ZStack {
-                darkBg.ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 28) {
-                        // Voice speed
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label("SPEED", systemImage: "gauge")
-                                .font(.system(.headline, design: .monospaced).weight(.bold))
-                                .foregroundStyle(neonCyan)
-
+                    VStack(spacing: 24) {
+                        // Speed
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SPEED")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundStyle(preset.primary)
+                                .crtGlow(preset.primary, radius: 3)
                             HStack {
-                                Text("0.1")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
                                 Slider(value: $speed, in: 0.1...1.0, step: 0.05)
-                                    .tint(neonCyan)
-                                Text("1.0")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                                    .tint(preset.primary)
+                                Text(String(format: "%.2f", speed))
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(preset.primary)
                             }
-
-                            Text(String(format: "%.2fx", speed))
-                                .font(.system(.body, design: .monospaced).weight(.bold))
-                                .foregroundStyle(neonCyan)
                         }
                         .padding(16)
-                        .background(Color.black.opacity(0.5))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(neonCyan.opacity(0.4), lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(preset.primary.opacity(0.05))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(preset.primary.opacity(0.3), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
 
                         // Pitch
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label("PITCH", systemImage: "waveform.path.ecg")
-                                .font(.system(.headline, design: .monospaced).weight(.bold))
-                                .foregroundStyle(neonMagenta)
-
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("PITCH")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundStyle(preset.secondary)
+                                .crtGlow(preset.secondary, radius: 3)
                             HStack {
-                                Text("0.5")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
                                 Slider(value: $pitch, in: 0.5...2.0, step: 0.1)
-                                    .tint(neonMagenta)
-                                Text("2.0")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                                    .tint(preset.secondary)
+                                Text(String(format: "%.1f", pitch))
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(preset.secondary)
                             }
-
-                            Text(String(format: "%.1f", pitch))
-                                .font(.system(.body, design: .monospaced).weight(.bold))
-                                .foregroundStyle(neonMagenta)
                         }
                         .padding(16)
-                        .background(Color.black.opacity(0.5))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(neonMagenta.opacity(0.4), lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(preset.secondary.opacity(0.05))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(preset.secondary.opacity(0.3), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
 
                         // Voice picker
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label("VOICE", systemImage: "person.wave.2")
-                                .font(.system(.headline, design: .monospaced).weight(.bold))
-                                .foregroundStyle(neonCyan)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("VOICE")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundStyle(preset.primary)
+                                .crtGlow(preset.primary, radius: 3)
 
-                            if availableVoices.isEmpty {
-                                Text("No enhanced voices available")
-                                    .font(.system(.subheadline, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 8)
-                            } else {
-                                ForEach(availableVoices, id: \.identifier) { voice in
-                                    Button {
-                                        voiceIdentifier = voice.identifier
-                                    } label: {
-                                        HStack {
-                                            Text(voice.name)
-                                                .font(.system(.body, design: .monospaced))
-                                                .foregroundStyle(.white)
-                                            Spacer()
-                                            Text("(\(voice.quality == 2 ? "enhanced" : "default"))")
-                                                .font(.system(.caption2, design: .monospaced))
-                                                .foregroundStyle(.secondary)
-                                            if voice.identifier == voiceIdentifier {
-                                                Image(systemName: "checkmark")
-                                                    .foregroundStyle(neonCyan)
-                                            }
-                                        }
-                                        .padding(.vertical, 8)
-                                        .padding(.horizontal, 12)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(voice.identifier == voiceIdentifier
-                                                      ? neonCyan.opacity(0.15)
-                                                      : Color.clear)
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(voice.identifier == voiceIdentifier
-                                                        ? neonCyan.opacity(0.5)
-                                                        : Color.clear,
-                                                        lineWidth: 1)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
+                            ForEach(availableVoices, id: \.identifier) { voice in
+                                let isSelected = voice.identifier == voiceIdentifier
+                                Button {
+                                    voiceIdentifier = voice.identifier
+                                } label: {
+                                    voiceRow(voice: voice, isSelected: isSelected)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                         .padding(16)
-                        .background(Color.black.opacity(0.5))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(neonCyan.opacity(0.4), lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(preset.primary.opacity(0.03))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(preset.primary.opacity(0.2), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .padding(20)
                 }
             }
-            .navigationTitle("VOICE SETTINGS")
+            .navigationTitle("VOICE_CONFIG")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(neonCyan)
+                        .foregroundStyle(preset.primary)
                         .font(.system(.body, design: .monospaced).weight(.bold))
                 }
             }
@@ -660,8 +496,6 @@ struct VoiceSettingsSheet: View {
             availableVoices = AVSpeechSynthesisVoice.speechVoices()
                 .filter { $0.quality == .enhanced }
                 .sorted { $0.name < $1.name }
-
-            // If no voice selected, pick default
             if voiceIdentifier.isEmpty {
                 voiceIdentifier = AVSpeechSynthesisVoice.currentIdentifier()
             }
