@@ -417,13 +417,14 @@ final class AppStore: ObservableObject {
 
     // MARK: - Chat (streaming)
 
-    func sendMessage(_ text: String, images: [Data] = [], attachments: [AttachmentData] = []) async {
+    @discardableResult
+    func sendMessage(_ text: String, images: [Data] = [], attachments: [AttachmentData] = []) async -> ChatDisplayMessage? {
         let client: HermesAPIClient
         do {
             client = try self.client()
         } catch {
             self.error = AppError(message: "Not connected")
-            return
+            return nil
         }
 
         // Auto-create a session if none is active — the user should be able
@@ -439,7 +440,7 @@ final class AppStore: ObservableObject {
                 session = newSession
             } catch {
                 self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
-                return
+                return nil
             }
         }
 
@@ -465,6 +466,7 @@ final class AppStore: ObservableObject {
         // Cancel any existing stream task before starting a new one
         streamTask?.cancel()
 
+        var assistantMessage: ChatDisplayMessage?
         let task = Task { [weak self] in
             guard let self = self else { return }
             do {
@@ -472,16 +474,20 @@ final class AppStore: ObservableObject {
                     let stream = try await client.streamChat(sessionId: session.id, message: messagePayload)
                     for try await event in stream {
                         if Task.isCancelled { return }
-                        await self.handleSSEEvent(event)
+                        if let completedMessage = await self.handleSSEEvent(event) {
+                            assistantMessage = completedMessage
+                        }
                     }
 
                     if !streamingText.isEmpty {
-                        messages.append(ChatDisplayMessage(
+                        let message = ChatDisplayMessage(
                             id: UUID().uuidString,
                             role: "assistant",
                             content: streamingText,
                             timestamp: Date()
-                        ))
+                        )
+                        messages.append(message)
+                        assistantMessage = message
                         streamingText = ""
                     }
                 } else {
@@ -497,12 +503,16 @@ final class AppStore: ObservableObject {
 
                     let content = response.message.content
                     if !content.isEmpty {
-                        messages.append(ChatDisplayMessage(
+                        let message = ChatDisplayMessage(
                             id: UUID().uuidString,
                             role: response.message.role,
                             content: content,
                             timestamp: Date()
-                        ))
+                        )
+                        messages.append(message)
+                        if message.isAssistant {
+                            assistantMessage = message
+                        }
                     }
                 }
                 let history = try await client.getMessages(sessionId: session.id)
@@ -518,6 +528,7 @@ final class AppStore: ObservableObject {
         }
         streamTask = task
         await task.value
+        return assistantMessage
     }
 
     func stopStreaming() {
@@ -537,7 +548,7 @@ final class AppStore: ObservableObject {
 
     // MARK: - SSE Event Handler
 
-    private func handleSSEEvent(_ event: SSEEventPayload) async {
+    private func handleSSEEvent(_ event: SSEEventPayload) async -> ChatDisplayMessage? {
         switch event.event {
         case "run.started", "message.started":
             // Streaming begins
@@ -588,12 +599,15 @@ final class AppStore: ObservableObject {
             // Finalize the streamed text into a message
             let finalContent = event.content ?? streamingText
             if !finalContent.isEmpty {
-                messages.append(ChatDisplayMessage(
+                let message = ChatDisplayMessage(
                     id: event.message_id ?? UUID().uuidString,
                     role: "assistant",
                     content: finalContent,
                     timestamp: Date()
-                ))
+                )
+                messages.append(message)
+                streamingText = ""
+                return message
             }
             streamingText = ""
 
@@ -615,6 +629,7 @@ final class AppStore: ObservableObject {
         default:
             break
         }
+        return nil
     }
 
     // MARK: - Approval
