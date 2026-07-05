@@ -321,7 +321,9 @@ final class VoiceConversationManager: ObservableObject {
             if let error {
                 if self.isStoppingListening || self.isBenignRecognitionCancellation(error) {
                     self.isStoppingListening = false
-                    self.stopListening()
+                    if !self.isFinalizing {
+                        self.stopListening()
+                    }
                     return
                 }
 
@@ -436,11 +438,13 @@ final class VoiceConversationManager: ObservableObject {
         audioLevel = 0
     }
 
-    func stopListening() {
+    func stopListening(resetFinalizing: Bool = true) {
         isListening = false
         stopLevelMonitoring()
         stopSilenceTimer()
-        isFinalizing = false
+        if resetFinalizing {
+            isFinalizing = false
+        }
 
         if audioEngine.isRunning {
             audioEngine.stop()
@@ -474,8 +478,9 @@ final class VoiceConversationManager: ObservableObject {
             return
         }
 
-        stopListening()
         isFinalizing = true
+        voiceError = nil
+        stopListening(resetFinalizing: false)
 
         switch conversationMode {
         case .local:
