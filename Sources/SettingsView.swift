@@ -255,7 +255,7 @@ struct SettingsView: View {
         if let caps = store.capabilities {
             Section("Server") {
                 settingRow("Platform", caps.platform)
-                settingRow("Default Model", caps.model)
+                settingRow("Default Model", caps.currentModel?.isEmpty == false ? caps.currentModel! : caps.model)
                 if let provider = caps.currentProvider, !provider.isEmpty {
                     settingRow("Current Provider", displayName(for: provider))
                 }
