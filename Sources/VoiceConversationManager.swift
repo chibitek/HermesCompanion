@@ -99,7 +99,7 @@ final class VoiceConversationManager: ObservableObject {
         if voiceSpeed == 0 { voiceSpeed = 0.5 }
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
         if voicePitch == 0 { voicePitch = 1.0 }
-        voiceIdentifier = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+        voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
 
         // Default to local mode only if the on-device LLM is available AND
         // there's no Hermes server connection. When connected, always prefer
@@ -534,7 +534,7 @@ final class VoiceConversationManager: ObservableObject {
         // Sync voice settings from UserDefaults
         voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
-        voiceIdentifier = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+        voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
         if voiceSpeed == 0 { voiceSpeed = 0.5 }
         if voicePitch == 0 { voicePitch = 1.0 }
 
@@ -555,6 +555,8 @@ final class VoiceConversationManager: ObservableObject {
         // Use selected voice identifier if available, otherwise system default
         if !voiceIdentifier.isEmpty,
            let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
+            utterance.voice = voice
+        } else if let voice = VoiceDefaults.bestAvailableVoice() {
             utterance.voice = voice
         } else {
             utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
@@ -602,7 +604,7 @@ final class VoiceConversationManager: ObservableObject {
         if voiceSpeed == 0 { voiceSpeed = 0.5 }
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
         if voicePitch == 0 { voicePitch = 1.0 }
-        voiceIdentifier = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+        voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
     }
 
     /// Sync voice settings from @AppStorage values stored in the voice page.
