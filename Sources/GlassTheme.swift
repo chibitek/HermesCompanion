@@ -560,111 +560,103 @@ struct GlassInputBar: View {
                 .background(theme.accent.opacity(0.08))
             }
 
-            // Main input row
-            HStack(spacing: theme.spacingS) {
-                // Plus button - attachment menu
-                Button {
-                    showAttachmentMenu = true
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(theme.accent.opacity(0.7))
-                }
-                .buttonStyle(.plain)
-                .confirmationDialog("Attach", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
-                    Button("Photo Library") { onCamera() }
-                    Button("Files") { onFilePick() }
-                    Button("Cancel", role: .cancel) {}
-                }
-
-                // Model picker pill (Claude-style)
-                if !currentModel.isEmpty {
-                    Button {
-                        showModelPicker = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(shortModelName(currentModel))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(theme.accent.opacity(0.12))
-                        .foregroundStyle(theme.accent)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .confirmationDialog("Select Model", isPresented: $showModelPicker, titleVisibility: .visible) {
-                        ForEach(availableModels, id: \.self) { model in
-                            Button(model) {
-                                onSelectModel?(model)
-                            }
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    }
-                }
-
-                // Text input - single line so Return key sends
-                TextField("Message", text: $text)
+            // Claude-style two-line composer: text on top, controls/status below.
+            VStack(alignment: .leading, spacing: 12) {
+                TextField("Chat with Hermes", text: $text, axis: .vertical)
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .submitLabel(.send)
+                    .lineLimit(1...4)
+                    .font(.system(size: 22, weight: .regular))
                     .onSubmit(onSend)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Mic button: tap = voice-to-text
-                if !voiceTranscriber.isRecording && !voiceConversation.isConversing {
+                HStack(spacing: 8) {
                     Button {
-                        voiceTranscriber.startTranscription()
+                        showAttachmentMenu = true
                     } label: {
-                        Image(systemName: "mic.fill")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Voice to text")
-                }
-
-                // 2-way voice conversation button -- opens full-screen voice page
-                if !voiceTranscriber.isRecording {
-                    Button {
-                        onOpenVoicePage?()
-                    } label: {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(theme.accent)
-                            .frame(width: 32, height: 32)
-                            .background(theme.accent.opacity(0.15))
+                            Image(systemName: "plus")
+                                .font(.system(size: 24, weight: .regular))
+                                .foregroundStyle(.primary)
+                            .frame(width: 48, height: 48)
+                            .background(controlBackground)
                             .clipShape(Circle())
-                            .overlay(
-                                Circle().stroke(theme.accent.opacity(0.4), lineWidth: 1)
-                            )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open voice conversation")
-                }
+                    .confirmationDialog("Attach", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
+                        Button("Photo Library") { onCamera() }
+                        Button("Files") { onFilePick() }
+                        Button("Cancel", role: .cancel) {}
+                    }
 
-                // Send / Stop button
-                if isStreaming {
-                    Button(action: onStop) {
-                        Image(systemName: "stop.fill")
-                            .font(.title3)
-                            .foregroundStyle(theme.danger)
+                    if !currentModel.isEmpty {
+                        Button {
+                            showModelPicker = true
+                        } label: {
+                            Text(shortModelName(currentModel))
+                                .font(.system(size: 15, weight: .medium))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(.primary)
+                                .minimumScaleFactor(0.85)
+                                .frame(width: 116, height: 48)
+                                .padding(.horizontal, 12)
+                                .background(controlBackground)
+                                .clipShape(Capsule())
+                        }
+                        .layoutPriority(1)
+                        .buttonStyle(.plain)
+                        .confirmationDialog("Select Model", isPresented: $showModelPicker, titleVisibility: .visible) {
+                            ForEach(availableModels, id: \.self) { model in
+                                Button(model) {
+                                    onSelectModel?(model)
+                                }
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if !voiceTranscriber.isRecording && !voiceConversation.isConversing {
+                        Button {
+                            voiceTranscriber.startTranscription()
+                        } label: {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 24, weight: .regular))
+                                .foregroundStyle(.primary)
+                                .frame(width: 48, height: 48)
+                                .background(controlBackground)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Voice to text")
+                    }
+
+                    Button {
+                        if isStreaming {
+                            onStop()
+                        } else if canSend {
+                            onSend()
+                        } else if !voiceTranscriber.isRecording {
+                            onOpenVoicePage?()
+                        }
+                    } label: {
+                        Image(systemName: trailingActionIcon)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(trailingActionForeground)
+                            .frame(width: 48, height: 48)
+                            .background(trailingActionBackground)
+                            .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                } else if canSend {
-                    Button(action: onSend) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(theme.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canSend)
+                    .disabled(!isStreaming && !canSend && voiceTranscriber.isRecording)
+                    .accessibilityLabel(trailingActionLabel)
                 }
             }
-            .padding(.horizontal, theme.spacingL)
-            .padding(.vertical, theme.spacingM)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 18)
             .if(theme.usesGlass) { view in
                 view.background(.thinMaterial)
             }
@@ -693,6 +685,33 @@ struct GlassInputBar: View {
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty
+    }
+
+    private var controlBackground: Color {
+        Color(.tertiarySystemFill)
+    }
+
+    private var trailingActionIcon: String {
+        if isStreaming { return "stop.fill" }
+        if canSend { return "arrow.up" }
+        return "waveform"
+    }
+
+    private var trailingActionForeground: Color {
+        if isStreaming { return theme.danger }
+        return .white
+    }
+
+    private var trailingActionBackground: Color {
+        if isStreaming { return Color(.tertiarySystemFill) }
+        if canSend { return theme.accent }
+        return .primary
+    }
+
+    private var trailingActionLabel: String {
+        if isStreaming { return "Stop" }
+        if canSend { return "Send message" }
+        return "Open voice conversation"
     }
 
     private func shortModelName(_ model: String) -> String {
