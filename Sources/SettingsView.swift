@@ -1,175 +1,40 @@
 import SwiftUI
+import AVFoundation
 
-/// Settings with Liquid Glass design.
+/// Settings with clean, Apple-style Form layout.
+///
+/// v1.7 layout:
+///   - Server: single picker listing all saved connections (auto-connect on switch).
+///   - Provider / Model / Thinking: three dropdowns synced from the gateway's
+///     /v1/models and macOS Hermes provider list. Persisted in UserDefaults.
+///   - No "Current" row — the pickers themselves are the current state.
 struct SettingsView: View {
     @ObservedObject var store: AppStore
     @EnvironmentObject var appearance: AppearanceSettings
     @Environment(\.dismiss) private var dismiss
 
+    @State private var availableModels: [ModelInfo] = []
+    @State private var isLoadingModels = false
+    @State private var showingAddServer = false
+
+    // Local working copies of picker selections, so the pickers don't
+    // fight the parent's @Published when the user is mid-edit.
+    @State private var selectedProvider: String = ""
+    @State private var selectedModel: String = ""
+    @State private var selectedThinking: String = ""
+    @State private var selectedServerURL: String = ""
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
-                ScrollView {
-                    LazyVStack(spacing: GlassTheme.spacingM) {
-                        // Connection card
-                        if let config = store.connectionConfig {
-                            glassCard {
-                                VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
-                                    Label("Connection", systemImage: "network")
-                                        .font(.headline)
-                                    settingRow("Label", config.label)
-                                    settingRow("URL", config.normalizedBaseURL)
-                                    settingRow("API Key", maskedKey(config.apiKey))
-                                }
-                            }
-                        }
-
-                        // Server info
-                        if let caps = store.capabilities {
-                            glassCard {
-                                VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
-                                    Label("Server", systemImage: "server.rack")
-                                        .font(.headline)
-                                    settingRow("Model", caps.model)
-                                    settingRow("Auth", caps.auth.type)
-                                }
-                            }
-
-                            // Features
-                            glassCard {
-                                VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
-                                    Label("Features", systemImage: "sparkles")
-                                        .font(.headline)
-                                    featureRow("Streaming Chat", caps.features.sessionChatStreaming)
-                                    featureRow("Async Runs", caps.features.runSubmission)
-                                    featureRow("Run Events SSE", caps.features.runEventsSSE)
-                                    featureRow("Tool Approvals", caps.features.runApprovalResponse)
-                                    featureRow("Tool Progress", caps.features.toolProgressEvents)
-                                    featureRow("Session Forking", caps.features.sessionFork)
-                                    featureRow("Skills API", caps.features.skillsAPI)
-                                }
-                            }
-                        }
-
-                        // Skills
-                        glassCard {
-                            VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
-                                HStack {
-                                    Label("Skills", systemImage: "books.vertical")
-                                        .font(.headline)
-                                    Spacer()
-                                    Button {
-                                        Task { await store.refreshSkills() }
-                                    } label: {
-                                        Image(systemName: "arrow.clockwise")
-                                    }
-                                }
-
-                                if store.skills.isEmpty {
-                                    Text("No skills loaded")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    ForEach(store.skills.prefix(25)) { skill in
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(skill.name)
-                                                .font(.subheadline)
-                                            if let desc = skill.description {
-                                                Text(desc)
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                                    .lineLimit(2)
-                                            }
-                                        }
-                                        .padding(.vertical, GlassTheme.spacingXS)
-                                    }
-                                    if store.skills.count > 25 {
-                                        Text("... and \(store.skills.count - 25) more")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Disconnect
-                        Button(role: .destructive) {
-                            store.disconnect()
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Image(systemName: "wifi.slash")
-                                Text("Disconnect")
-                            }
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .foregroundStyle(GlassTheme.danger)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, GlassTheme.spacingM)
-                            .glassEffect(.regular.tint(GlassTheme.danger.opacity(0.1)))
-                            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, GlassTheme.spacingL)
-
-                        // Appearance
-                        NavigationLink {
-                            AppearanceSettingsView(appearance: appearance)
-                        } label: {
-                            HStack {
-                                Image(systemName: "paintpalette")
-                                    .foregroundStyle(appearance.accent)
-                                Text("Appearance")
-                                Spacer()
-                                Text(appearance.colorScheme.capitalized)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .font(.body)
-                            .padding(GlassTheme.spacingM)
-                            .glassEffect(.regular)
-                            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, GlassTheme.spacingL)
-
-                        // About
-                        glassCard {
-                            VStack(alignment: .leading, spacing: GlassTheme.spacingS) {
-                                Label("About", systemImage: "info.circle")
-                                    .font(.headline)
-                                settingRow("Version", appVersion)
-
-                                Link(destination: URL(string: AppConfig.hermesDocsURL)!) {
-                                    HStack {
-                                        Text("Hermes Docs")
-                                        Spacer()
-                                        Image(systemName: "arrow.up.right")
-                                    }
-                                }
-
-                                Link(destination: URL(string: AppConfig.repoURL)!) {
-                                    HStack {
-                                        Text("GitHub")
-                                        Spacer()
-                                        Image(systemName: "arrow.up.right")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(GlassTheme.spacingL)
-                }
+            Form {
+                serverSection
+                providerSection
+                modelSection
+                thinkingSection
+                capabilitiesSections
+                navigationSections
+                disconnectSection
+                aboutSection
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -179,28 +44,372 @@ struct SettingsView: View {
                 }
             }
             .onAppear {
-                Task { await store.refreshSkills() }
+                Task {
+                    await store.refreshSkills()
+                    await loadModels()
+                    primePickers()
+                }
+            }
+            .onChange(of: store.connectionConfig?.baseURL) { _, _ in
+                primePickers()
+                Task { await loadModels() }
+            }
+            .sheet(isPresented: $showingAddServer) {
+                ConnectionSetupView(store: store)
             }
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Server picker
 
-    private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(GlassTheme.spacingL)
-            .glassEffect(.regular)
-            .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
+    private var serverSection: some View {
+        Section("Server") {
+            if store.savedConnections.isEmpty {
+                Button {
+                    showingAddServer = true
+                } label: {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundStyle(appearance.accent)
+                        Text("Add Server")
+                    }
+                }
+            } else {
+                Picker("Server", selection: $selectedServerURL) {
+                    ForEach(store.savedConnections, id: \.baseURL) { config in
+                        Text(config.label.isEmpty ? config.baseURL : config.label)
+                            .tag(config.baseURL)
+                    }
+                    Text("Add Server…")
+                        .tag("__add__")
+                }
+                .pickerStyle(.menu)
+                .onChange(of: selectedServerURL) { _, newValue in
+                    if newValue == "__add__" {
+                        selectedServerURL = store.connectionConfig?.baseURL ?? ""
+                        showingAddServer = true
+                        return
+                    }
+                    if let target = store.savedConnections.first(where: { $0.baseURL == newValue }),
+                       target.baseURL != store.connectionConfig?.baseURL {
+                        Task { await store.switchToConnection(target) }
+                    }
+                }
+
+                if let config = store.connectionConfig {
+                    HStack {
+                        Image(systemName: "network")
+                            .foregroundStyle(.secondary)
+                        Text(config.normalizedBaseURL)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Button(role: .destructive) {
+                        Task { await store.deleteConnection(config) }
+                    } label: {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Remove This Server")
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    // MARK: - Provider picker
+
+    /// Slugs we know about, in display order. Matches the macOS Hermes provider list.
+    private static let knownProviders: [String] = [
+        "nous", "openrouter", "ollama-local", "opencode", "opencode-zen", "custom"
+    ]
+
+    /// Available providers = known list ∪ anything reported by the gateway
+    /// (so a new provider slug added server-side shows up automatically).
+    private var availableProviders: [String] {
+        let fromModels = Set(availableModels.compactMap { $0.ownedBy })
+        let combined = Self.knownProviders + Array(fromModels.subtracting(Self.knownProviders))
+        if preferredOrEmpty.isEmpty { return combined }
+        // Always include the currently selected one even if not in either list
+        var withCurrent = combined
+        if !withCurrent.contains(preferredOrEmpty) {
+            withCurrent.append(preferredOrEmpty)
+        }
+        return withCurrent
+    }
+
+    private var preferredOrEmpty: String { selectedProvider }
+
+    private var providerSection: some View {
+        Section {
+            Picker("Provider", selection: $selectedProvider) {
+                ForEach(availableProviders, id: \.self) { slug in
+                    Text(displayName(for: slug))
+                        .tag(slug)
+                }
+            }
+            .pickerStyle(.menu)
+            .onChange(of: selectedProvider) { _, newValue in
+                store.preferredProvider = newValue
+                // If the current model doesn't belong to this provider, clear it.
+                if let m = modelForSelection(selectedModel),
+                   let owner = m.ownedBy,
+                   owner != newValue {
+                    selectedModel = ""
+                    store.preferredModel = ""
+                }
+            }
+        } header: {
+            Text("Provider")
+        } footer: {
+            Text("Synced with macOS Hermes. The list of providers and their available models comes from the connected server.")
+        }
+    }
+
+    // MARK: - Model picker
+
+    /// Models filtered to the selected provider, or all if no provider is set.
+    private var modelsForSelectedProvider: [ModelInfo] {
+        if selectedProvider.isEmpty { return availableModels }
+        return availableModels.filter { ($0.ownedBy ?? "") == selectedProvider }
+    }
+
+    private var modelSection: some View {
+        Section {
+            if isLoadingModels {
+                HStack {
+                    ProgressView()
+                    Text("Loading models...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else if availableModels.isEmpty {
+                Text("No models available — connect to a server to load them.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Active Model", selection: $selectedModel) {
+                    if modelsForSelectedProvider.isEmpty {
+                        Text("No models for \(displayName(for: selectedProvider))")
+                            .tag("")
+                    } else {
+                        ForEach(modelsForSelectedProvider) { model in
+                            Text(displayName(for: model))
+                                .tag(model.id)
+                        }
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: selectedModel) { _, newValue in
+                    store.preferredModel = newValue
+                }
+            }
+        } header: {
+            Text("Model")
+        }
+    }
+
+    // MARK: - Thinking picker
+
+    private static let thinkingOptions: [(value: String, label: String)] = [
+        ("", "Off"),
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+    ]
+
+    private var thinkingSection: some View {
+        Section {
+            Picker("Thinking", selection: $selectedThinking) {
+                ForEach(Self.thinkingOptions, id: \.value) { opt in
+                    Text(opt.label).tag(opt.value)
+                }
+            }
+            .pickerStyle(.menu)
+            .onChange(of: selectedThinking) { _, newValue in
+                store.preferredThinking = newValue
+            }
+        } header: {
+            Text("Reasoning")
+        } footer: {
+            Text("Local preference only — the gateway's chat endpoint doesn't currently honor a per-message reasoning override. Saved so it's ready when server support lands.")
+        }
+    }
+
+    // MARK: - Server capabilities
+
+    @ViewBuilder
+    private var capabilitiesSections: some View {
+        if let caps = store.capabilities {
+            Section("Server") {
+                settingRow("Platform", caps.platform)
+                settingRow("Default Model", caps.model)
+                settingRow("Auth", caps.auth.type)
+            }
+            Section("Features") {
+                featureRow("Streaming Chat", caps.features.sessionChatStreaming)
+                featureRow("Async Runs", caps.features.runSubmission)
+                featureRow("Tool Approvals", caps.features.runApprovalResponse)
+                featureRow("Session Forking", caps.features.sessionFork)
+                featureRow("Skills API", caps.features.skillsAPI)
+            }
+        }
+    }
+
+    // MARK: - Navigation links (Skills, Appearance, Voice)
+
+    private var navigationSections: some View {
+        Group {
+            Section {
+                NavigationLink {
+                    SkillsListView(store: store)
+                } label: {
+                    HStack {
+                        Image(systemName: "books.vertical")
+                            .foregroundStyle(appearance.accent)
+                        Text("Skills")
+                        Spacer()
+                        Text("\(store.skills.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section {
+                NavigationLink {
+                    AppearanceSettingsView(appearance: appearance)
+                } label: {
+                    HStack {
+                        Image(systemName: "paintpalette")
+                            .foregroundStyle(appearance.accent)
+                        Text("Appearance")
+                        Spacer()
+                        Text(appearance.colorScheme.capitalized)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section {
+                NavigationLink {
+                    VoiceSettingsView()
+                } label: {
+                    HStack {
+                        Image(systemName: "waveform")
+                            .foregroundStyle(appearance.accent)
+                        Text("Voice")
+                        Spacer()
+                        Text(voiceName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Disconnect
+
+    private var disconnectSection: some View {
+        Section {
+            Button(role: .destructive) {
+                store.disconnect()
+                dismiss()
+            } label: {
+                HStack {
+                    Image(systemName: "wifi.slash")
+                    Text("Disconnect")
+                }
+            }
+        }
+    }
+
+    // MARK: - About
+
+    private var aboutSection: some View {
+        Section("About") {
+            settingRow("Version", appVersion)
+            Link(destination: URL(string: AppConfig.hermesDocsURL)!) {
+                HStack {
+                    Text("Hermes Docs")
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Link(destination: URL(string: AppConfig.repoURL)!) {
+                HStack {
+                    Text("GitHub")
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Model Loading
+
+    private func loadModels() async {
+        guard let client = store.apiClient else { return }
+        isLoadingModels = true
+        defer { isLoadingModels = false }
+
+        do {
+            availableModels = try await client.getModels()
+            // After models load, if our selected model isn't in the new list,
+            // try to fall back to the server's default.
+            if !availableModels.contains(where: { $0.id == selectedModel }) {
+                if let caps = store.capabilities,
+                   availableModels.contains(where: { $0.id == caps.model }) {
+                    selectedModel = caps.model
+                    store.preferredModel = caps.model
+                } else if let first = modelsForSelectedProvider.first {
+                    selectedModel = first.id
+                    store.preferredModel = first.id
+                }
+            }
+        } catch {
+            // Silently fail — models list is optional
+        }
+    }
+
+    /// Initialize the local picker state from the store's persisted values,
+    /// or fall back to the gateway's defaults if no preference is saved.
+    private func primePickers() {
+        selectedServerURL = store.connectionConfig?.baseURL ?? ""
+
+        if !store.preferredProvider.isEmpty {
+            selectedProvider = store.preferredProvider
+        } else if let owner = modelForSelection(store.preferredModel)?.ownedBy {
+            selectedProvider = owner
+        } else if let owner = modelForSelection(store.capabilities?.model ?? "")?.ownedBy {
+            selectedProvider = owner
+        }
+
+        if !store.preferredModel.isEmpty && availableModels.contains(where: { $0.id == store.preferredModel }) {
+            selectedModel = store.preferredModel
+        } else if let caps = store.capabilities, availableModels.contains(where: { $0.id == caps.model }) {
+            selectedModel = caps.model
+        } else if let first = modelsForSelectedProvider.first {
+            selectedModel = first.id
+        }
+
+        selectedThinking = store.preferredThinking
+    }
+
+    // MARK: - Helpers
 
     private func settingRow(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
-                .font(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .font(.subheadline)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -209,21 +418,107 @@ struct SettingsView: View {
     private func featureRow(_ label: String, _ enabled: Bool) -> some View {
         HStack {
             Text(label)
-                .font(.subheadline)
             Spacer()
             Image(systemName: enabled ? "checkmark.circle.fill" : "xmark.circle")
                 .foregroundStyle(enabled ? .green : .secondary)
-                .font(.subheadline)
         }
     }
 
-    private func maskedKey(_ key: String) -> String {
-        String(repeating: "*", count: min(key.count, 20)) + "..."
+    private func modelForSelection(_ id: String) -> ModelInfo? {
+        availableModels.first(where: { $0.id == id })
+    }
+
+    /// Display name for a model. Strips the "provider/" prefix and falls back
+    /// to the raw id.
+    private func displayName(for model: ModelInfo) -> String {
+        let id = model.id
+        if let slash = id.firstIndex(of: "/") {
+            return String(id[id.index(after: slash)...])
+        }
+        return id
+    }
+
+    /// Display name for a provider slug. Title-cased unless overridden.
+    private func displayName(for slug: String) -> String {
+        switch slug {
+        case "ollama-local": return "Ollama (local)"
+        case "opencode-zen": return "OpenCode Zen"
+        case "openrouter": return "OpenRouter"
+        case "nous": return "Nous"
+        case "custom": return "Custom"
+        default: return slug.capitalized
+        }
     }
 
     private var appVersion: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(v) (\(b))"
+    }
+
+    private var voiceName: String {
+        let id = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+        if !id.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: id) {
+            return voice.name
+        }
+        return "System Default"
+    }
+}
+
+// MARK: - Skills List View
+
+struct SkillsListView: View {
+    @ObservedObject var store: AppStore
+    @EnvironmentObject var appearance: AppearanceSettings
+    @State private var searchText = ""
+
+    private var filteredSkills: [Skill] {
+        if searchText.isEmpty {
+            return store.skills
+        }
+        return store.skills.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            ($0.description ?? "").localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        List {
+            if filteredSkills.isEmpty {
+                ContentUnavailableView(
+                    "No Skills",
+                    systemImage: "books.vertical",
+                    description: Text("No skills are loaded on this server.")
+                )
+            } else {
+                ForEach(filteredSkills) { skill in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(skill.name)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        if let desc = skill.description {
+                            Text(desc)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Skills")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Search skills")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await store.refreshSkills() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+        }
     }
 }
