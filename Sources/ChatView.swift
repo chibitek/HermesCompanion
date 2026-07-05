@@ -51,16 +51,7 @@ struct ChatView: View {
                             UserDefaults.standard.set(model, forKey: "preferred_model")
                         },
                         onVoiceConversationTranscription: { transcription in
-                            // In remote mode: send the transcribed text to Hermes API
-                            // and speak the response when it arrives
-                            Task {
-                                voiceConversation.isThinking = true
-                                await store.sendMessage(transcription)
-                                voiceConversation.isThinking = false
-                                if let lastMsg = store.messages.last, lastMsg.isAssistant {
-                                    voiceConversation.speakResponse(lastMsg.content)
-                                }
-                            }
+                            handleVoiceTranscription(transcription)
                         },
                         onSpeakResponse: { text in
                             voiceConversation.speakResponse(text)
@@ -117,20 +108,24 @@ struct ChatView: View {
                         UserDefaults.standard.set(model, forKey: "preferred_model")
                     },
                     onVoiceTranscription: { transcription in
-                        Task {
-                            voiceConversation.isThinking = true
-                            await store.sendMessage(transcription)
-                            voiceConversation.isThinking = false
-                            if let lastMsg = store.messages.last, lastMsg.isAssistant {
-                                voiceConversation.speakResponse(lastMsg.content)
-                            }
-                        }
+                        handleVoiceTranscription(transcription)
                     },
                     onClose: {
                         showVoicePage = false
                     }
                 )
             }
+        }
+        // Keep the voice manager's default mode in sync with connection state.
+        // When Hermes is connected, voice mode defaults to remote so the
+        // conversation has the same memory as the typed chat.
+        .onAppear {
+            voiceConversation.isHermesConnected = store.isConnected
+            voiceConversation.refreshDefaultMode()
+        }
+        .onChange(of: store.isConnected) { _, connected in
+            voiceConversation.isHermesConnected = connected
+            voiceConversation.refreshDefaultMode()
         }
         // Photo picker — triggered by the input bar attachment menu
         .photosPicker(
@@ -301,6 +296,18 @@ struct ChatView: View {
         inputText = ""
         attachments = []
         Task { await store.sendMessage(text, images: images, attachments: fileAttachments) }
+    }
+
+    private func handleVoiceTranscription(_ transcription: String) {
+        let priorAssistantIDs = Set(store.messages.filter(\.isAssistant).map(\.id))
+        Task {
+            voiceConversation.isThinking = true
+            await store.sendMessage(transcription)
+            let response = store.messages.last {
+                $0.isAssistant && !priorAssistantIDs.contains($0.id)
+            }?.content
+            voiceConversation.completeRemoteTurn(response: response)
+        }
     }
 
     // MARK: - Attachment Helpers

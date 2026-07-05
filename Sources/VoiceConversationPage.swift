@@ -84,32 +84,11 @@ struct VoiceConversationPage: View {
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
 
-            // Auto-select the most recent session from the server.
-            // This gives continuity across devices -- if you were chatting
-            // on macOS or web, the voice mode picks up that session.
-            if let store = store {
-                Task {
-                    await store.refreshSessions()
-                    // If no active session, pick the most recently active one
-                    if store.activeSession == nil, !store.sessions.isEmpty {
-                        // Sessions are sorted by lastActive from the API
-                        // (most recent first). Pick the first one.
-                        await store.selectSession(store.sessions[0])
-                    }
-                }
-            }
-
-            // Auto-start conversation when page opens
-            voiceConversation.startConversation(
-                onTranscription: { text in
-                    onVoiceTranscription?(text)
-                },
-                onLocalResponse: { response in
-                    // Response is already spoken by finalizeTranscription.
-                    // Just update the UI here -- don't call speakResponse again.
-                    // The spokenResponse is set inside speakResponse().
-                }
-            )
+            // Don't auto-pick a session. Use the active session from ChatView
+            // (via the shared `store`). Auto-picking the most recent would
+            // hijack whatever session the user is currently typing in.
+            // If there's no active session, the first voice turn will create
+            // one through store.sendMessage (which auto-creates when needed).
         }
         .onDisappear {
             voiceConversation.stopConversation()
@@ -296,7 +275,9 @@ struct VoiceConversationPage: View {
                 } else {
                     voiceConversation.startConversation(
                         onTranscription: { text in
-                            // Handle transcription in remote mode
+                            // Forward to ChatView so it sends through the
+                            // active Hermes session. Only fires in remote mode.
+                            onVoiceTranscription?(text)
                         },
                         onLocalResponse: { _ in }
                     )
