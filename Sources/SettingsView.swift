@@ -19,7 +19,7 @@ struct SettingsView: View {
 
     // Local working copies of picker selections, so the pickers don't
     // fight the parent's @Published when the user is mid-edit.
-    @State private var selectedProvider: String = ""
+    @State private var selectedProvider: String = Self.knownProviders.first ?? ""
     @State private var selectedModel: String = ""
     @State private var selectedThinking: String = ""
     @State private var selectedServerURL: String = ""
@@ -414,6 +414,11 @@ struct SettingsView: View {
             selectedProvider = owner
         } else if let owner = modelForSelection(store.effectiveCurrentModel)?.ownedBy {
             selectedProvider = owner
+        }
+
+        // Fallback: ensure the picker always has a selection
+        if selectedProvider.isEmpty {
+            selectedProvider = Self.knownProviders.first ?? ""
         }
 
         if !store.preferredModel.isEmpty && models(for: selectedProvider).contains(where: { $0.id == store.preferredModel }) {

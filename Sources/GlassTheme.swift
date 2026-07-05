@@ -413,6 +413,7 @@ struct GlassInputBar: View {
     var onOpenVoicePage: (() -> Void)? = nil
 
     @FocusState private var focused: Bool
+    @State private var suppressNextSubmit = false
     @EnvironmentObject private var appearance: AppearanceSettings
     @StateObject private var voiceTranscriber = VoiceTranscriber()
     // External VoiceConversationManager passed from ChatView so overlay state stays in sync
@@ -570,7 +571,13 @@ struct GlassInputBar: View {
                     .submitLabel(.send)
                     .lineLimit(1...4)
                     .font(.system(size: 22, weight: .regular))
-                    .onSubmit(onSend)
+                    .onSubmit {
+                        guard !suppressNextSubmit else {
+                            suppressNextSubmit = false
+                            return
+                        }
+                        onSend()
+                    }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(spacing: 8) {
@@ -659,6 +666,11 @@ struct GlassInputBar: View {
             .padding(.horizontal, 20)
             .padding(.top, 22)
             .padding(.bottom, 14)
+            .onChange(of: focused) { _, isFocused in
+                if isFocused {
+                    suppressNextSubmit = true
+                }
+            }
             .if(theme.usesGlass) { view in
                 view.background(.thinMaterial)
             }
