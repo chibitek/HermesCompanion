@@ -487,6 +487,15 @@ final class AppStore: ObservableObject {
             }
         }
 
+        // Capture current assistant message count and latest timestamp before
+        // the send. The empty-stream guard below uses this to tell a successful
+        // turn (server has a new assistant row) from a connection that closed
+        // early (no new row). Local ChatDisplayMessage.id values are local
+        // UUIDs that don't match the server's integer id, so we can't diff by
+        // id — count + timestamp is a robust proxy.
+        let existingAssistantCount = messages.filter(\.isAssistant).count
+        let latestKnownTimestamp = messages.map(\.timestamp).max() ?? .distantPast
+
         // Build display message (user's text + any images)
         let userMsg = ChatDisplayMessage(
             id: UUID().uuidString,
@@ -510,6 +519,11 @@ final class AppStore: ObservableObject {
         streamTask?.cancel()
 
         var assistantMessage: ChatDisplayMessage?
+        // Tracks whether the stream delivered a terminal completion event
+        // (assistant.completed or run.completed). The empty-stream guard below
+        // uses this to tell a legitimate empty reply from a connection that
+        // closed early. The JSON (attachment) path sets it on success.
+        var receivedCompletion = false
         let task = Task { [weak self] in
             guard let self = self else { return }
             do {
@@ -517,6 +531,9 @@ final class AppStore: ObservableObject {
                     let stream = try await client.streamChat(sessionId: session.id, message: messagePayload)
                     for try await event in stream {
                         if Task.isCancelled { return }
+                        if event.event == "assistant.completed" || event.event == "run.completed" {
+                            receivedCompletion = true
+                        }
                         if let completedMessage = await self.handleSSEEvent(event) {
                             assistantMessage = completedMessage
                         }
@@ -544,6 +561,7 @@ final class AppStore: ObservableObject {
                     )
                     if Task.isCancelled { return }
 
+                    receivedCompletion = true
                     let content = response.message.content
                     if !content.isEmpty {
                         let message = ChatDisplayMessage(
@@ -561,6 +579,25 @@ final class AppStore: ObservableObject {
                 let history = try await client.getMessages(sessionId: session.id)
                 self.messages = history.map { ChatDisplayMessage(from: $0) }
                 await refreshSessions()
+
+                // Empty-stream guard: if no terminal completion event arrived
+                // (assistant.completed / run.completed) AND the reloaded server
+                // history shows no new assistant message for this turn, the
+                // connection almost certainly closed early (transient gateway
+                // error or network drop). Surface an error. Placed AFTER the
+                // getMessages reload so it never fires on a legitimate empty
+                // reply or a tool-heavy turn whose content landed in history.
+                // User-initiated cancellation returns earlier via Task.isCancelled,
+                // so it never reaches here.
+                if !receivedCompletion {
+                    let newAssistantCount = self.messages.filter(\.isAssistant).count
+                    let newLatestTimestamp = self.messages.map(\.timestamp).max() ?? .distantPast
+                    let hasNewAssistant = newAssistantCount > existingAssistantCount ||
+                        newLatestTimestamp > latestKnownTimestamp
+                    if !hasNewAssistant {
+                        self.error = AppError(message: "No response received — the server may have closed the connection early. Please try again.")
+                    }
+                }
             } catch let e as APIError {
                 self.error = AppError(message: e.errorDescription ?? "Message failed")
             } catch {
