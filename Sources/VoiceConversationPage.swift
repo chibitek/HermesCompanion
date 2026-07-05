@@ -83,6 +83,7 @@ struct VoiceConversationPage: View {
         .onAppear {
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
+            startVoiceConversationIfNeeded()
 
             // Don't auto-pick a session. Use the active session from ChatView
             // (via the shared `store`). Auto-picking the most recent would
@@ -202,6 +203,7 @@ struct VoiceConversationPage: View {
     }
 
     private var statusLabel: String {
+        if voiceConversation.voiceError != nil { return "VOICE UNAVAILABLE" }
         if voiceConversation.isThinking { return "THINKING..." }
         if voiceConversation.isSpeaking { return "SPEAKING..." }
         if voiceConversation.isListening { return "LISTENING..." }
@@ -218,6 +220,9 @@ struct VoiceConversationPage: View {
             }
             if !voiceConversation.spokenResponse.isEmpty {
                 cardView(label: "HERMES", text: voiceConversation.spokenResponse, color: preset.primary)
+            }
+            if let voiceError = voiceConversation.voiceError, !voiceError.isEmpty {
+                cardView(label: "VOICE", text: voiceError, color: preset.primary)
             }
         }
     }
@@ -273,14 +278,7 @@ struct VoiceConversationPage: View {
                         voiceConversation.startListening()
                     }
                 } else {
-                    voiceConversation.startConversation(
-                        onTranscription: { text in
-                            // Forward to ChatView so it sends through the
-                            // active Hermes session. Only fires in remote mode.
-                            onVoiceTranscription?(text)
-                        },
-                        onLocalResponse: { _ in }
-                    )
+                    startVoiceConversationIfNeeded()
                 }
             } label: {
                 ZStack {
@@ -296,6 +294,18 @@ struct VoiceConversationPage: View {
                 }
             }
         }
+    }
+
+    private func startVoiceConversationIfNeeded() {
+        guard !voiceConversation.isConversing else { return }
+        voiceConversation.startConversation(
+            onTranscription: { text in
+                // Forward to ChatView so it sends through the active Hermes
+                // session. Only fires in remote mode.
+                onVoiceTranscription?(text)
+            },
+            onLocalResponse: { _ in }
+        )
     }
 }
 
