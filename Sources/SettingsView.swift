@@ -48,14 +48,15 @@ struct SettingsView: View {
                     await store.refreshCapabilities()
                     await store.refreshSkills()
                     await store.refreshToolsets()
-                    await loadModels()
+                    primePickers()
+                    await loadModels(forProvider: selectedProvider)
                     primePickers()
                 }
             }
             .onChange(of: store.connectionConfig?.baseURL) { _, _ in
-                primePickers()
                 Task {
                     await store.refreshCapabilities()
+                    primePickers()
                     await loadModels()
                     primePickers()
                 }
