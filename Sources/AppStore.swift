@@ -21,7 +21,7 @@ final class AppStore: ObservableObject {
 
     // MARK: - Private
 
-    private var apiClient: HermesAPIClient?
+    private(set) var apiClient: HermesAPIClient?
     private var streamTask: Task<Void, Never>?
 
     // MARK: - Init
