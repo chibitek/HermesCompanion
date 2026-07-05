@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Settings with clean, Apple-style Form layout.
 struct SettingsView: View {
@@ -101,6 +102,23 @@ struct SettingsView: View {
                             Text("Appearance")
                             Spacer()
                             Text(appearance.colorScheme.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                // Voice
+                Section {
+                    NavigationLink {
+                        VoiceSettingsView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "waveform")
+                                .foregroundStyle(appearance.accent)
+                            Text("Voice")
+                            Spacer()
+                            Text(voiceName)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -211,6 +229,14 @@ struct SettingsView: View {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "\(v) (\(b))"
+    }
+
+    private var voiceName: String {
+        let id = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+        if !id.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: id) {
+            return voice.name
+        }
+        return "System Default"
     }
 }
 

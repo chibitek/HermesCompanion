@@ -74,13 +74,18 @@ struct VoiceConversationPage: View {
             VoiceSettingsSheet(preset: preset)
         }
         .onAppear {
+            // Sync voice settings from UserDefaults (Settings > Voice)
+            voiceConversation.syncVoiceSettings()
+
             // Auto-start conversation when page opens
             voiceConversation.startConversation(
                 onTranscription: { text in
                     onVoiceTranscription?(text)
                 },
                 onLocalResponse: { response in
-                    voiceConversation.speakResponse(response)
+                    // Response is already spoken by finalizeTranscription.
+                    // Just update the UI here -- don't call speakResponse again.
+                    // The spokenResponse is set inside speakResponse().
                 }
             )
         }
