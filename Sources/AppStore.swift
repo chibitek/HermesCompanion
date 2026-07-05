@@ -355,6 +355,26 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Silently reload the active session's messages without tearing down UI
+    /// state. Used by the foreground-reconnect path so replies that arrived
+    /// from other platforms (Telegram, Discord, macOS) show up on return.
+    /// Unlike `selectSession`, this does NOT blank `messages` first (no
+    /// flicker) and does NOT touch `toolEvents` / `streamingText`, which
+    /// belong to any in-flight local stream. Fails silently — this is a
+    /// background refresh, not a user-initiated action.
+    private func refreshActiveSessionMessages(_ session: HermesSession) async {
+        guard let client = apiClient, !isStreaming else { return }
+        do {
+            let history = try await client.getMessages(sessionId: session.id)
+            // Re-check: the user may have switched sessions or started a
+            // stream while the request was in flight.
+            guard activeSession?.id == session.id, !isStreaming else { return }
+            self.messages = history.map { ChatDisplayMessage(from: $0) }
+        } catch {
+            // Silent — background refresh should not surface errors.
+        }
+    }
+
     func deleteSession(_ session: HermesSession) async {
         let client: HermesAPIClient
         do {
@@ -749,6 +769,13 @@ final class AppStore: ObservableObject {
             // anything changed while we were in the background.
             await refreshCapabilities()
             await refreshSessions()
+            // Also reload the active session's messages so replies that
+            // arrived from other platforms (Telegram, Discord, macOS) while
+            // we were backgrounded show up on return. Skip while a local
+            // stream is in flight so we don't clobber in-progress output.
+            if let active = activeSession, !isStreaming {
+                await refreshActiveSessionMessages(active)
+            }
         } catch {
             // Connection dropped while in background. Reconnect using
             // the saved config so the user doesn't have to re-enter it.
