@@ -8,39 +8,52 @@ enum VoiceDefaults {
         voices: [AVSpeechSynthesisVoice] = AVSpeechSynthesisVoice.speechVoices(),
         locale: Locale = .current
     ) -> AVSpeechSynthesisVoice? {
-        let languageCode = locale.language.languageCode?.identifier ?? "en"
-        let preferredLanguage = locale.identifier.replacingOccurrences(of: "_", with: "-")
+        let context = rankingContext(locale: locale)
 
         return voices.sorted { lhs, rhs in
-            score(lhs, languageCode: languageCode, preferredLanguage: preferredLanguage) >
-                score(rhs, languageCode: languageCode, preferredLanguage: preferredLanguage)
+            score(lhs, context: context) > score(rhs, context: context)
         }.first
     }
 
     static func ensureBestVoiceSelected() -> String {
         let defaults = UserDefaults.standard
-        if let existing = defaults.string(forKey: voiceIdentifierKey),
-           !existing.isEmpty,
-           AVSpeechSynthesisVoice(identifier: existing) != nil {
-            return existing
+        let existingIdentifier = defaults.string(forKey: voiceIdentifierKey) ?? ""
+        let existingVoice = existingIdentifier.isEmpty ? nil : AVSpeechSynthesisVoice(identifier: existingIdentifier)
+        guard let bestVoice = bestAvailableVoice() else {
+            return existingVoice?.identifier ?? ""
         }
 
-        let identifier = bestAvailableVoice()?.identifier ?? ""
-        if !identifier.isEmpty {
-            defaults.set(identifier, forKey: voiceIdentifierKey)
+        if let existingVoice {
+            let context = rankingContext()
+            let existingScore = score(existingVoice, context: context)
+            let bestScore = score(bestVoice, context: context)
+            if existingScore >= bestScore {
+                return existingVoice.identifier
+            }
         }
-        return identifier
+
+        defaults.set(bestVoice.identifier, forKey: voiceIdentifierKey)
+        return bestVoice.identifier
     }
 
     static func sortedVoices(_ voices: [AVSpeechSynthesisVoice] = AVSpeechSynthesisVoice.speechVoices()) -> [AVSpeechSynthesisVoice] {
-        let languageCode = Locale.current.language.languageCode?.identifier ?? "en"
-        let preferredLanguage = Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
+        let context = rankingContext()
         return voices.sorted {
-            let lhs = score($0, languageCode: languageCode, preferredLanguage: preferredLanguage)
-            let rhs = score($1, languageCode: languageCode, preferredLanguage: preferredLanguage)
+            let lhs = score($0, context: context)
+            let rhs = score($1, context: context)
             if lhs != rhs { return lhs > rhs }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+    }
+
+    private static func rankingContext(locale: Locale = .current) -> (languageCode: String, preferredLanguage: String) {
+        let languageCode = locale.language.languageCode?.identifier ?? "en"
+        let preferredLanguage = locale.identifier.replacingOccurrences(of: "_", with: "-")
+        return (languageCode, preferredLanguage)
+    }
+
+    private static func score(_ voice: AVSpeechSynthesisVoice, context: (languageCode: String, preferredLanguage: String)) -> Int {
+        score(voice, languageCode: context.languageCode, preferredLanguage: context.preferredLanguage)
     }
 
     private static func score(_ voice: AVSpeechSynthesisVoice, languageCode: String, preferredLanguage: String) -> Int {
