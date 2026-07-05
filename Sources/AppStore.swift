@@ -29,10 +29,21 @@ final class AppStore: ObservableObject {
     // MARK: - Init
 
     init() {
+        #if DEBUG
+        // Debug auto-connect for simulator testing
+        let debugConfig = ConnectionConfig(
+            baseURL: "http://localhost:8642",
+            apiKey: "REVOKED_CREDENTIAL_REMOVED",
+            label: "Hermes Debug"
+        )
+        connectionConfig = debugConfig
+        apiClient = HermesAPIClient(config: debugConfig)
+        #else
         if let savedConfig = KeychainManager.shared.loadActive() {
             connectionConfig = savedConfig
             apiClient = HermesAPIClient(config: savedConfig)
         }
+        #endif
     }
 
     // MARK: - Connection
