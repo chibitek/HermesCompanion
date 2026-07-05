@@ -204,6 +204,16 @@ final class VoiceConversationManager: ObservableObject {
         guard !isListening else { return }  // Prevent double-start
         guard let speechRecognizer, speechRecognizer.isAvailable else { return }
 
+        // CRITICAL: Stop the engine and remove any existing tap BEFORE setting
+        // up a new tap. AVAudioEngine throws an Objective-C exception
+        // ("Tap is already installed on bus") if you call installTap on a
+        // node that already has one, and that exception is uncatchable in
+        // Swift and crashes the app. We must stop the engine first.
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        audioEngine.inputNode.removeTap(onBus: 0)
+
         cancelRecognition()
 
         transcribedText = ""
@@ -254,12 +264,12 @@ final class VoiceConversationManager: ObservableObject {
             }
         }
 
-        // Audio engine for live mic input
+        // Audio engine for live mic input. Note: the tap was already removed
+        // at the top of this function to avoid the "tap already installed"
+        // crash, so we just install the new one here.
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        // Remove any existing tap before installing a new one
-        inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
             recognitionRequest.append(buffer)
