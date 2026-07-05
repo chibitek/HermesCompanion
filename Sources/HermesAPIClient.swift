@@ -19,6 +19,7 @@ final class HermesAPIClient: Sendable {
         cfg.timeoutIntervalForRequest = 600
         cfg.timeoutIntervalForResource = 1_800
         cfg.waitsForConnectivity = true
+        cfg.networkServiceType = .default
         self.session = URLSession(configuration: cfg)
     }
 

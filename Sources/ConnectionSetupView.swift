@@ -179,15 +179,39 @@ struct ConnectionSetupView: View {
         let config = ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label)
         let client = HermesAPIClient(config: config)
         do {
-            let health = try await client.checkHealth()
-            _ = try await client.getCapabilities()
-            testResult = .success("Connected — Hermes v\(health.version ?? "unknown")")
+            // Timeout wrapper: if the server is unreachable, fail fast instead of
+            // spinning forever (waitsForConnectivity keeps URLSession retrying).
+            let result: (HealthResponse, CapabilitiesResponse)
+            do {
+                result = try await Self.runWithTimeout(seconds: 10) {
+                    let health = try await client.checkHealth()
+                    let caps = try await client.getCapabilities()
+                    return (health, caps)
+                }
+                testResult = .success("Connected — Hermes v\(result.0.version ?? "unknown")")
+            } catch {
+                testResult = .failure(error.localizedDescription)
+            }
         } catch let error as APIError {
             testResult = .failure(error.errorDescription ?? "Connection failed")
         } catch {
             testResult = .failure(error.localizedDescription)
         }
         isTesting = false
+    }
+
+    /// Run an async operation with a hard timeout.
+    private static func runWithTimeout<T>(seconds: Double, operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask(operation: operation)
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw URLError(.cancelled)
+            }
+            guard let result = try await group.next() else { throw URLError(.cancelled) }
+            group.cancelAll()
+            return result
+        }
     }
 
     private func saveAndConnect() async {
