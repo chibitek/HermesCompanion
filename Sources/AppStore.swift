@@ -53,15 +53,15 @@ final class AppStore: ObservableObject {
     private static let thinkingKey = "preferred_thinking"
 
     var effectiveCurrentProvider: String {
-        nonEmpty(capabilities?.currentProvider)
-            ?? nonEmpty(preferredProvider)
+        nonEmpty(preferredProvider)
+            ?? nonEmpty(capabilities?.currentProvider)
             ?? providerForModel(effectiveCurrentModel)
             ?? ""
     }
 
     var effectiveCurrentModel: String {
-        nonEmpty(capabilities?.currentModel)
-            ?? nonEmpty(preferredModel)
+        nonEmpty(preferredModel)
+            ?? nonEmpty(capabilities?.currentModel)
             ?? nonEmpty(capabilities?.model)
             ?? ""
     }
