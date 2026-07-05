@@ -46,6 +46,12 @@ final class VoiceConversationManager: ObservableObject {
     @Published var spokenResponse = ""
     @Published var hasPermission = false
     @Published var conversationMode: ConversationMode = .local
+    @Published var audioLevel: Float = 0.0
+
+    // Voice settings (persisted via @AppStorage in VoiceConversationPage)
+    var voiceSpeed: Float = 0.5
+    var voicePitch: Float = 1.0
+    var voiceIdentifier: String = ""
 
     // Local LLM
     let localLLM = LocalLLMManager()
@@ -55,6 +61,10 @@ final class VoiceConversationManager: ObservableObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+
+    // Audio level monitoring
+    private var levelTimer: Timer?
+    private var audioMetersNode: AVAudioInputNode? { audioEngine.inputNode }
 
     // TTS
     private let synthesizer = AVSpeechSynthesizer()
@@ -218,18 +228,63 @@ final class VoiceConversationManager: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
             recognitionRequest.append(buffer)
+
+            // Calculate RMS audio level for visualizer
+            buffer.frameLength > 0 ? Task { @MainActor [weak self] in
+                self?.updateAudioLevel(from: buffer)
+            } : nil
         }
 
         do {
             audioEngine.prepare()
             try audioEngine.start()
+            startLevelMonitoring()
         } catch {
             stopListening()
         }
     }
 
+    /// Calculate RMS audio level from an audio buffer for the visualizer.
+    private func updateAudioLevel(from buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
+
+        var sum: Float = 0
+        for i in 0..<frameLength {
+            let sample = channelData[i]
+            sum += sample * sample
+        }
+        let rms = sqrt(sum / Float(frameLength))
+        // Normalize to 0...1 range (typical mic RMS is 0...0.5)
+        let level = min(1.0, rms * 3.0)
+        audioLevel = level
+    }
+
+    /// Start a timer-based fallback for audio level polling.
+    private func startLevelMonitoring() {
+        stopLevelMonitoring()
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // If audio engine is running, the tap handler updates audioLevel.
+                // This timer ensures the level decays when no audio is coming in.
+                if !self.isListening {
+                    self.audioLevel *= 0.7
+                }
+            }
+        }
+    }
+
+    private func stopLevelMonitoring() {
+        levelTimer?.invalidate()
+        levelTimer = nil
+        audioLevel = 0
+    }
+
     func stopListening() {
         isListening = false
+        stopLevelMonitoring()
 
         if audioEngine.isRunning {
             audioEngine.stop()
@@ -304,9 +359,17 @@ final class VoiceConversationManager: ObservableObject {
         }
 
         let utterance = AVSpeechUtterance(string: cleanText)
-        utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.pitchMultiplier = 1.0
+        // Use selected voice identifier if available, otherwise system default
+        if !voiceIdentifier.isEmpty,
+           let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
+            utterance.voice = voice
+        } else {
+            utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
+        }
+        // Map slider (0.1...1.0) to AVSpeechUtterance rate range (0...1, default 0.5)
+        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
+                            min(AVSpeechUtteranceMaximumSpeechRate, voiceSpeed))
+        utterance.pitchMultiplier = voicePitch
         utterance.preUtteranceDelay = 0.1
         utterance.postUtteranceDelay = 0.3
 
@@ -331,6 +394,15 @@ final class VoiceConversationManager: ObservableObject {
                 conversationMode = .remote
             }
         }
+    }
+
+    // MARK: - Voice Settings Sync
+
+    /// Sync voice settings from @AppStorage values stored in the voice page.
+    func updateVoiceSettings(speed: Float, pitch: Float, identifier: String) {
+        voiceSpeed = speed
+        voicePitch = pitch
+        voiceIdentifier = identifier
     }
 
     // MARK: - Private
