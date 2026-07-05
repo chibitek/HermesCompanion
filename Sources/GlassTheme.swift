@@ -539,7 +539,7 @@ struct GlassInputBar: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                     } else {
-                        Text("Conversation active · \(voiceConversation.conversationMode.rawValue)")
+                        Text("Conversation active")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -561,7 +561,7 @@ struct GlassInputBar: View {
             }
 
             // Claude-style two-line composer: text on top, controls/status below.
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 TextField("Chat with Hermes", text: $text, axis: .vertical)
                     .textFieldStyle(.plain)
                     .focused($focused)
@@ -576,9 +576,9 @@ struct GlassInputBar: View {
                         showAttachmentMenu = true
                     } label: {
                             Image(systemName: "plus")
-                                .font(.system(size: 24, weight: .regular))
+                                .font(.system(size: 21, weight: .regular))
                                 .foregroundStyle(.primary)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 44, height: 44)
                             .background(controlBackground)
                             .clipShape(Circle())
                     }
@@ -594,13 +594,13 @@ struct GlassInputBar: View {
                             showModelPicker = true
                         } label: {
                             Text(shortModelName(currentModel))
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.system(size: 14, weight: .medium))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                                 .foregroundStyle(.primary)
                                 .minimumScaleFactor(0.85)
-                                .frame(width: 116, height: 48)
-                                .padding(.horizontal, 12)
+                                .frame(width: 112, height: 44)
+                                .padding(.horizontal, 10)
                                 .background(controlBackground)
                                 .clipShape(Capsule())
                         }
@@ -623,9 +623,9 @@ struct GlassInputBar: View {
                             voiceTranscriber.startTranscription()
                         } label: {
                             Image(systemName: "mic.fill")
-                                .font(.system(size: 24, weight: .regular))
+                                .font(.system(size: 21, weight: .regular))
                                 .foregroundStyle(.primary)
-                                .frame(width: 48, height: 48)
+                                .frame(width: 44, height: 44)
                                 .background(controlBackground)
                                 .clipShape(Circle())
                         }
@@ -643,9 +643,9 @@ struct GlassInputBar: View {
                         }
                     } label: {
                         Image(systemName: trailingActionIcon)
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(trailingActionForeground)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 44, height: 44)
                             .background(trailingActionBackground)
                             .clipShape(Circle())
                     }
@@ -655,8 +655,8 @@ struct GlassInputBar: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 18)
+            .padding(.top, 22)
+            .padding(.bottom, 14)
             .if(theme.usesGlass) { view in
                 view.background(.thinMaterial)
             }
@@ -856,24 +856,6 @@ struct VoiceConversationOverlay: View {
             VStack(spacing: 32) {
                 Spacer()
 
-                // Mode indicator
-                HStack(spacing: 8) {
-                    Image(systemName: voiceConversation.conversationMode.icon)
-                        .font(.subheadline)
-                    Text(voiceConversation.conversationMode.rawValue)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    if voiceConversation.conversationMode == .local && !voiceConversation.localLLM.isAvailable {
-                        Text("(unavailable)")
-                            .font(.caption)
-                            .foregroundStyle(theme.warning)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-
                 // State label
                 Text(stateLabel)
                     .font(.title3)
@@ -908,39 +890,8 @@ struct VoiceConversationOverlay: View {
 
                 Spacer()
 
-                // Mode toggle + stop button
+                // Stop button
                 VStack(spacing: 16) {
-                    // Mode toggle
-                    Button {
-                        voiceConversation.toggleMode()
-                    } label: {
-                        HStack(spacing: 6) {
-                            ForEach(ConversationMode.allCases, id: \.self) { mode in
-                                HStack(spacing: 4) {
-                                    Image(systemName: mode.icon)
-                                        .font(.caption)
-                                    Text(mode.rawValue)
-                                        .font(.caption)
-                                        .fontWeight(.medium)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .foregroundStyle(voiceConversation.conversationMode == mode ? .white : .secondary)
-                                .background {
-                                    if voiceConversation.conversationMode == mode {
-                                        Capsule().fill(theme.accent)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(3)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(voiceConversation.isSpeaking || voiceConversation.isThinking)
-
-                    // Stop button
                     Button {
                         voiceConversation.stopConversation()
                     } label: {
