@@ -223,11 +223,32 @@ final class VoiceConversationManager: ObservableObject {
         isThinking = false
         let cleanResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if cleanResponse.isEmpty {
-            isFinalizing = false
+            failRemoteTurn(message: "Hermes did not return a voice response.")
             return
         }
         voiceError = nil
         speakResponse(cleanResponse)
+    }
+
+    /// Finish a remote Hermes turn when the network request fails or returns no
+    /// speakable assistant message. Keep the conversation hands-free by
+    /// returning to listening after the error is surfaced.
+    func failRemoteTurn(message: String) {
+        isThinking = false
+        isFinalizing = false
+        voiceError = message
+
+        guard isConversing else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self,
+                  self.isConversing,
+                  !self.isListening,
+                  !self.isSpeaking,
+                  !self.isThinking
+            else { return }
+            self.startListening()
+        }
     }
 
     // MARK: - Listening
