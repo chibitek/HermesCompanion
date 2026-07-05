@@ -17,7 +17,7 @@ struct HermesCompanionApp: App {
                     // AppStore.init already loads it into connectionConfig;
                     // here we verify the server is reachable and populate
                     // capabilities/sessions so the user goes straight to chat.
-                    if store.connectionConfig != nil && !store.isConnected {
+                    if store.connectionConfig != nil && store.capabilities == nil {
                         await store.autoConnect()
                     }
                 }

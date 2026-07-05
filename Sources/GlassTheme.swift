@@ -76,7 +76,7 @@ struct GlassBubble: View {
                 }
 
                 if !content.isEmpty {
-                    Text(content)
+                    Text(renderedContent)
                         .font(messageFont)
                         .textSelection(.enabled)
                         .foregroundStyle(isUser ? .white : .primary)
@@ -135,6 +135,18 @@ struct GlassBubble: View {
             return .system(size: fixedFontSize, design: isUser ? .default : monospacedDesign)
         }
         return isUser ? theme.userMessageFont : theme.assistantMessageFont
+    }
+
+    private var renderedContent: AttributedString {
+        guard !isUser,
+              let attributed = try? AttributedString(
+                markdown: content,
+                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+              )
+        else {
+            return AttributedString(content)
+        }
+        return attributed
     }
 
     private var monospacedDesign: Font.Design {

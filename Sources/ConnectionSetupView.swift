@@ -114,6 +114,9 @@ struct ConnectionSetupView: View {
             }
             .navigationTitle("Setup")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                prefillDebugConnectionIfAvailable()
+            }
         }
     }
 
@@ -193,5 +196,20 @@ struct ConnectionSetupView: View {
         if !success {
             testResult = .failure(store.error?.message ?? "Connection failed")
         }
+    }
+
+    private func prefillDebugConnectionIfAvailable() {
+        #if DEBUG
+        let defaults = UserDefaults.standard
+        if baseURL.isEmpty, let value = defaults.string(forKey: "debug_baseURL"), !value.isEmpty {
+            baseURL = value
+        }
+        if apiKey.isEmpty, let value = defaults.string(forKey: "debug_apiKey"), !value.isEmpty {
+            apiKey = value
+        }
+        if label == "My Hermes", let value = defaults.string(forKey: "debug_label"), !value.isEmpty {
+            label = value
+        }
+        #endif
     }
 }
