@@ -417,9 +417,7 @@ struct VoiceSettingsSheet: View {
         .onAppear {
             availableVoices = VoiceDefaults.sortedVoices()
                 .filter { $0.quality == .enhanced || $0.quality == .premium }
-            if selectedVoiceId.isEmpty {
-                selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
-            }
+            selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
         }
     }
 
