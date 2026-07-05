@@ -18,6 +18,7 @@ final class AppStore: ObservableObject {
     @Published var availableModels: [String] = []
     @Published var error: AppError?
     @Published var isLoading = false
+    @Published var isLoadingConnection = false
     @Published var pendingApproval: PendingApproval?
 
     // MARK: - Private
@@ -36,7 +37,7 @@ final class AppStore: ObservableObject {
 
     // MARK: - Connection
 
-    var isConnected: Bool { connectionConfig != nil }
+    var isConnected: Bool { connectionConfig != nil && !isLoadingConnection }
 
     /// Returns the current API client, creating one from saved config if needed
     private func client() throws -> HermesAPIClient {
@@ -47,6 +48,35 @@ final class AppStore: ObservableObject {
         let c = HermesAPIClient(config: config)
         apiClient = c
         return c
+    }
+
+    /// Called on app launch when a saved Keychain config exists.
+    /// Performs a health check and, if successful, loads capabilities and
+    /// sessions so the user goes straight to chat without re-entering credentials.
+    func autoConnect() async {
+        guard let config = connectionConfig else { return }
+        isLoadingConnection = true
+        let client = HermesAPIClient(config: config)
+        do {
+            let health = try await client.checkHealth()
+            guard health.status == "ok" else {
+                self.error = AppError(message: "Server returned status: \(health.status)")
+                self.isLoadingConnection = false
+                return
+            }
+            self.apiClient = client
+            await refreshCapabilities()
+            await refreshSessions()
+            self.isLoadingConnection = false
+        } catch let e as APIError {
+            self.error = AppError(message: e.errorDescription ?? "Connection failed")
+            self.connectionConfig = nil
+            self.isLoadingConnection = false
+        } catch {
+            self.error = AppError(message: "Connection failed: \(error.localizedDescription)")
+            self.connectionConfig = nil
+            self.isLoadingConnection = false
+        }
     }
 
     func connect(config: ConnectionConfig) async -> Bool {
@@ -184,6 +214,27 @@ final class AppStore: ObservableObject {
             }
         } catch {
             self.error = AppError(message: "Failed to delete session: \(error.localizedDescription)")
+        }
+    }
+
+    func renameSession(_ session: HermesSession, newTitle: String) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
+        do {
+            let updated = try await client.patchSession(sessionId: session.id, title: newTitle)
+            if let idx = self.sessions.firstIndex(where: { $0.id == session.id }) {
+                self.sessions[idx] = updated
+            }
+            if self.activeSession?.id == session.id {
+                self.activeSession = updated
+            }
+        } catch {
+            self.error = AppError(message: "Failed to rename session: \(error.localizedDescription)")
         }
     }
 
@@ -447,11 +498,21 @@ final class AppStore: ObservableObject {
                     await selectSession(active)
                 }
             } catch {
-                // Server is unreachable. Show the connection setup screen
-                // by clearing connectionConfig, but keep the saved keychain
-                // entry so the user can reconnect with one tap.
-                self.connectionConfig = nil
-                self.error = AppError(message: "Lost connection to Hermes. Reconnect to continue.")
+                // Server is unreachable. Don't clear connectionConfig -- just show
+                // an error and keep the saved config so we can retry automatically.
+                // Clearing it sends the user back to the setup screen, which is
+                // frustrating during quick app switches where Tailscale needs a
+                // moment to reconnect.
+                self.error = AppError(message: "Lost connection to Hermes. Will retry.")
+                // Schedule a retry in 3 seconds
+                Task {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    await MainActor.run {
+                        if self.connectionConfig != nil {
+                            Task { await self.reconnectIfNeeded() }
+                        }
+                    }
+                }
             }
         }
     }
