@@ -29,16 +29,19 @@ final class HermesAPIClient: Sendable {
          "Content-Type": "application/json"]
     }
 
-    private func makeURL(path: String) -> URL {
+    private func makeURL(path: String) throws -> URL {
         let cleanPath = path.hasPrefix("/") ? path : "/\(path)"
-        return URL(string: baseURL + cleanPath)!
+        guard let url = URL(string: baseURL + cleanPath) else {
+            throw APIError.invalidURL(baseURL + cleanPath)
+        }
+        return url
     }
 
     // MARK: - Health
 
     /// GET /health — no auth required, used for connection test
     func checkHealth() async throws -> HealthResponse {
-        let (data, response) = try await session.data(from: makeURL(path: "/health"))
+        let (data, response) = try await session.data(from: try makeURL(path: "/health"))
         try checkHTTPStatus(response)
         return try JSONDecoder().decode(HealthResponse.self, from: data)
     }
@@ -47,7 +50,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /v1/capabilities
     func getCapabilities() async throws -> CapabilitiesResponse {
-        var req = URLRequest(url: makeURL(path: "/v1/capabilities"))
+        var req = URLRequest(url: try makeURL(path: "/v1/capabilities"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -59,7 +62,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /api/sessions
     func listSessions() async throws -> [HermesSession] {
-        var req = URLRequest(url: makeURL(path: "/api/sessions"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -70,7 +73,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /api/sessions
     func createSession(title: String? = nil) async throws -> HermesSession {
-        var req = URLRequest(url: makeURL(path: "/api/sessions"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -86,7 +89,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /api/sessions/{id}/messages
     func getMessages(sessionId: String) async throws -> [SessionMessage] {
-        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)/messages"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)/messages"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -97,7 +100,7 @@ final class HermesAPIClient: Sendable {
 
     /// DELETE /api/sessions/{id}
     func deleteSession(sessionId: String) async throws {
-        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)"))
         req.httpMethod = "DELETE"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (_, response) = try await session.data(for: req)
@@ -108,7 +111,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /v1/skills
     func listSkills() async throws -> [Skill] {
-        var req = URLRequest(url: makeURL(path: "/v1/skills"))
+        var req = URLRequest(url: try makeURL(path: "/v1/skills"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -130,7 +133,7 @@ final class HermesAPIClient: Sendable {
         images: [Data] = [],
         attachments: [AttachmentData] = []
     ) async throws -> SessionChatResponse {
-        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)/chat"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)/chat"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -220,7 +223,7 @@ final class HermesAPIClient: Sendable {
     ///   - assistant.completed, run.completed
     ///   - error, done
     func streamChat(sessionId: String, message: String, systemMessage: String? = nil) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
-        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)/chat/stream"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)/chat/stream"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -317,7 +320,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /v1/runs — start an async run, returns run_id immediately
     func startRun(input: String, instructions: String? = nil, sessionId: String? = nil) async throws -> RunResponse {
-        var req = URLRequest(url: makeURL(path: "/v1/runs"))
+        var req = URLRequest(url: try makeURL(path: "/v1/runs"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -331,7 +334,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /v1/runs/{run_id}/events — SSE stream of run events
     func streamRunEvents(runId: String) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
-        var req = URLRequest(url: makeURL(path: "/v1/runs/\(runId)/events"))
+        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/events"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -388,7 +391,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /v1/runs/{run_id}/approval
     func resolveApproval(runId: String, choice: String, resolveAll: Bool = false) async throws {
-        var req = URLRequest(url: makeURL(path: "/v1/runs/\(runId)/approval"))
+        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/approval"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -401,7 +404,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /v1/runs/{run_id}/stop
     func stopRun(runId: String) async throws {
-        var req = URLRequest(url: makeURL(path: "/v1/runs/\(runId)/stop"))
+        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/stop"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (_, response) = try await session.data(for: req)
@@ -412,7 +415,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /v1/models — list available models and route aliases.
     func getModels() async throws -> [ModelInfo] {
-        var req = URLRequest(url: makeURL(path: "/v1/models"))
+        var req = URLRequest(url: try makeURL(path: "/v1/models"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -425,7 +428,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /v1/toolsets — list toolsets, their tools, and enabled state.
     func getToolsets() async throws -> [ToolsetInfo] {
-        var req = URLRequest(url: makeURL(path: "/v1/toolsets"))
+        var req = URLRequest(url: try makeURL(path: "/v1/toolsets"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -438,7 +441,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /api/sessions/{id} — full session metadata (tokens, cost, lineage).
     func getSession(sessionId: String) async throws -> SessionDetail {
-        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -451,7 +454,7 @@ final class HermesAPIClient: Sendable {
 
     /// PATCH /api/sessions/{id} — update session title.
     func patchSession(sessionId: String, title: String?) async throws -> HermesSession {
-        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)"))
         req.httpMethod = "PATCH"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -470,7 +473,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /api/sessions/{id}/fork — branch a session, carrying conversation history.
     func forkSession(sessionId: String, title: String? = nil) async throws -> HermesSession {
-        var req = URLRequest(url: makeURL(path: "/api/sessions/\(sessionId)/fork"))
+        var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)/fork"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -487,7 +490,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /v1/runs/{run_id} — pollable run status with model, timestamps, last event.
     func getRunStatus(runId: String) async throws -> RunStatusResponse {
-        var req = URLRequest(url: makeURL(path: "/v1/runs/\(runId)"))
+        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -503,7 +506,7 @@ final class HermesAPIClient: Sendable {
         if includeDisabled {
             path += "?include_disabled=true"
         }
-        var req = URLRequest(url: makeURL(path: path))
+        var req = URLRequest(url: try makeURL(path: path))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -514,7 +517,7 @@ final class HermesAPIClient: Sendable {
 
     /// GET /api/jobs/{id} — get a single cron job.
     func getCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)"))
+        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)"))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -532,7 +535,7 @@ final class HermesAPIClient: Sendable {
         skills: [String]? = nil,
         repeat: Int? = nil
     ) async throws -> CronJob {
-        var req = URLRequest(url: makeURL(path: "/api/jobs"))
+        var req = URLRequest(url: try makeURL(path: "/api/jobs"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -563,7 +566,7 @@ final class HermesAPIClient: Sendable {
         repeat: Int? = nil,
         enabled: Bool? = nil
     ) async throws -> CronJob {
-        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)"))
+        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)"))
         req.httpMethod = "PATCH"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
@@ -586,7 +589,7 @@ final class HermesAPIClient: Sendable {
 
     /// DELETE /api/jobs/{id} — delete a cron job.
     func deleteCronJob(jobId: String) async throws {
-        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)"))
+        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)"))
         req.httpMethod = "DELETE"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (_, response) = try await session.data(for: req)
@@ -595,7 +598,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /api/jobs/{id}/pause — pause a cron job.
     func pauseCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)/pause"))
+        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)/pause"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -606,7 +609,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /api/jobs/{id}/resume — resume a paused cron job.
     func resumeCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)/resume"))
+        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)/resume"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -617,7 +620,7 @@ final class HermesAPIClient: Sendable {
 
     /// POST /api/jobs/{id}/run — trigger immediate execution of a cron job.
     func runCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: makeURL(path: "/api/jobs/\(jobId)/run"))
+        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)/run"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
@@ -653,6 +656,7 @@ final class HermesAPIClient: Sendable {
 
 enum APIError: LocalizedError {
     case invalidResponse
+    case invalidURL(String)
     case unauthorized
     case notFound
     case rateLimited
@@ -664,6 +668,7 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse: return "Invalid response from server"
+        case .invalidURL(let url): return "Invalid URL: \(url)"
         case .unauthorized: return "Invalid API key"
         case .notFound: return "Resource not found"
         case .rateLimited: return "Rate limited — too many requests"

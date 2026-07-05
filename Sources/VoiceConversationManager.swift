@@ -74,6 +74,31 @@ final class VoiceConversationManager: ObservableObject {
         } else {
             conversationMode = .remote
         }
+
+        // Observe audio session interruptions
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioSessionInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAudioSessionInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+        switch type {
+        case .began:
+            stopListening()
+            stopSpeaking()
+        case .ended:
+            // Don't auto-resume; let the user tap to continue
+            break
+        @unknown default:
+            break
+        }
     }
 
     // MARK: - Permission
@@ -174,8 +199,8 @@ final class VoiceConversationManager: ObservableObject {
 
             if let result = result {
                 let text = result.bestTranscription.formattedString
-                DispatchQueue.main.async {
-                    self.transcribedText = text
+                Task { @MainActor [weak self] in
+                    self?.transcribedText = text
                 }
 
                 // When the recognizer is fairly confident the user paused,

@@ -93,8 +93,8 @@ final class VoiceTranscriber: ObservableObject {
 
             if let result = result {
                 let text = result.bestTranscription.formattedString
-                DispatchQueue.main.async {
-                    self.transcribedText = text
+                Task { @MainActor [weak self] in
+                    self?.transcribedText = text
                 }
             }
 

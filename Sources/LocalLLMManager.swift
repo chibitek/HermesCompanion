@@ -2,6 +2,20 @@ import Foundation
 import SwiftUI
 import FoundationModels
 
+enum LocalLLMError: Error, LocalizedError {
+    case modelUnavailable
+    case generationFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .modelUnavailable:
+            return "On-device model is not available"
+        case .generationFailed:
+            return "Failed to generate response"
+        }
+    }
+}
+
 /// Manager for on-device LLM via Apple Foundation Models framework (iOS 26+).
 ///
 /// Uses `LanguageModelSession` from the FoundationModels framework to generate
@@ -117,7 +131,9 @@ final class LocalLLMManager: ObservableObject {
         ))
 
         do {
-            let typedSession = session as! LanguageModelSession
+            guard #available(iOS 26.0, *), let typedSession = session as? LanguageModelSession else {
+                throw LocalLLMError.modelUnavailable
+            }
             let response = try await typedSession.respond(to: userPrompt)
             let content = response.content
 
