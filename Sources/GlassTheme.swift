@@ -265,7 +265,7 @@ struct GlassThinkingIndicator: View {
         .padding(.horizontal, theme.spacingL)
         .padding(.vertical, theme.spacingM)
         .if(theme.usesGlass) { view in
-            view.glassEffect(.regular)
+            view.background(Color(.tertiarySystemFill))
         }
         .if(!theme.usesGlass) { view in
             view.background(Color(.tertiarySystemFill))
@@ -299,12 +299,7 @@ struct GlassApprovalCard: View {
                 .textSelection(.enabled)
                 .padding(theme.spacingM)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .if(theme.usesGlass) { view in
-                    view.glassEffect(.regular.tint(theme.warning.opacity(0.08)))
-                }
-                .if(!theme.usesGlass) { view in
-                    view.background(theme.warning.opacity(0.05))
-                }
+                .background(theme.warning.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous))
 
             HStack(spacing: theme.spacingM) {
@@ -314,12 +309,7 @@ struct GlassApprovalCard: View {
             }
         }
         .padding(theme.spacingL)
-        .if(theme.usesGlass) { view in
-            view.glassEffect(.regular.tint(theme.warning.opacity(0.05)))
-        }
-        .if(!theme.usesGlass) { view in
-            view.background(Color(.tertiarySystemFill))
-        }
+        .background(Color(.tertiarySystemFill))
         .clipShape(RoundedRectangle(cornerRadius: theme.radiusXL, style: .continuous))
         .padding(.horizontal, theme.spacingL)
         .padding(.bottom, theme.spacingS)
@@ -350,7 +340,7 @@ struct GlassButton: View {
                 .padding(.horizontal, theme.spacingM)
                 .padding(.vertical, theme.spacingS)
                 .if(theme.usesGlass) { view in
-                    view.glassEffect(.regular.tint(tint.opacity(0.2)))
+                    view.background(tint.opacity(0.12))
                 }
                 .if(!theme.usesGlass) { view in
                     view
@@ -479,12 +469,7 @@ struct GlassInputBar: View {
                 }
                 .padding(.horizontal, theme.spacingL)
                 .padding(.vertical, theme.spacingS)
-                .if(theme.usesGlass) { view in
-                    view.glassEffect(.regular.tint(theme.danger.opacity(0.05)))
-                }
-                .if(!theme.usesGlass) { view in
-                    view.background(theme.danger.opacity(0.05))
-                }
+                .background(theme.danger.opacity(0.06))
             }
 
             // Live conversation indicator (compact bar — shown when overlay is visible)
@@ -558,12 +543,7 @@ struct GlassInputBar: View {
                 }
                 .padding(.horizontal, theme.spacingL)
                 .padding(.vertical, theme.spacingS)
-                .if(theme.usesGlass) { view in
-                    view.glassEffect(.regular.tint(theme.accent.opacity(0.08)))
-                }
-                .if(!theme.usesGlass) { view in
-                    view.background(theme.accent.opacity(0.08))
-                }
+                .background(theme.accent.opacity(0.08))
             }
 
             // Main input row
@@ -673,7 +653,7 @@ struct GlassInputBar: View {
             .padding(.horizontal, theme.spacingL)
             .padding(.vertical, theme.spacingM)
             .if(theme.usesGlass) { view in
-                view.glassEffect(.regular)
+                view.background(.thinMaterial)
             }
             .if(!theme.usesGlass) { view in
                 view
@@ -863,7 +843,7 @@ struct VoiceConversationOverlay: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .glassEffect(.regular)
+                .background(.ultraThinMaterial)
                 .clipShape(Capsule())
 
                 // State label
@@ -926,7 +906,7 @@ struct VoiceConversationOverlay: View {
                             }
                         }
                         .padding(3)
-                        .glassEffect(.regular)
+                        .background(.ultraThinMaterial)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -940,7 +920,6 @@ struct VoiceConversationOverlay: View {
                             Circle()
                                 .fill(theme.danger)
                                 .frame(width: 64, height: 64)
-                                .glassEffect(.regular.tint(theme.danger.opacity(0.3)))
                                 .clipShape(Circle())
 
                             Image(systemName: "stop.fill")

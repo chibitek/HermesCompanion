@@ -202,8 +202,6 @@ struct ChatView: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 44, weight: .light))
                 .foregroundStyle(.secondary)
-                .glassEffect(.regular)
-                .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusXL, style: .continuous))
                 .frame(width: 88, height: 88)
 
             VStack(spacing: GlassTheme.spacingS) {
@@ -226,7 +224,7 @@ struct ChatView: View {
                         .foregroundStyle(appearance.accent)
                         .padding(.horizontal, GlassTheme.spacingL)
                         .padding(.vertical, GlassTheme.spacingM)
-                        .glassEffect(.regular.tint(appearance.accent.opacity(0.1)))
+                        .background(appearance.accent.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
                 }
                 .buttonStyle(.plain)
