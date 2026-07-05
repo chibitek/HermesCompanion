@@ -282,7 +282,7 @@ struct AudioVisualizerBar: View {
     private let barCount = 24
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // ~25fps, lighter than .animation
             Canvas { context, size in
                 let barWidth = max(3, size.width / CGFloat(barCount) - 3)
                 let spacing: CGFloat = 3
@@ -300,7 +300,8 @@ struct AudioVisualizerBar: View {
                     if isActive {
                         let wave = sin(t * 4 + Double(i) * 0.6) * 0.12
                         let noise = Double.random(in: -0.08...0.08)
-                        h = CGFloat(max(0.05, min(1.0, base + Double(level) * 0.9 + wave + noise)))
+                        let val = base + Double(level) * 0.9 + wave + noise
+                        h = CGFloat(max(0.05, min(1.0, val)))
                     } else {
                         let breath = sin(t * 1.2 + Double(i) * 0.4) * 0.04 + 0.06
                         h = CGFloat(breath)
@@ -309,12 +310,9 @@ struct AudioVisualizerBar: View {
                     let x = startX + CGFloat(i) * (barWidth + spacing)
                     let barHeight = max(3, size.height * h)
                     let y = (size.height - barHeight) / 2
-
+                    let rect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
                     let barColor = i % 3 == 2 ? secondaryColor : color
-                    context.fill(
-                        Path(CGRect(x: x, y: y, width: barWidth, height: barHeight)),
-                        with: .color(barColor)
-                    )
+                    context.fill(Path(rect), with: .color(barColor))
                 }
             }
         }
@@ -486,11 +484,11 @@ struct MatrixRainView: View {
     let secondaryColor: Color
     let intensity: Double  // 0.0 to 1.0, controls speed and brightness
 
-    private let columns = 30
-    private let charset: [Character] = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*(){}[]|:;<>,.?/~`")
+    private let columns = 18
+    private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんぁぃぅぇぉゃゅょっアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンｱｲｳｴｵｶｷｸｹｺ0123456789@#$%&*<>")
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // ~25fps, lighter than .animation
             Canvas { context, size in
                 let columnWidth = size.width / CGFloat(columns)
                 let t = timeline.date.timeIntervalSinceReferenceDate
@@ -501,37 +499,33 @@ struct MatrixRainView: View {
                     let xPos = CGFloat(col) * columnWidth
                     let seed = Double(col) * 7.3
                     let offset = (t * speed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
-                    let trailLength = Int(8 + Int(intensity * 12))
+                    let trailLength = Int(6 + Int(intensity * 6))
                     let start = Int(offset / charSize)
 
                     for i in 0..<trailLength {
                         let y = CGFloat(start - i) * charSize
                         guard y >= -charSize && y <= size.height else { continue }
 
-                        // Random character that changes over time
-                        let charIdx = Int((t * 3 + seed + Double(i) * 1.7)) % charset.count
-                        let char = charset[abs(charIdx) % charset.count]
+                        let charIdx = abs(Int((t * 3 + seed + Double(i) * 1.7))) % charset.count
+                        let char = charset[charIdx]
 
-                        // Fade trail: head is bright, tail fades
                         let fade = 1.0 - Double(i) / Double(trailLength)
                         let brightness = fade * (0.3 + intensity * 0.7)
 
-                        // Head of trail is white/bright, rest is colored
-                        let charColor: Color
-                        if i == 0 {
-                            charColor = Color.white.opacity(brightness)
-                        } else if i < 3 {
-                            charColor = color.opacity(brightness)
-                        } else {
-                            charColor = color.opacity(brightness * 0.6)
-                        }
+                        let opacity: Double
+                        if i == 0 { opacity = brightness }
+                        else if i < 3 { opacity = brightness }
+                        else { opacity = brightness * 0.6 }
 
-                        context.draw(
-                            Text(String(char))
-                                .font(.system(size: charSize, weight: .medium, design: .monospaced))
-                                .foregroundColor(charColor),
-                            at: CGPoint(x: xPos + columnWidth / 2, y: y + charSize / 2)
-                        )
+                        let charColor: Color
+                        if i == 0 { charColor = Color.white.opacity(opacity) }
+                        else { charColor = color.opacity(opacity) }
+
+                        let pos = CGPoint(x: xPos + columnWidth / 2, y: y + charSize / 2)
+                        let text = Text(String(char))
+                            .font(.system(size: charSize, weight: .medium, design: .monospaced))
+                            .foregroundColor(charColor)
+                        context.draw(text, at: pos)
                     }
                 }
             }

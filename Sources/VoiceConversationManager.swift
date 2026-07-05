@@ -74,12 +74,10 @@ final class VoiceConversationManager: ObservableObject {
     private var onTranscriptionComplete: ((String) -> Void)?
     private var onLocalResponse: ((String) -> Void)?
 
-    // Barge-in: mic monitoring during TTS playback
-    private var bargeInEngine: AVAudioEngine?
-    private var bargeInTimer: Timer?
-    private var bargeInLevel: Float = 0
-    private var bargeInThreshold: Float = 0.15  // RMS threshold for detecting user speech
-    private var bargeInTriggerCount = 0          // consecutive frames above threshold to confirm
+    // Barge-in: mic level monitoring during TTS playback
+    private var bargeInCheckTimer: Timer?
+    private var bargeInTriggerCount = 0
+    private let bargeInThreshold: Float = 0.15
 
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
@@ -390,41 +388,20 @@ final class VoiceConversationManager: ObservableObject {
         silenceTimer = nil
     }
 
-    // MARK: - Barge-In (mic monitoring during TTS)
+    // MARK: - Barge-In (mic level monitoring during TTS)
 
-    /// Start monitoring the microphone during TTS playback so we can detect
-    /// when the user starts speaking and immediately stop the AI's response.
+    /// During TTS, we monitor the existing audioLevel published property
+    /// instead of creating a second AVAudioEngine (which causes deadlocks).
+    /// The level timer in startLevelMonitoring() already runs during playback
+    /// since we use playAndRecord category.
+
     private func startBargeInMonitoring() {
         stopBargeInMonitoring()
-
-        bargeInEngine = AVAudioEngine()
-        guard let engine = bargeInEngine else { return }
-
-        let inputNode = engine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            guard let self = self else { return }
-
-            // Calculate RMS
-            guard let channelData = buffer.floatChannelData?[0] else { return }
-            let frameLength = Int(buffer.frameLength)
-            guard frameLength > 0 else { return }
-
-            var sum: Float = 0
-            for i in 0..<frameLength {
-                sum += channelData[i] * channelData[i]
-            }
-            let rms = sqrt(sum / Float(frameLength))
-            let level = min(1.0, rms * 3.0)
-
+        bargeInCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self, self.isSpeaking else { return }
-                self.bargeInLevel = level
-
-                if level > self.bargeInThreshold {
+                if self.audioLevel > self.bargeInThreshold {
                     self.bargeInTriggerCount += 1
-                    // Require 3 consecutive frames above threshold to confirm
                     if self.bargeInTriggerCount >= 3 {
                         self.handleBargeIn()
                     }
@@ -433,24 +410,12 @@ final class VoiceConversationManager: ObservableObject {
                 }
             }
         }
-
-        do {
-            try engine.start()
-        } catch {
-            // If we can't start barge-in monitoring, continue without it
-        }
     }
 
     private func stopBargeInMonitoring() {
-        if let engine = bargeInEngine {
-            if engine.isRunning {
-                engine.stop()
-            }
-            engine.inputNode.removeTap(onBus: 0)
-            bargeInEngine = nil
-        }
+        bargeInCheckTimer?.invalidate()
+        bargeInCheckTimer = nil
         bargeInTriggerCount = 0
-        bargeInLevel = 0
     }
 
     /// User started speaking while AI was talking -- stop TTS immediately
