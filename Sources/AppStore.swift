@@ -15,6 +15,7 @@ final class AppStore: ObservableObject {
     @Published var streamingText = ""
     @Published var toolEvents: [ToolEvent] = []
     @Published var skills: [Skill] = []
+    @Published var availableModels: [String] = []
     @Published var error: AppError?
     @Published var isLoading = false
     @Published var pendingApproval: PendingApproval?
@@ -103,6 +104,12 @@ final class AppStore: ObservableObject {
             self.capabilities = try await client.getCapabilities()
         } catch {
             // Non-fatal — capabilities are optional
+        }
+        // Load available models
+        do {
+            self.availableModels = try await client.getModels().map { $0.id }
+        } catch {
+            // Non-fatal
         }
     }
 

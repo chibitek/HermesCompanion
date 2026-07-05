@@ -397,6 +397,9 @@ struct GlassInputBar: View {
     let onFilePick: () -> Void
     let attachments: [AttachmentData]
     let onRemoveAttachment: (Int) -> Void
+    var currentModel: String = ""
+    var availableModels: [String] = []
+    var onSelectModel: ((String) -> Void)? = nil
 
     // Voice conversation callback - called when a transcription is ready in live modes (remote mode)
     var onVoiceConversationTranscription: ((String) -> Void)?
@@ -411,6 +414,7 @@ struct GlassInputBar: View {
     @State private var showAttachmentMenu = false
     @State private var voiceMode: VoiceInputMode = .voiceToText
     @State private var showVoiceHint = true
+    @State private var showModelPicker = false
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -579,6 +583,35 @@ struct GlassInputBar: View {
                     Button("Cancel", role: .cancel) {}
                 }
 
+                // Model picker pill (Claude-style)
+                if !currentModel.isEmpty {
+                    Button {
+                        showModelPicker = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(shortModelName(currentModel))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(theme.accent.opacity(0.12))
+                        .foregroundStyle(theme.accent)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .confirmationDialog("Select Model", isPresented: $showModelPicker, titleVisibility: .visible) {
+                        ForEach(availableModels, id: \.self) { model in
+                            Button(model) {
+                                onSelectModel?(model)
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    }
+                }
+
                 // Text input - single line so Return key sends
                 TextField("Message", text: $text)
                     .textFieldStyle(.plain)
@@ -586,10 +619,37 @@ struct GlassInputBar: View {
                     .submitLabel(.send)
                     .onSubmit(onSend)
 
-                // Voice mic button: tap = voice-to-text, long-press = 2-way conversation
-                // Always visible so user can access voice features
+                // Mic button: tap = voice-to-text
                 if !voiceTranscriber.isRecording && !voiceConversation.isConversing {
-                    micButton
+                    Button {
+                        voiceTranscriber.startTranscription()
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Voice to text")
+                }
+
+                // 2-way voice conversation button (dark/black background)
+                if !voiceTranscriber.isRecording {
+                    Button {
+                        if voiceConversation.isConversing {
+                            voiceConversation.stopConversation()
+                        } else {
+                            startVoiceConversation()
+                        }
+                    } label: {
+                        Image(systemName: voiceConversation.isConversing ? "stop.fill" : "waveform")
+                            .font(.body)
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(voiceConversation.isConversing ? theme.danger : Color.primary)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Two-way voice conversation")
                 }
 
                 // Send / Stop button
@@ -646,6 +706,14 @@ struct GlassInputBar: View {
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty
+    }
+
+    private func shortModelName(_ model: String) -> String {
+        // Shorten common model names for the pill
+        if model.contains("/") {
+            return model.split(separator: "/").last.map { String($0) } ?? model
+        }
+        return model
     }
 
     // MARK: - Mic Button (tap = voice-to-text, long-press = 2-way conversation)
