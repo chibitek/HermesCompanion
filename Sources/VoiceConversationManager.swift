@@ -92,6 +92,13 @@ final class VoiceConversationManager: ObservableObject {
         delegateBridge.manager = self
         synthesizer.delegate = delegateBridge
 
+        // Load voice settings from UserDefaults (set via Settings > Voice)
+        voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
+        if voiceSpeed == 0 { voiceSpeed = 0.5 }
+        voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
+        if voicePitch == 0 { voicePitch = 1.0 }
+        voiceIdentifier = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+
         // Auto-select local mode if available, otherwise remote
         if localLLM.isAvailable {
             conversationMode = .local
@@ -224,13 +231,9 @@ final class VoiceConversationManager: ObservableObject {
             guard let self = self else { return }
 
             if let error = error {
+                // Don't auto-restart on error -- this was causing infinite loops
+                // and crashes. Just stop listening and let the user tap to resume.
                 self.stopListening()
-                if self.isConversing {
-                    Task { @MainActor [weak self] in
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        self?.startListening()
-                    }
-                }
                 return
             }
 
@@ -333,13 +336,9 @@ final class VoiceConversationManager: ObservableObject {
     func finalizeTranscription(_ text: String) {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !finalText.isEmpty, !isFinalizing else {
+            // Empty transcription -- just stop listening.
+            // Don't auto-restart to avoid loops. User can tap mic to resume.
             stopListening()
-            if isConversing {
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    self?.startListening()
-                }
-            }
             return
         }
 
@@ -438,6 +437,13 @@ final class VoiceConversationManager: ObservableObject {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty, isConversing else { return }
 
+        // Sync voice settings from UserDefaults
+        voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
+        voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
+        voiceIdentifier = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+        if voiceSpeed == 0 { voiceSpeed = 0.5 }
+        if voicePitch == 0 { voicePitch = 1.0 }
+
         isFinalizing = false
         spokenResponse = cleanText
         isSpeaking = true
@@ -495,6 +501,16 @@ final class VoiceConversationManager: ObservableObject {
 
     // MARK: - Voice Settings Sync
 
+    /// Reload voice settings from UserDefaults. Call this when the voice page
+    /// appears, in case the user changed settings in Settings > Voice.
+    func syncVoiceSettings() {
+        voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
+        if voiceSpeed == 0 { voiceSpeed = 0.5 }
+        voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
+        if voicePitch == 0 { voicePitch = 1.0 }
+        voiceIdentifier = UserDefaults.standard.string(forKey: "voice_identifier") ?? ""
+    }
+
     /// Sync voice settings from @AppStorage values stored in the voice page.
     func updateVoiceSettings(speed: Float, pitch: Float, identifier: String) {
         voiceSpeed = speed
@@ -528,8 +544,10 @@ private final class SpeechDelegateBridge: NSObject, AVSpeechSynthesizerDelegate 
         Task { @MainActor in
             guard let manager = manager else { return }
             manager.isSpeaking = false
-            // Resume listening after the response is spoken
+            // Resume listening after the response is spoken.
+            // Add a small delay to let the audio session settle.
             if manager.isConversing {
+                try? await Task.sleep(nanoseconds: 300_000_000)  // 0.3s
                 manager.startListening()
             }
         }
