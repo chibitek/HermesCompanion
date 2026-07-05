@@ -12,11 +12,11 @@ final class AppearanceSettings: ObservableObject {
     // Accent color
     @AppStorage("accentColor") var accentColor: String = "teal"  // teal, blue, purple, green, orange, red
 
-    // Font size multiplier (0.8 = small, 1.0 = normal, 1.3 = large, 1.5 = extra large)
-    @AppStorage("fontScale") var fontScale: Double = 1.0
+    // Font size multiplier (0.7 = smallest, 1.0 = normal)
+    @AppStorage("fontScale") var fontScale: Double = 0.7
 
     // Message font size (explicit override, 0 = use system Dynamic Type)
-    @AppStorage("messageFontSize") var messageFontSize: Double = 0  // 0 = auto, 13-22 = explicit
+    @AppStorage("messageFontSize") var messageFontSize: Double = 11  // 0 = auto, 10-18 = explicit
 
     // Bubble density (compact vs spacious)
     @AppStorage("compactMode") var compactMode: Bool = false
@@ -30,6 +30,18 @@ final class AppearanceSettings: ObservableObject {
     var compactModeBool: Bool { compactMode }
     var fontScaleDouble: Double { fontScale }
     var messageFontSizeDouble: Double { messageFontSize }
+
+    init() {
+        let defaults = UserDefaults.standard
+        let migrationKey = "appearanceTypographyDefaults_v3"
+        guard !defaults.bool(forKey: migrationKey) else { return }
+
+        fontScale = 0.7
+        messageFontSize = 11.0
+        defaults.set(0.7, forKey: "fontScale")
+        defaults.set(11.0, forKey: "messageFontSize")
+        defaults.set(true, forKey: migrationKey)
+    }
 
     // MARK: - Theme
 
