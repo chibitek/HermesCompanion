@@ -53,7 +53,9 @@ struct ChatView: View {
                             // In remote mode: send the transcribed text to Hermes API
                             // and speak the response when it arrives
                             Task {
+                                voiceConversation.isThinking = true
                                 await store.sendMessage(transcription)
+                                voiceConversation.isThinking = false
                                 if let lastMsg = store.messages.last, lastMsg.isAssistant {
                                     voiceConversation.speakResponse(lastMsg.content)
                                 }

@@ -74,6 +74,22 @@ final class VoiceConversationManager: ObservableObject {
     private var onTranscriptionComplete: ((String) -> Void)?
     private var onLocalResponse: ((String) -> Void)?
 
+    // Barge-in: mic monitoring during TTS playback
+    private var bargeInEngine: AVAudioEngine?
+    private var bargeInTimer: Timer?
+    private var bargeInLevel: Float = 0
+    private var bargeInThreshold: Float = 0.15  // RMS threshold for detecting user speech
+    private var bargeInTriggerCount = 0          // consecutive frames above threshold to confirm
+
+    // Silence detection: auto-finalize when user stops talking
+    private var silenceTimer: Timer?
+    private var silenceTimeout: TimeInterval = 1.5  // seconds of silence before finalizing
+    private var lastTranscriptionTime: Date = .distantPast
+    private var lastTranscribedText: String = ""
+
+    // Debounce for finalization
+    private var isFinalizing = false
+
     init() {
         delegateBridge.manager = self
         synthesizer.delegate = delegateBridge
@@ -164,7 +180,9 @@ final class VoiceConversationManager: ObservableObject {
         isConversing = false
         stopListening()
         stopSpeaking()
+        stopBargeInMonitoring()
         isThinking = false
+        isFinalizing = false
         onTranscriptionComplete = nil
         onLocalResponse = nil
     }
@@ -172,7 +190,12 @@ final class VoiceConversationManager: ObservableObject {
     // MARK: - Listening
 
     func startListening() {
-        guard isConversing, !isSpeaking, !isThinking else { return }
+        guard isConversing else { return }
+        // If currently speaking, stop TTS first (barge-in by button tap)
+        if isSpeaking {
+            stopSpeaking()
+        }
+        guard !isThinking else { return }
         guard let speechRecognizer, speechRecognizer.isAvailable else { return }
 
         cancelRecognition()
@@ -204,6 +227,12 @@ final class VoiceConversationManager: ObservableObject {
 
             if let error = error {
                 self.stopListening()
+                if self.isConversing {
+                    Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        self?.startListening()
+                    }
+                }
                 return
             }
 
@@ -211,10 +240,9 @@ final class VoiceConversationManager: ObservableObject {
                 let text = result.bestTranscription.formattedString
                 Task { @MainActor [weak self] in
                     self?.transcribedText = text
+                    self?.resetSilenceTimer()
                 }
 
-                // When the recognizer is fairly confident the user paused,
-                // finalize and send the transcription.
                 if result.isFinal {
                     self.finalizeTranscription(text)
                 }
@@ -285,6 +313,8 @@ final class VoiceConversationManager: ObservableObject {
     func stopListening() {
         isListening = false
         stopLevelMonitoring()
+        stopSilenceTimer()
+        isFinalizing = false
 
         if audioEngine.isRunning {
             audioEngine.stop()
@@ -304,26 +334,27 @@ final class VoiceConversationManager: ObservableObject {
     /// In remote mode: calls the onTranscriptionComplete callback.
     func finalizeTranscription(_ text: String) {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !finalText.isEmpty else {
+        guard !finalText.isEmpty, !isFinalizing else {
             stopListening()
             if isConversing {
-                // Restart listening after a brief pause
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                     self?.startListening()
                 }
             }
             return
         }
 
+        isFinalizing = true
         stopListening()
 
         switch conversationMode {
         case .local:
-            // Generate response on-device, then speak it
             isThinking = true
             Task {
                 let response = await localLLM.generateResponse(to: finalText)
                 isThinking = false
+                isFinalizing = false
                 if isConversing {
                     speakResponse(response)
                     onLocalResponse?(response)
@@ -331,10 +362,106 @@ final class VoiceConversationManager: ObservableObject {
             }
 
         case .remote:
-            // Call the callback with the transcribed text
-            // The caller will send it to Hermes and call speakResponse when the
-            // reply arrives.
             onTranscriptionComplete?(finalText)
+            // For remote mode, isFinalizing will be reset when speakResponse is called
+            // by the caller after receiving the API response.
+        }
+    }
+
+    // MARK: - Silence Detection
+
+    /// Reset the silence timer. Called whenever new transcription text arrives.
+    /// If no new text arrives for `silenceTimeout` seconds, the transcription is finalized.
+    private func resetSilenceTimer() {
+        silenceTimer?.invalidate()
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: silenceTimeout, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isListening, !self.isFinalizing else { return }
+                let text = self.transcribedText
+                if !text.isEmpty {
+                    self.finalizeTranscription(text)
+                }
+            }
+        }
+    }
+
+    private func stopSilenceTimer() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+    }
+
+    // MARK: - Barge-In (mic monitoring during TTS)
+
+    /// Start monitoring the microphone during TTS playback so we can detect
+    /// when the user starts speaking and immediately stop the AI's response.
+    private func startBargeInMonitoring() {
+        stopBargeInMonitoring()
+
+        bargeInEngine = AVAudioEngine()
+        guard let engine = bargeInEngine else { return }
+
+        let inputNode = engine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self = self else { return }
+
+            // Calculate RMS
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength > 0 else { return }
+
+            var sum: Float = 0
+            for i in 0..<frameLength {
+                sum += channelData[i] * channelData[i]
+            }
+            let rms = sqrt(sum / Float(frameLength))
+            let level = min(1.0, rms * 3.0)
+
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isSpeaking else { return }
+                self.bargeInLevel = level
+
+                if level > self.bargeInThreshold {
+                    self.bargeInTriggerCount += 1
+                    // Require 3 consecutive frames above threshold to confirm
+                    if self.bargeInTriggerCount >= 3 {
+                        self.handleBargeIn()
+                    }
+                } else {
+                    self.bargeInTriggerCount = 0
+                }
+            }
+        }
+
+        do {
+            try engine.start()
+        } catch {
+            // If we can't start barge-in monitoring, continue without it
+        }
+    }
+
+    private func stopBargeInMonitoring() {
+        if let engine = bargeInEngine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            engine.inputNode.removeTap(onBus: 0)
+            bargeInEngine = nil
+        }
+        bargeInTriggerCount = 0
+        bargeInLevel = 0
+    }
+
+    /// User started speaking while AI was talking -- stop TTS immediately
+    /// and switch to listening mode.
+    private func handleBargeIn() {
+        stopBargeInMonitoring()
+        stopSpeaking()
+        // Small delay to let audio session switch from playback to recording
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)  // 0.2s
+            self?.startListening()
         }
     }
 
@@ -346,16 +473,17 @@ final class VoiceConversationManager: ObservableObject {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty, isConversing else { return }
 
+        isFinalizing = false
         spokenResponse = cleanText
         isSpeaking = true
 
-        // Configure audio session for playback
+        // Configure audio session for playback + recording (for barge-in)
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default, options: [.duckOthers])
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            // Continue anyway — TTS may still work
+            // Continue anyway -- TTS may still work
         }
 
         let utterance = AVSpeechUtterance(string: cleanText)
@@ -374,9 +502,13 @@ final class VoiceConversationManager: ObservableObject {
         utterance.postUtteranceDelay = 0.3
 
         synthesizer.speak(utterance)
+
+        // Start monitoring mic for barge-in (user interrupting the AI)
+        startBargeInMonitoring()
     }
 
     func stopSpeaking() {
+        stopBargeInMonitoring()
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
