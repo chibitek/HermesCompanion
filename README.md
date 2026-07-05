@@ -7,12 +7,13 @@ Built by Chibitek Labs.
 ## Features
 
 ### Chat
-- Non-streaming chat with full tool execution visibility
+- Real-time streaming chat (SSE) with full tool execution visibility
 - Real-time tool event chips showing what the agent is doing
 - Approval prompts for tool execution
 - Multimodal support (send photos and files)
 - Session history with rename support
 - Auto-login on launch via Keychain
+- Foreground sync for replies sent from other Hermes surfaces (macOS, Telegram, Discord)
 
 ### Voice
 - Voice-to-text dictation via SFSpeechRecognizer
