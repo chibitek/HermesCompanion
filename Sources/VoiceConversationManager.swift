@@ -63,6 +63,7 @@ final class VoiceConversationManager: ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private var hasInstalledInputTap = false
+    private var isStoppingListening = false
 
     // Audio level monitoring
     private var levelTimer: Timer?
@@ -225,6 +226,7 @@ final class VoiceConversationManager: ObservableObject {
             isFinalizing = false
             return
         }
+        voiceError = nil
         speakResponse(cleanResponse)
     }
 
@@ -242,6 +244,7 @@ final class VoiceConversationManager: ObservableObject {
             voiceError = "Speech recognition is unavailable."
             return
         }
+        isStoppingListening = false
         voiceError = nil
 
         // CRITICAL: Stop the engine and remove any existing tap BEFORE setting
@@ -288,6 +291,12 @@ final class VoiceConversationManager: ObservableObject {
             guard let self = self else { return }
 
             if let error {
+                if self.isStoppingListening || self.isBenignRecognitionCancellation(error) {
+                    self.isStoppingListening = false
+                    self.stopListening()
+                    return
+                }
+
                 // Don't auto-restart on error -- this was causing infinite loops
                 // and crashes. Just stop listening and let the user tap to resume.
                 self.stopListening()
@@ -412,6 +421,7 @@ final class VoiceConversationManager: ObservableObject {
 
         recognitionRequest?.endAudio()
         recognitionRequest = nil
+        isStoppingListening = recognitionTask != nil
         recognitionTask?.cancel()
         recognitionTask = nil
 
@@ -541,6 +551,7 @@ final class VoiceConversationManager: ObservableObject {
         isFinalizing = false
         spokenResponse = cleanText
         isSpeaking = true
+        voiceError = nil
 
         // Configure audio session for playback + recording (for barge-in)
         do {
@@ -617,9 +628,18 @@ final class VoiceConversationManager: ObservableObject {
     // MARK: - Private
 
     func cancelRecognition() {
+        isStoppingListening = recognitionTask != nil
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = nil
+    }
+
+    private func isBenignRecognitionCancellation(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.code == NSURLErrorCancelled { return true }
+
+        let description = error.localizedDescription.lowercased()
+        return description.contains("canceled") || description.contains("cancelled")
     }
 }
 
