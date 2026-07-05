@@ -44,6 +44,11 @@ struct ChatView: View {
                         onFilePick: { showFilePicker = true },
                         attachments: attachments,
                         onRemoveAttachment: removeAttachment,
+                        currentModel: store.capabilities?.model ?? "",
+                        availableModels: store.availableModels,
+                        onSelectModel: { model in
+                            UserDefaults.standard.set(model, forKey: "preferred_model")
+                        },
                         onVoiceConversationTranscription: { transcription in
                             // In remote mode: send the transcribed text to Hermes API
                             // and speak the response when it arrives
