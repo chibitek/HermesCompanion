@@ -55,26 +55,6 @@ struct ScreenFlicker: ViewModifier {
     }
 }
 
-/// Glitch text effect for headers
-struct GlitchText: View {
-    let text: String
-    var color: Color = .green
-    @State private var glitchOffset: CGFloat = 0
-    @State private var showGlitch = false
-
-    var body: some View {
-        Text(text)
-            .foregroundStyle(color)
-            .shadow(color: Color.red.opacity(0.7), radius: 0, x: showGlitch ? -1 : 0, y: 0)
-            .shadow(color: Color.blue.opacity(0.7), radius: 0, x: showGlitch ? 1 : 0, y: 0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
-                    showGlitch.toggle()
-                }
-            }
-    }
-}
-
 // MARK: - Theme Extensions for CRT
 
 extension View {
