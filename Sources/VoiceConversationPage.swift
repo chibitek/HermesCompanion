@@ -1,267 +1,323 @@
 import SwiftUI
 import AVFoundation
 
-// MARK: - Cyberpunk Voice Conversation Page
+// MARK: - Cyberpunk Voice Presets
+
+struct CyberpunkVoicePreset: Identifiable, CaseIterable, Equatable {
+    let id: String
+    let name: String
+    let primary: Color
+    let secondary: Color
+    let background: Color
+
+    static let matrix = CyberpunkVoicePreset(id: "matrix", name: "MATRIX", primary: Color(red: 0, green: 1, blue: 0.25), secondary: Color(red: 0, green: 0.56, blue: 0.07), background: .black)
+    static let retroAmber = CyberpunkVoicePreset(id: "amber", name: "AMBER", primary: Color(red: 1, green: 0.65, blue: 0), secondary: Color(red: 0.8, green: 0.52, blue: 0), background: .black)
+    static let neon = CyberpunkVoicePreset(id: "neon", name: "NEON", primary: Color(red: 1, green: 0, blue: 0.9), secondary: Color(red: 0, green: 0.94, blue: 1), background: .black)
+    static let blueHacker = CyberpunkVoicePreset(id: "blue", name: "BLUE", primary: Color(red: 0, green: 0.74, blue: 1), secondary: Color(red: 0, green: 0.47, blue: 0.74), background: .black)
+
+    static var allCases: [CyberpunkVoicePreset] = [.matrix, .retroAmber, .neon, .blueHacker]
+
+    var next: CyberpunkVoicePreset {
+        let all = CyberpunkVoicePreset.allCases
+        let idx = all.firstIndex(of: self) ?? 0
+        return all[(idx + 1) % all.count]
+    }
+}
+
+// MARK: - Voice Conversation Page
 
 struct VoiceConversationPage: View {
-    @ObservedObject var voiceManager: VoiceConversationManager
+    @ObservedObject var voiceConversation: VoiceConversationManager
     var currentModel: String = ""
     var availableModels: [String] = []
     var onSelectModel: ((String) -> Void)? = nil
-    var onRemoteTranscription: ((String) -> Void)? = nil
-    var onSpeakResponse: ((String) -> Void)? = nil
+    var onClose: (() -> Void)? = nil
 
-    @Environment(\.dismiss) private var dismiss
+    @State private var preset: CyberpunkVoicePreset = .matrix
     @State private var showSettings = false
-    @State private var audioLevels: [CGFloat] = Array(repeating: 0.1, count: 24)
-    @State private var showModelPicker = false
-    @AppStorage("voice_speed") private var voiceSpeed: Double = 1.0
-    @AppStorage("voice_pitch") private var voicePitch: Double = 1.0
-    @AppStorage("voice_identifier") private var identifier: String = ""
-
-    private let neonCyan = Color(red: 0, green: 0.94, blue: 1)
-    private let neonMagenta = Color(red: 1, green: 0, blue: 0.9)
+    @State private var micPulse = false
 
     var body: some View {
         ZStack {
-            Color(red: 0.03, green: 0.03, blue: 0.06).ignoresSafeArea()
+            preset.background.ignoresSafeArea()
+            ScanlineOverlay(lineColor: preset.primary)
 
             VStack(spacing: 0) {
                 topBar
                 Spacer()
                 visualizer
-                statusLabel
-                textCards
                 Spacer()
-                controls
+                statusText
+                transcriptionCards
+                bottomControls
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 40)
+            .padding()
         }
         .preferredColorScheme(.dark)
-        .onAppear {
-            voiceManager.requestAuthorization()
-            voiceManager.updateVoiceSettings(speed: Float(voiceSpeed), pitch: Float(voicePitch), identifier: voiceIdentifier)
-            startAnimation()
-        }
-        .onDisappear { voiceManager.stopConversation() }
         .sheet(isPresented: $showSettings) {
-            VoiceSettingsSheet(speed: $voiceSpeed, pitch: $voicePitch, identifier: $voiceIdentifier)
+            VoiceSettingsSheet(preset: preset)
         }
     }
 
-    // Top bar
+    // MARK: - Top Bar
+
     private var topBar: some View {
         HStack {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark").font(.title3).foregroundStyle(neonCyan)
+            Button { onClose?() } label: {
+                Image(systemName: "xmark")
+                    .font(.title3)
+                    .foregroundStyle(preset.primary)
             }
+
             Spacer()
+
             Text("HERMES VOICE")
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .foregroundStyle(neonCyan)
-                .shadow(color: neonCyan.opacity(0.6), radius: 4)
+                .font(.system(.headline, design: .monospaced).weight(.bold))
+                .foregroundStyle(preset.primary)
+                .shadow(color: preset.primary.opacity(0.6), radius: 4)
+
             Spacer()
+
+            Button { preset = preset.next } label: {
+                Text(preset.name)
+                    .font(.system(.caption, design: .monospaced).weight(.bold))
+                    .foregroundStyle(preset.background)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(preset.primary)
+                    .clipShape(Capsule())
+            }
+
             Button { showSettings = true } label: {
-                Image(systemName: "gearshape").font(.title3).foregroundStyle(neonCyan)
+                Image(systemName: "gearshape")
+                    .font(.title3)
+                    .foregroundStyle(preset.primary)
             }
         }
-        .padding(.top, 16)
-        .padding(.bottom, 24)
     }
 
-    // Visualizer
+    // MARK: - Visualizer
+
     private var visualizer: some View {
-        ZStack {
-            Circle()
-                .stroke(statusColor.opacity(0.3), lineWidth: 2)
-                .frame(width: 200, height: 200)
-                .shadow(color: statusColor.opacity(0.5), radius: 10)
-
-            HStack(spacing: 3) {
-                ForEach(0..<24, id: \.self) { i in
-                    bar(i)
-                }
+        VStack(spacing: 4) {
+            if voiceConversation.isListening {
+                AudioVisualizerBar(color: preset.primary, isActive: true)
+                    .frame(height: 80)
+            } else if voiceConversation.isSpeaking {
+                Circle()
+                    .stroke(preset.primary, lineWidth: 3)
+                    .frame(width: 80, height: 80)
+                    .scaleEffect(micPulse ? 1.1 : 0.9)
+                    .opacity(micPulse ? 0.8 : 0.4)
+                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: micPulse)
+                    .onAppear { micPulse = true }
+            } else {
+                Circle()
+                    .stroke(preset.primary.opacity(0.3), lineWidth: 2)
+                    .frame(width: 80, height: 80)
             }
         }
-        .frame(height: 220)
     }
 
-    private func bar(_ i: Int) -> some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(LinearGradient(colors: [neonCyan, neonMagenta], startPoint: .bottom, endPoint: .top))
-            .frame(width: 6, height: max(4, 80 * audioLevels[i]))
-            .shadow(color: neonCyan.opacity(0.4), radius: 2)
+    // MARK: - Status Text
+
+    private var statusText: some View {
+        Text(statusLabel)
+            .font(.system(.title3, design: .monospaced).weight(.bold))
+            .foregroundStyle(preset.primary)
+            .shadow(color: preset.primary.opacity(0.5), radius: 3)
+            .padding(.vertical, 8)
     }
 
-    // Status
-    private var statusLabel: some View {
-        Text(label)
-            .font(.system(size: 13, weight: .medium, design: .monospaced))
-            .foregroundStyle(statusColor)
-            .shadow(color: statusColor.opacity(0.5), radius: 3)
-            .padding(.top, 16)
+    private var statusLabel: String {
+        if voiceConversation.isThinking { return "THINKING..." }
+        if voiceConversation.isSpeaking { return "SPEAKING..." }
+        if voiceConversation.isListening { return "LISTENING..." }
+        if voiceConversation.isConversing { return "TAP TO TALK" }
+        return "SAY SOMETHING"
     }
 
-    private var label: String {
-        if voiceManager.isSpeaking { return "SPEAKING..." }
-        if voiceManager.isThinking { return "THINKING..." }
-        if voiceManager.isListening { return "LISTENING..." }
-        return "SAY SOMETHING..."
-    }
+    // MARK: - Transcription Cards
 
-    private var statusColor: Color {
-        if voiceManager.isSpeaking { return neonMagenta }
-        if voiceManager.isThinking { return .yellow }
-        return neonCyan
-    }
-
-    // Text cards
-    private var textCards: some View {
-        VStack(spacing: 12) {
-            if !voiceManager.transcribedText.isEmpty {
-                card(voiceManager.transcribedText, neonCyan, "YOU")
+    private var transcriptionCards: some View {
+        VStack(spacing: 8) {
+            if !voiceConversation.transcribedText.isEmpty {
+                cardView(label: "YOU", text: voiceConversation.transcribedText, color: preset.secondary)
             }
-            if !voiceManager.spokenResponse.isEmpty {
-                card(voiceManager.spokenResponse, neonMagenta, "HERMES")
+            if !voiceConversation.spokenResponse.isEmpty {
+                cardView(label: "HERMES", text: voiceConversation.spokenResponse, color: preset.primary)
             }
         }
-        .padding(.top, 24)
     }
 
-    private func card(_ text: String, _ color: Color, _ label: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func cardView(label: String, text: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(color)
             Text(text)
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundStyle(.white)
-                .lineLimit(4)
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(color.opacity(0.9))
+                .lineLimit(5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(12)
         .background(color.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(color.opacity(0.3), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(color.opacity(0.3), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
-    // Controls
-    private var controls: some View {
-        VStack(spacing: 16) {
-            // Mode toggle
-            HStack(spacing: 12) {
-                modeBtn("LOCAL", voiceManager.conversationMode == .local) {
-                    voiceManager.conversationMode = .local
-                }
-                modeBtn("REMOTE", voiceManager.conversationMode == .remote) {
-                    voiceManager.conversationMode = .remote
-                }
-            }
+    // MARK: - Bottom Controls
 
-            // Model picker
-            if !currentModel.isEmpty {
-                Menu {
-                    ForEach(availableModels, id: \.self) { m in
-                        Button(m) { onSelectModel?(m) }
+    private var bottomControls: some View {
+        VStack(spacing: 12) {
+            // Mode toggle
+            HStack(spacing: 8) {
+                ForEach(ConversationMode.allCases, id: \.self) { mode in
+                    Button {
+                        voiceConversation.conversationMode = mode
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: mode.icon)
+                            Text(mode.rawValue)
+                        }
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                        .foregroundStyle(voiceConversation.conversationMode == mode ? preset.background : preset.primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(voiceConversation.conversationMode == mode ? preset.primary : Color.clear)
+                        .overlay(Capsule().stroke(preset.primary.opacity(0.4), lineWidth: 1))
+                        .clipShape(Capsule())
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(shortModel(currentModel)).font(.system(size: 11, design: .monospaced))
-                        Image(systemName: "chevron.down").font(.system(size: 9))
-                    }
-                    .foregroundStyle(neonCyan)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(neonCyan.opacity(0.1))
-                    .clipShape(Capsule())
                 }
             }
 
             // Mic button
-            Button { toggle() } label: {
+            Button {
+                if voiceConversation.isConversing {
+                    if voiceConversation.isListening {
+                        voiceConversation.stopListening()
+                    } else {
+                        voiceConversation.startListening()
+                    }
+                } else {
+                    voiceConversation.startConversation(
+                        onTranscription: { text in
+                            // Handle transcription in remote mode
+                        },
+                        onLocalResponse: { _ in }
+                    )
+                }
+            } label: {
                 ZStack {
                     Circle()
-                        .stroke(statusColor.opacity(0.4), lineWidth: 3)
+                        .stroke(preset.primary, lineWidth: 3)
                         .frame(width: 72, height: 72)
-                        .shadow(color: statusColor.opacity(0.5), radius: 8)
                     Circle()
-                        .fill(voiceManager.isConversing ? statusColor : Color.white.opacity(0.1))
-                        .frame(width: 56, height: 56)
-                    Image(systemName: voiceManager.isConversing ? "stop.fill" : "mic.fill")
-                        .font(.title2)
-                        .foregroundStyle(voiceManager.isConversing ? .black : .white)
+                        .fill(voiceConversation.isListening ? preset.primary.opacity(0.2) : .clear)
+                        .frame(width: 64, height: 64)
+                    Image(systemName: voiceConversation.isListening ? "stop.fill" : "mic.fill")
+                        .font(.title)
+                        .foregroundStyle(preset.primary)
                 }
             }
         }
     }
+}
 
-    private func modeBtn(_ text: String, _ active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(text)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(active ? .black : neonCyan)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .background(active ? neonCyan : neonCyan.opacity(0.1))
-                .clipShape(Capsule())
-        }
-    }
+// MARK: - Audio Visualizer Bar
 
-    private func shortModel(_ m: String) -> String {
-        if m.contains("/") { return m.split(separator: "/").last.map { String($0) } ?? m }
-        return m
-    }
+struct AudioVisualizerBar: View {
+    let color: Color
+    let isActive: Bool
+    @State private var levels: [CGFloat] = Array(repeating: 0.3, count: 24)
 
-    private func toggle() {
-        if voiceManager.isConversing {
-            voiceManager.stopConversation()
-        } else {
-            voiceManager.startConversation(
-                onTranscription: { text in
-                    if voiceManager.conversationMode == .remote { onRemoteTranscription?(text) }
-                },
-                onLocalResponse: { response in
-                    onSpeakResponse?(response)
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 3) {
+                ForEach(0..<levels.count, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color)
+                        .frame(width: max(3, geo.size.width / CGFloat(levels.count) - 3))
+                        .frame(height: max(4, geo.size.height * levels[i]))
+                        .animation(.easeInOut(duration: 0.1), value: levels[i])
                 }
-            )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }
+        .onAppear {
+            if isActive { startAnimation() }
         }
     }
 
     private func startAnimation() {
-        Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { _ in
-            if voiceManager.isListening || voiceManager.isSpeaking {
-                audioLevels = (0..<24).map { i in
-                    let c = 12.0
-                    let d = abs(Double(i) - c) / c
-                    return CGFloat(min(1.0, 0.2 + (1.0 - d) * 0.3 + Double.random(in: 0...0.4)))
-                }
-            } else {
-                audioLevels = Array(repeating: 0.08, count: 24)
+        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            for i in 0..<levels.count {
+                levels[i] = CGFloat.random(in: 0.1...1.0)
             }
         }
+    }
+}
+
+// MARK: - Scanline Overlay
+
+struct ScanlineOverlay: View {
+    var lineColor: Color = .white
+    var lineSpacing: CGFloat = 3
+    var lineOpacity: Double = 0.07
+
+    var body: some View {
+        Canvas { context, size in
+            var y: CGFloat = 0
+            while y < size.height {
+                context.fill(
+                    Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                    with: .color(lineColor.opacity(lineOpacity))
+                )
+                y += lineSpacing
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - CRT Glow Modifier
+
+struct CRTGlow: ViewModifier {
+    let color: Color
+    var radius: CGFloat = 6
+    var opacity: Double = 0.8
+
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: color.opacity(opacity), radius: radius)
+    }
+}
+
+extension View {
+    func crtGlow(_ color: Color, radius: CGFloat = 6, opacity: Double = 0.8) -> some View {
+        modifier(CRTGlow(color: color, radius: radius, opacity: opacity))
     }
 }
 
 // MARK: - Voice Settings Sheet
 
 struct VoiceSettingsSheet: View {
-    @Binding var speed: Double
-    @Binding var pitch: Double
-    @Binding var identifier: String
+    var preset: CyberpunkVoicePreset = .neon
+    @State private var speed: Double = 0.5
+    @State private var pitch: Double = 1.0
+    @State private var selectedVoiceId: String = ""
+    @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @Environment(\.dismiss) private var dismiss
-
-    private let neonCyan = Color(red: 0, green: 0.94, blue: 1)
-    @State private var voices: [AVSpeechSynthesisVoice] = []
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.03, green: 0.03, blue: 0.06).ignoresSafeArea()
+                Color.black.ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 24) {
-                        sliderSection("SPEED", value: $speed, range: 0.5...2.0, format: "%.1fx")
-                        sliderSection("PITCH", value: $pitch, range: 0.5...2.0, format: "%.1f")
+                        speedSection
+                        pitchSection
                         voiceSection
                     }
                     .padding(20)
@@ -273,57 +329,89 @@ struct VoiceSettingsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(neonCyan)
-                        .font(.system(.body, design: .monospaced).weight(.bold))
+                        .foregroundStyle(preset.primary)
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .onAppear {
-            voices = AVSpeechSynthesisVoice.speechVoices()
+            availableVoices = AVSpeechSynthesisVoice.speechVoices()
                 .filter { $0.quality == .enhanced }
                 .sorted { $0.name < $1.name }
-            if voiceIdentifier.isEmpty { voiceIdentifier = AVSpeechSynthesisVoice.defaultVoice.identifier }
+            if selectedVoiceId.isEmpty {
+                selectedVoiceId = AVSpeechSynthesisVoice.speechVoices().first?.identifier ?? ""
+            }
         }
     }
 
-    private func sliderSection(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, format: String) -> some View {
+    private var speedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
+            Text("SPEED")
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(neonCyan)
-            Slider(value: value, in: range, step: 0.1).tint(neonCyan)
-            Text(String(format: format, value.wrappedValue))
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.gray)
+                .foregroundStyle(preset.primary)
+            HStack {
+                Slider(value: $speed, in: 0.1...1.0, step: 0.05)
+                    .tint(preset.primary)
+                Text(String(format: "%.2f", speed))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(preset.primary)
+            }
         }
+        .padding(16)
+        .background(preset.primary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var pitchSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("PITCH")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(preset.secondary)
+            HStack {
+                Slider(value: $pitch, in: 0.5...2.0, step: 0.1)
+                    .tint(preset.secondary)
+                Text(String(format: "%.1f", pitch))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(preset.secondary)
+            }
+        }
+        .padding(16)
+        .background(preset.secondary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var voiceSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("VOICE")
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(neonCyan)
-            ForEach(voices, id: \.identifier) { v in
-                voiceRow(v)
+                .foregroundStyle(preset.primary)
+            ForEach(availableVoices, id: \.identifier) { voice in
+                voiceRow(voice)
             }
         }
+        .padding(16)
+        .background(preset.primary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func voiceRow(_ v: AVSpeechSynthesisVoice) -> some View {
-        let sel = v.identifier == voiceIdentifier
+    private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
+        let isSelected = voice.identifier == selectedVoiceId
         return Button {
-            voiceIdentifier = v.identifier
+            selectedVoiceId = voice.identifier
         } label: {
             HStack {
-                Text("\(v.name) (\(v.language))")
+                Text(voice.name)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(sel ? neonCyan : .gray)
+                    .foregroundStyle(isSelected ? preset.primary : .gray)
                 Spacer()
-                if sel { Image(systemName: "checkmark").foregroundStyle(neonCyan) }
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(preset.primary)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .background(isSelected ? preset.primary.opacity(0.1) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
     }
