@@ -90,6 +90,7 @@ final class VoiceConversationManager: ObservableObject {
 
     // Debounce for finalization
     private var isFinalizing = false
+    private var pendingConversationStartID: UUID?
 
     init() {
         delegateBridge.manager = self
@@ -184,20 +185,25 @@ final class VoiceConversationManager: ObservableObject {
         onLocalResponse: ((String) -> Void)? = nil
     ) {
         guard hasPermission else {
+            let startID = UUID()
+            pendingConversationStartID = startID
             Task {
                 await requestAuthorization()
+                guard pendingConversationStartID == startID else { return }
                 if hasPermission {
                     startConversation(
                         onTranscription: onTranscription,
                         onLocalResponse: onLocalResponse
                     )
                 } else {
+                    pendingConversationStartID = nil
                     voiceError = "Microphone and speech recognition permissions are required."
                 }
             }
             return
         }
 
+        pendingConversationStartID = nil
         isConversing = true
         voiceError = nil
         self.onTranscriptionComplete = onTranscription
@@ -206,6 +212,7 @@ final class VoiceConversationManager: ObservableObject {
     }
 
     func stopConversation() {
+        pendingConversationStartID = nil
         isConversing = false
         stopListening()
         stopSpeaking()
