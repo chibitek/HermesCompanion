@@ -26,7 +26,7 @@ final class VoiceTranscriber: ObservableObject {
     func requestAuthorization() async {
         // Request microphone permission
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            AVAudioApplication.requestRecordPermission { _ in
                 continuation.resume()
             }
         }
@@ -39,7 +39,7 @@ final class VoiceTranscriber: ObservableObject {
         }
 
         // Check if we have both permissions
-        let micGranted = AVAudioSession.sharedInstance().recordPermission == .granted
+        let micGranted = AVAudioApplication.shared.recordPermission == .granted
         let speechGranted = SFSpeechRecognizer.authorizationStatus() == .authorized
         hasPermission = micGranted && speechGranted
     }
@@ -86,7 +86,7 @@ final class VoiceTranscriber: ObservableObject {
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
 
-            if let error = error {
+            if error != nil {
                 self.stopTranscription()
                 return
             }

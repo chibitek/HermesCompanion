@@ -15,6 +15,7 @@ final class AppStore: ObservableObject {
     @Published var streamingText = ""
     @Published var toolEvents: [ToolEvent] = []
     @Published var skills: [Skill] = []
+    @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
     @Published var error: AppError?
     @Published var isLoading = false
@@ -51,6 +52,20 @@ final class AppStore: ObservableObject {
     private static let modelKey = "preferred_model"
     private static let thinkingKey = "preferred_thinking"
 
+    var effectiveCurrentProvider: String {
+        nonEmpty(capabilities?.currentProvider)
+            ?? nonEmpty(preferredProvider)
+            ?? providerForModel(effectiveCurrentModel)
+            ?? ""
+    }
+
+    var effectiveCurrentModel: String {
+        nonEmpty(capabilities?.currentModel)
+            ?? nonEmpty(preferredModel)
+            ?? nonEmpty(capabilities?.model)
+            ?? ""
+    }
+
     // MARK: - Private
 
     private(set) var apiClient: HermesAPIClient?
@@ -76,8 +91,9 @@ final class AppStore: ObservableObject {
         #endif
 
         if let initialConfig {
-            connectionConfig = initialConfig
-            apiClient = HermesAPIClient(config: initialConfig)
+            let reachableConfig = Self.debugReachableConfig(initialConfig)
+            connectionConfig = reachableConfig
+            apiClient = HermesAPIClient(config: reachableConfig)
         }
     }
 
@@ -167,6 +183,7 @@ final class AppStore: ObservableObject {
         activeSession = nil
         messages = []
         skills = []
+        toolsets = []
         KeychainManager.shared.deleteActive()
     }
 
@@ -191,6 +208,7 @@ final class AppStore: ObservableObject {
         toolEvents = []
         streamingText = ""
         skills = []
+        toolsets = []
         pendingApproval = nil
 
         self.connectionConfig = config
@@ -229,10 +247,35 @@ final class AppStore: ObservableObject {
         }
         // Load available models
         do {
-            self.availableModels = try await client.getModels().map { $0.id }
+            let models = try await client.getModels().map { $0.id }
+            self.availableModels = modelsIncludingCurrent(models)
         } catch {
+            self.availableModels = modelsIncludingCurrent([])
             // Non-fatal
         }
+    }
+
+    func selectPreferredModel(_ model: String) {
+        preferredModel = model
+        if let provider = providerForModel(model) {
+            preferredProvider = provider
+        }
+    }
+
+    private func providerForModel(_ model: String) -> String? {
+        guard let slash = model.firstIndex(of: "/"), slash > model.startIndex else { return nil }
+        return String(model[..<slash])
+    }
+
+    private func modelsIncludingCurrent(_ models: [String]) -> [String] {
+        let current = effectiveCurrentModel
+        guard !current.isEmpty, !models.contains(current) else { return models }
+        return [current] + models
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        return value
     }
 
     // MARK: - Sessions
@@ -330,12 +373,43 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func forkSession(_ session: HermesSession) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
+        do {
+            let forked = try await client.forkSession(sessionId: session.id, title: forkTitle(for: session))
+            self.sessions.insert(forked, at: 0)
+            await selectSession(forked)
+        } catch {
+            self.error = AppError(message: "Failed to fork session: \(error.localizedDescription)")
+        }
+    }
+
+    private func forkTitle(for session: HermesSession) -> String {
+        let base = (session.title?.isEmpty == false ? session.title! : "Untitled").trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(base) Fork"
+    }
+
     // MARK: - Skills
 
     func refreshSkills() async {
         guard let client = try? self.client() else { return }
         do {
             self.skills = try await client.listSkills()
+        } catch {
+            // Non-fatal
+        }
+    }
+
+    func refreshToolsets() async {
+        guard let client = try? self.client() else { return }
+        do {
+            self.toolsets = try await client.getToolsets()
         } catch {
             // Non-fatal
         }
@@ -571,19 +645,43 @@ final class AppStore: ObservableObject {
     #if DEBUG
     private static func debugConnectionFromEnvironment() -> ConnectionConfig? {
         let env = ProcessInfo.processInfo.environment
-        guard let apiKey = env["API_SERVER_KEY"], !apiKey.isEmpty else { return nil }
+        let defaults = UserDefaults.standard
+        let apiKey = env["API_SERVER_KEY"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? defaults.string(forKey: "debug_apiKey").flatMap { $0.isEmpty ? nil : $0 }
+        guard let apiKey else { return nil }
 
         let baseURL: String
         if let explicitURL = env["HERMES_BASE_URL"], !explicitURL.isEmpty {
             baseURL = explicitURL
+        } else if let debugBaseURL = defaults.string(forKey: "debug_baseURL"), !debugBaseURL.isEmpty {
+            baseURL = debugBaseURL
         } else {
-            let host = env["API_SERVER_HOST"].flatMap { $0.isEmpty ? nil : $0 } ?? "100.81.23.33"
+            let host = env["API_SERVER_HOST"].flatMap { ($0.isEmpty || $0 == "0.0.0.0") ? nil : $0 } ?? "100.81.23.33"
             let port = env["API_SERVER_PORT"].flatMap { $0.isEmpty ? nil : $0 } ?? "\(AppConfig.defaultPort)"
             let scheme = env["API_SERVER_SCHEME"].flatMap { $0.isEmpty ? nil : $0 } ?? "http"
             baseURL = "\(scheme)://\(host):\(port)"
         }
 
-        return ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: env["HERMES_LABEL"] ?? "Hermes Debug")
+        let label = env["HERMES_LABEL"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? defaults.string(forKey: "debug_label").flatMap { $0.isEmpty ? nil : $0 }
+            ?? "Hermes Debug"
+        return debugReachableConfig(ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label))
+    }
+
+    private static func debugReachableConfig(_ config: ConnectionConfig) -> ConnectionConfig {
+        guard let url = URL(string: config.baseURL),
+              url.host == "0.0.0.0",
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
+            return config
+        }
+        let env = ProcessInfo.processInfo.environment
+        components.host = env["API_SERVER_HOST"].flatMap { ($0.isEmpty || $0 == "0.0.0.0") ? nil : $0 } ?? "100.81.23.33"
+        return ConnectionConfig(baseURL: components.url?.absoluteString ?? config.baseURL, apiKey: config.apiKey, label: config.label)
+    }
+    #else
+    private static func debugReachableConfig(_ config: ConnectionConfig) -> ConnectionConfig {
+        config
     }
     #endif
 
@@ -611,6 +709,7 @@ final class AppStore: ObservableObject {
             }
             // Connection is alive. Refresh sessions silently in case
             // anything changed while we were in the background.
+            await refreshCapabilities()
             await refreshSessions()
         } catch {
             // Connection dropped while in background. Reconnect using
