@@ -1,5 +1,46 @@
 import Foundation
 
+// MARK: - On-device file logger
+/// Writes log lines to the app's Documents directory so they can be pulled
+/// with `devicectl device copy` when the Xcode console / syslog path is
+/// unavailable. Used to diagnose voice / Hermes callback issues.
+struct FileLogger {
+    static let shared = FileLogger()
+
+    private let queue = DispatchQueue(label: "com.chibitek.hermescompanion.filelogger", qos: .utility)
+    private let logURL: URL
+
+    init() {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        logURL = docs.appendingPathComponent("hermes-companion.log")
+    }
+
+    func log(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+        queue.sync { [logURL] in
+            if let data = line.data(using: .utf8) {
+                if FileManager.default.fileExists(atPath: logURL.path) {
+                    if let handle = try? FileHandle(forWritingTo: logURL) {
+                        _ = handle.seekToEndOfFile()
+                        handle.write(data)
+                        try? handle.close()
+                    }
+                } else {
+                    try? data.write(to: logURL, options: .atomic)
+                }
+            }
+        }
+    }
+
+    func clear() {
+        queue.sync { [logURL] in
+            try? FileManager.default.removeItem(at: logURL)
+        }
+    }
+}
+
 // MARK: - Connection
 
 struct ConnectionConfig: Codable, Equatable, Sendable, Identifiable {

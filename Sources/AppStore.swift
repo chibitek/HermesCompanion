@@ -588,6 +588,7 @@ final class AppStore: ObservableObject {
                 // message that appeared in the reloaded history.
                 if assistantMessage == nil {
                     assistantMessage = self.messages.last(where: \.isAssistant)
+                    FileLogger.shared.log("AppStore: fell back to reloaded assistant message: \(String(describing: assistantMessage?.content.prefix(60)))")
                     print("AppStore: fell back to reloaded assistant message: \(String(describing: assistantMessage?.content.prefix(60)))")
                 }
 
