@@ -12,26 +12,39 @@ struct ConnectionSetupView: View {
     
     // Whether we're editing an existing connection
     private let initialConfig: ConnectionConfig?
-
+    
     init(store: AppStore, initialConfig: ConnectionConfig? = nil) {
         self.store = store
         self.initialConfig = initialConfig
     }
-
+    
     private var versionString: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
         return "\(version) (\(build))"
     }
+    
     @State private var testResult: TestResult?
+    @State private var showChooseServer = false
+    @State private var selectedServerIndex: Int? = nil
+    @State private var addNewServer = false
     
     enum TestResult {
         case success(String)
         case failure(String)
+        
+        func isFailure() -> Bool {
+            if case .failure = self { return true }
+            return false
+        }
     }
     
     private var isFormValid: Bool {
         !baseURL.isEmpty && !apiKey.isEmpty
+    }
+    
+    private var isConnecting: Bool {
+        isTesting || (initialConfig == nil && testResult == nil) // Only during first save+connect
     }
 
     var body: some View {
@@ -44,10 +57,20 @@ struct ConnectionSetupView: View {
                     VStack(spacing: 28) {
                         brandHeader
                         
+                        // Server picker section
+                        if !store.savedConnections.isEmpty {
+                            serverPickerSection
+                        }
+                        
                         VStack(spacing: 16) {
                             glassField(title: "Hermes URL", text: $baseURL, placeholder: "http://100.x.x.x:8642", icon: "globe", keyboardType: .URL)
                             glassField(title: "API Key", text: $apiKey, placeholder: "API_SERVER_KEY", icon: "key.fill", isSecure: true)
                             glassField(title: "Label", text: $label, placeholder: "My Hermes", icon: "tag")
+                        }
+                        
+                        // "Add New Server" divider when servers exist
+                        if !store.savedConnections.isEmpty {
+                            addNewDivider
                         }
                         
                         if let result = testResult {
@@ -81,6 +104,9 @@ struct ConnectionSetupView: View {
                 prefillDebugConnectionIfAvailable()
                 prefillExistingConnectionIfAvailable()
             }
+            .sheet(isPresented: $showChooseServer) {
+                serverPickerSheet
+            }
         }
     }
     
@@ -104,15 +130,15 @@ struct ConnectionSetupView: View {
             VStack(spacing: 4) {
                 Text("Hermes Companion")
                     .font(.system(size: 22, weight: .bold, design: .default))
-                    .foregroundStyle(Color(red: 0.949, green: 0.965, blue: 0.988)) // text/primary
+                    .foregroundStyle(Color(red: 0.949, green: 0.965, blue: 0.988))
                 
                 Text(initialConfig == nil ? "Connect to your Hermes Agent" : "Edit Server Connection")
                     .font(.subheadline)
-                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651)) // text/secondary
+                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
                 
                 Text(versionString)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.361, green: 0.420, blue: 0.518)) // text/muted
+                    .foregroundStyle(Color(red: 0.361, green: 0.420, blue: 0.518))
                     .padding(.top, 2)
             }
         }
@@ -133,11 +159,11 @@ struct ConnectionSetupView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: icon)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651)) // text/secondary
+                .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
             
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.6)) // bg/card
+                    .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.6))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .stroke(Color.white.opacity(0.07), lineWidth: 1)
@@ -153,7 +179,7 @@ struct ConnectionSetupView: View {
                     }
                 }
                 .font(.body)
-                .foregroundStyle(Color(red: 0.859, green: 0.894, blue: 0.945)) // text/body
+                .foregroundStyle(Color(red: 0.859, green: 0.894, blue: 0.945))
                 .tint(appearance.accent)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -202,16 +228,83 @@ struct ConnectionSetupView: View {
     
     private var actionButtons: some View {
         VStack(spacing: 12) {
+            if let testResult = testResult, testResult.isFailure() {
+                // Show recovery options after a failure
+                recoveryButtons
+            } else {
+                // Normal state: save/connect and test buttons
+                VStack(spacing: 12) {
+                    Button {
+                        Task { await saveAndConnect() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Spacer()
+                            Text(initialConfig == nil ? "Save & Connect" : "Update Connection")
+                                .font(.system(size: 16, weight: .semibold))
+                            Spacer()
+                        }
+                        .padding(.vertical, 16)
+                        .background(
+                            LinearGradient(colors: [appearance.accent, appearance.accentSecondary],
+                                           startPoint: .leading,
+                                           endPoint: .trailing)
+                        )
+                        .foregroundStyle(Color(red: 0.039, green: 0.055, blue: 0.086))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: appearance.accent.opacity(0.35), radius: 14, x: 0, y: 6)
+                    }
+                    .disabled(!isFormValid || isConnecting)
+                    .opacity(isFormValid && !isConnecting ? 1.0 : 0.5)
+                    
+                    Button {
+                        Task { await testConnection() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isTesting {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .tint(appearance.accent)
+                            }
+                            Text(isTesting ? "Testing..." : "Test Connection")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.5))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                                )
+                        )
+                        .foregroundStyle(appearance.accent)
+                    }
+                    .disabled(isTesting || !isFormValid)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Recovery Buttons
+    private var recoveryButtons: some View {
+        VStack(spacing: 12) {
+            Text("Connection failed. Choose an option:")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(red: 0.753, green: 0.271, blue: 0.125))
+            
             Button {
+                // Try again with same connection
                 Task { await saveAndConnect() }
             } label: {
                 HStack(spacing: 8) {
-                    Spacer()
-                    Text(initialConfig == nil ? "Save & Connect" : "Update Connection")
-                        .font(.system(size: 16, weight: .semibold))
+                    Image(systemName: "arrow.clockwise")
+                    Text("Try Again")
+                        .font(.system(size: 15, weight: .semibold))
                     Spacer()
                 }
-                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
                 .background(
                     LinearGradient(colors: [appearance.accent, appearance.accentSecondary],
                                    startPoint: .leading,
@@ -221,20 +314,16 @@ struct ConnectionSetupView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: appearance.accent.opacity(0.35), radius: 14, x: 0, y: 6)
             }
-            .disabled(!isFormValid)
-            .opacity(isFormValid ? 1.0 : 0.5)
             
             Button {
-                Task { await testConnection() }
+                // Go back to the list of servers to choose another
+                showChooseServer = true
             } label: {
                 HStack(spacing: 6) {
-                    if isTesting {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .tint(appearance.accent)
-                    }
-                    Text(isTesting ? "Testing..." : "Test Connection")
+                    Image(systemName: "server.badge.plus")
+                    Text("Choose Another Server")
                         .font(.system(size: 15, weight: .medium))
+                    Spacer()
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -248,7 +337,183 @@ struct ConnectionSetupView: View {
                 )
                 .foregroundStyle(appearance.accent)
             }
-            .disabled(isTesting || !isFormValid)
+        }
+    }
+    
+    // MARK: - Server Picker Sheet
+    private var serverPickerSheet: some View {
+        NavigationStack {
+            ZStack {
+                appearance.activeTheme.backgroundView
+                    .ignoresSafeArea()
+                
+                VStack(spacing: 16) {
+                    Text("Select a saved server")
+                        .font(.headline)
+                        .foregroundStyle(Color(red: 0.949, green: 0.965, blue: 0.988))
+                    
+                    if store.savedConnections.isEmpty {
+                        Text("No saved servers. Tap \"Add Server\" in Settings to add one.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 10) {
+                                ForEach(store.savedConnections) { config in
+                                    Button {
+                                        // Populate form with selected server
+                                        baseURL = config.baseURL
+                                        apiKey = config.apiKey
+                                        label = config.label
+                                        testResult = nil
+                                        showChooseServer = false
+                                    } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(config.label)
+                                                    .font(.system(size: 15, weight: .semibold))
+                                                    .foregroundStyle(Color(red: 0.949, green: 0.965, blue: 0.988))
+                                                Text(config.baseURL)
+                                                    .font(.system(size: 12))
+                                                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                                            }
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                                        }
+                                        .padding()
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.6))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                                                )
+                                        )
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                        }
+                    }
+                    
+                    Button("Cancel") {
+                        showChooseServer = false
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.5))
+                    )
+                    .foregroundStyle(appearance.accent)
+                }
+                .padding(20)
+            }
+            .navigationTitle("Choose Server")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+    
+    // MARK: - Server Picker Section
+    
+    private var serverPickerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Saved Servers")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                
+                Spacer()
+                
+                Text("\(store.savedConnections.count) server\(store.savedConnections.count != 1 ? "s" : "")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.361, green: 0.420, blue: 0.518))
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(store.savedConnections) { config in
+                        Button {
+                            baseURL = config.baseURL
+                            apiKey = config.apiKey
+                            label = config.label
+                            testResult = nil
+                            selectedServerIndex = nil
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(config.label)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.859, green: 0.894, blue: 0.945))
+                                Text(config.baseURL)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                                    .lineLimit(1)
+                            }
+                            .padding(12)
+                            .frame(width: 180, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.6))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .stroke(appearance.accent.opacity(0.3), lineWidth: 1)
+                                    )
+                            )
+                        }
+                    }
+                    
+                    // Add New button
+                    Button {
+                        baseURL = ""
+                        apiKey = ""
+                        label = "My Hermes"
+                        testResult = nil
+                    } label: {
+                        VStack(alignment: .center, spacing: 6) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(appearance.accent)
+                            Text("Add New")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(appearance.accent)
+                        }
+                        .frame(width: 80)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.4))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color(red: 0.494, green: 0.557, blue: 0.651).opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                    }
+                }
+                .padding(.bottom, 2)
+            }
+        }
+    }
+    
+    // MARK: - Add New Divider
+    
+    private var addNewDivider: some View {
+        VStack(spacing: 16) {
+            Divider()
+                .overlay(Color(red: 0.118, green: 0.164, blue: 0.250))
+            
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                Text("Or add a new server below")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+            }
         }
     }
     
@@ -329,6 +594,8 @@ struct ConnectionSetupView: View {
     }
 
     private func saveAndConnect() async {
+        isTesting = true
+        testResult = nil
         let config = ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label)
         
         // If we're editing an existing connection with the same baseURL, update it
@@ -337,12 +604,21 @@ struct ConnectionSetupView: View {
                 try KeychainManager.shared.addOrUpdate(config)
                 store.savedConnections = KeychainManager.shared.loadAll()
                 if store.connectionConfig?.baseURL == baseURL {
-                    _ = await store.connect(config: config)
+                    let success = try await Self.runWithTimeout(seconds: 15) {
+                        await store.connect(config: config)
+                    }
+                    if success {
+                        testResult = .success("Connected — \(label)")
+                    } else {
+                        testResult = .failure(store.error?.message ?? "Connection failed")
+                    }
+                    isTesting = false
                     return
                 }
+            } catch let error as APIError {
+                testResult = .failure(error.errorDescription ?? "Failed to update connection")
             } catch {
                 testResult = .failure("Failed to update connection: \(error.localizedDescription)")
-                return
             }
         } else {
             do {
@@ -354,10 +630,21 @@ struct ConnectionSetupView: View {
             }
         }
         
-        let success = await store.connect(config: config)
-        if !success {
-            testResult = .failure(store.error?.message ?? "Connection failed")
+        var success = false
+        do {
+            success = try await Self.runWithTimeout(seconds: 15) {
+                await store.connect(config: config)
+            }
+        } catch {
+            success = false
         }
+        
+        if success {
+            testResult = .success("Connected — \(label)")
+        } else {
+            testResult = .failure(store.error?.message ?? "Connection timed out or failed")
+        }
+        isTesting = false
     }
 
     private func prefillExistingConnectionIfAvailable() {
