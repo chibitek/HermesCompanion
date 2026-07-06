@@ -300,16 +300,12 @@ struct ConnectionSetupView: View {
         let client = HermesAPIClient(config: config)
         do {
             let result: (HealthResponse, CapabilitiesResponse)
-            do {
-                result = try await Self.runWithTimeout(seconds: 10) {
-                    let health = try await client.checkHealth()
-                    let caps = try await client.getCapabilities()
-                    return (health, caps)
-                }
-                testResult = .success("Connected — Hermes v\(result.0.version ?? "unknown")")
-            } catch {
-                testResult = .failure(error.localizedDescription)
+            result = try await Self.runWithTimeout(seconds: 10) {
+                let health = try await client.checkHealth()
+                let caps = try await client.getCapabilities()
+                return (health, caps)
             }
+            testResult = .success("Connected — Hermes v\(result.0.version ?? "unknown")")
         } catch let error as APIError {
             testResult = .failure(error.errorDescription ?? "Connection failed")
         } catch {

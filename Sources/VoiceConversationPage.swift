@@ -113,6 +113,7 @@ struct VoiceConversationPage: View {
             }
         }
         .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = true
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
             voiceConversation.conversationMode = .remote
@@ -125,6 +126,7 @@ struct VoiceConversationPage: View {
             // one through store.sendMessage (which auto-creates when needed).
         }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             voiceConversation.stopConversation()
         }
     }
@@ -417,168 +419,182 @@ struct AudioVisualizerBar: View {
 // MARK: - Voice Settings Sheet
 
 struct VoiceSettingsSheet: View {
-    var preset: CyberpunkVoicePreset = .neon
-    @AppStorage("voice_speed") private var speed: Double = 0.5
-    @AppStorage("voice_pitch") private var pitch: Double = 1.0
-    @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
-    @AppStorage("premium_voice_service") private var premiumVoiceService: String = PremiumVoiceService.amazonPolly.rawValue
-    @AppStorage("premium_voice_name") private var premiumVoiceName: String = "Joanna"
-    @AppStorage("premium_voice_speed") private var premiumVoiceSpeed: Double = 1.0
-    @AppStorage("premium_voice_pitch") private var premiumVoicePitch: Double = 1.0
-    @State private var availableVoices: [AVSpeechSynthesisVoice] = []
-    @Environment(\.dismiss) private var dismiss
+var preset: CyberpunkVoicePreset = .neon
+@AppStorage("voice_speed") private var speed: Double = 0.5
+@AppStorage("voice_pitch") private var pitch: Double = 1.0
+@AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
+@AppStorage("premium_voice_service") private var premiumVoiceService: String = PremiumVoiceService.amazonPolly.rawValue
+@AppStorage("premium_voice_name") private var premiumVoiceName: String = "Joanna"
+@AppStorage("premium_voice_speed") private var premiumVoiceSpeed: Double = 1.0
+@AppStorage("premium_voice_pitch") private var premiumVoicePitch: Double = 1.0
+@State private var availableVoices: [AVSpeechSynthesisVoice] = []
+@Environment(\.activeTheme) private var theme
+@Environment(\.dismiss) private var dismiss
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 24) {
-                        speedSection
-                        pitchSection
-                        voiceSection
-                        premiumVoiceSection
-                    }
-                    .padding(20)
+var body: some View {
+    NavigationStack {
+        ZStack {
+            theme.backgroundView.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: theme.spacingM) {
+                    speedSection
+                    pitchSection
+                    voiceSection
+                    premiumVoiceSection
                 }
-            }
-            .navigationTitle("VOICE_CONFIG")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(preset.primary)
-                }
+                .padding(theme.spacingM)
             }
         }
-        .onAppear {
-            availableVoices = VoiceDefaults.sortedVoices()
-                .filter { $0.quality == .enhanced || $0.quality == .premium }
-            selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
+        .navigationTitle("Voice Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
+                    .foregroundStyle(theme.accent)
+            }
         }
     }
+    .onAppear {
+        availableVoices = VoiceDefaults.sortedVoices()
+            .filter { $0.quality == .enhanced || $0.quality == .premium }
+        selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
+    }
+}
     
-    private var speedSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SPEED")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(preset.primary)
-            HStack {
-                Slider(value: $speed, in: 0.1...1.0, step: 0.05)
-                    .tint(preset.primary)
-                Text(String(format: "%.2f", speed))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(preset.primary)
-            }
-        }
-        .padding(16)
-        .background(preset.primary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var pitchSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("PITCH")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(preset.secondary)
-            HStack {
-                Slider(value: $pitch, in: 0.5...2.0, step: 0.1)
-                    .tint(preset.secondary)
-                Text(String(format: "%.1f", pitch))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(preset.secondary)
-            }
-        }
-        .padding(16)
-        .background(preset.secondary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var voiceSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("VOICE")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(preset.primary)
-            ForEach(availableVoices, id: \.identifier) { voice in
-                voiceRow(voice)
-            }
-        }
-        .padding(16)
-        .background(preset.primary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
+private var cardBackground: some View {
+    AnyView(theme.glassCard(cornerRadius: 12))
+}
     
-    private var premiumVoiceSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("PREMIUM VOICE")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(preset.secondary)
+private var speedSection: some View {
+    VStack(alignment: .leading, spacing: theme.spacingS) {
+        Text("SPEED")
+            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .foregroundStyle(theme.accent)
+        HStack {
+            Slider(value: $speed, in: 0.1...1.0, step: 0.05)
+                .tint(theme.accent)
+            Text(String(format: "%.2f", speed))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(theme.textBody)
+                .frame(width: 40)
+        }
+    }
+    .padding(theme.spacingM)
+    .background(cardBackground)
+}
+
+private var pitchSection: some View {
+    VStack(alignment: .leading, spacing: theme.spacingS) {
+        Text("PITCH")
+            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .foregroundStyle(theme.accentSecondary)
+        HStack {
+            Slider(value: $pitch, in: 0.5...2.0, step: 0.1)
+                .tint(theme.accentSecondary)
+            Text(String(format: "%.1f", pitch))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(theme.textBody)
+                .frame(width: 40)
+        }
+    }
+    .padding(theme.spacingM)
+    .background(cardBackground)
+}
+
+private var voiceSection: some View {
+    VStack(alignment: .leading, spacing: theme.spacingS) {
+        Text("VOICE")
+            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .foregroundStyle(theme.accent)
+        ForEach(availableVoices, id: \.identifier) { voice in
+            voiceRow(voice)
+        }
+    }
+    .padding(theme.spacingM)
+    .background(cardBackground)
+}
+    
+private var premiumVoiceSection: some View {
+    VStack(alignment: .leading, spacing: theme.spacingS) {
+        Text("PREMIUM VOICE")
+            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .foregroundStyle(theme.accentSecondary)
             
+        let currentService = PremiumVoiceService(rawValue: premiumVoiceService) ?? .amazonPolly
+            
+        rowLabel("Service") {
             Picker("Service", selection: $premiumVoiceService) {
                 ForEach(PremiumVoiceService.allCases, id: \.rawValue) { service in
                     Text(service.displayName).tag(service.rawValue)
                 }
             }
             .pickerStyle(.menu)
-            .tint(preset.secondary)
+            .tint(theme.accent)
+        }
             
-            let currentService = PremiumVoiceService(rawValue: premiumVoiceService) ?? .amazonPolly
+        rowLabel("Voice") {
             Picker("Voice", selection: $premiumVoiceName) {
                 ForEach(currentService.availableVoices, id: \.self) { voice in
                     Text(voice).tag(voice)
                 }
             }
             .pickerStyle(.menu)
-            .tint(preset.secondary)
+            .tint(theme.accent)
+        }
             
-            HStack {
-                Text("Speed")
-                Spacer()
-                Text(String(format: "%.2f", premiumVoiceSpeed))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(preset.secondary)
-            }
-            Slider(value: $premiumVoiceSpeed, in: 0.25...2.0, step: 0.05)
-                .tint(preset.secondary)
-                
-            HStack {
-                Text("Pitch")
-                Spacer()
-                Text(String(format: "%.1f", premiumVoicePitch))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(preset.secondary)
-            }
-            Slider(value: $premiumVoicePitch, in: 0.5...2.0, step: 0.1)
-                .tint(preset.secondary)
-        }
-        .padding(16)
-        .background(preset.secondary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        sliderRow("Speed", value: $premiumVoiceSpeed, range: 0.25...2.0, step: 0.05)
+        sliderRow("Pitch", value: $premiumVoicePitch, range: 0.5...2.0, step: 0.1)
     }
+    .padding(theme.spacingM)
+    .background(cardBackground)
+}
+    
+private func sliderRow(_ label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
+    VStack(alignment: .leading, spacing: theme.spacingXS) {
+        HStack {
+            Text(label)
+                .foregroundStyle(theme.textBody)
+            Spacer()
+            Text(String(format: step < 0.1 ? "%.2f" : "%.1f", value.wrappedValue))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(theme.textSecondary)
+        }
+        Slider(value: value, in: range, step: step)
+            .tint(theme.accent)
+    }
+}
+    
+private func rowLabel<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    HStack {
+        Text(label)
+            .foregroundStyle(theme.textBody)
+        Spacer()
+        content()
+    }
+}
 
-    private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
-        let isSelected = voice.identifier == selectedVoiceId
-        return Button {
-            selectedVoiceId = voice.identifier
-        } label: {
-            HStack {
-                Text(voice.name)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(isSelected ? preset.primary : .gray)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(preset.primary)
-                }
+private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
+    let isSelected = voice.identifier == selectedVoiceId
+    return Button {
+        selectedVoiceId = voice.identifier
+    } label: {
+        HStack {
+            Text(voice.name)
+                .font(.system(size: 14, design: .monospaced))
+                .foregroundStyle(isSelected ? theme.accent : theme.textBody)
+            Spacer()
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(theme.accent)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isSelected ? preset.primary.opacity(0.1) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, theme.spacingS)
+        .padding(.vertical, theme.spacingXS)
+        .background(isSelected ? theme.accent.opacity(0.12) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
+    .buttonStyle(.plain)
+}
 }
 
 // MARK: - Scanline Overlay
