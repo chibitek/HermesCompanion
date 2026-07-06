@@ -35,6 +35,32 @@ protocol HermesTheme: Identifiable {
     /// Warning / approval prompts
     var warning: Color { get }
 
+    // MARK: Text colors
+
+    /// Primary text color (#F2F6FC)
+    var textPrimary: Color { get }
+    /// Body text color (#DBE4F1)
+    var textBody: Color { get }
+    /// Secondary / caption text color (#7E8EA6)
+    var textSecondary: Color { get }
+    /// Muted / placeholder text color (#5C6B84)
+    var textMuted: Color { get }
+
+    // MARK: Background colors
+
+    /// Deep base background (#0A0E16)
+    var bgBase: Color { get }
+    /// Main surface background (#162032)
+    var bgSurface: Color { get }
+    /// Alternate surface (#0E1522)
+    var bgSurfaceAlt: Color { get }
+    /// Glass card fill: rgba(30,42,64,.6)
+    var bgCard: Color { get }
+    /// 1px card border color: rgba(255,255,255,.07)
+    var cardBorder: Color { get }
+    /// 1px card border width
+    var cardBorderWidth: CGFloat { get }
+
     // MARK: Background
 
     /// Background view for the entire screen (gradient, solid color, overlay)
@@ -131,6 +157,20 @@ extension HermesTheme {
     var radiusL: CGFloat { 22 }
     var radiusXL: CGFloat { 28 }
 
+    // Default text colors
+    var textPrimary: Color { Color(red: 0.949, green: 0.965, blue: 0.988) } // #F2F6FC
+    var textBody: Color { Color(red: 0.859, green: 0.894, blue: 0.945) }     // #DBE4F1
+    var textSecondary: Color { Color(red: 0.494, green: 0.557, blue: 0.651) } // #7E8EA6
+    var textMuted: Color { Color(red: 0.361, green: 0.420, blue: 0.518) }    // #5C6B84
+
+    // Default background colors
+    var bgBase: Color { Color(.systemBackground) }
+    var bgSurface: Color { Color(.secondarySystemBackground) }
+    var bgSurfaceAlt: Color { Color(.tertiarySystemBackground) }
+    var bgCard: Color { Color(.tertiarySystemFill) }
+    var cardBorder: Color { Color.white.opacity(0.07) }
+    var cardBorderWidth: CGFloat { 1 }
+
     // Default cursor
     var cursorCharacter: String { "▋" }
     var cursorColor: Color { .secondary }
@@ -146,6 +186,20 @@ extension HermesTheme {
     // Default borders
     var assistantBubbleBorder: Color { .clear }
     var assistantBubbleBorderWidth: CGFloat { 0 }
+}
+
+// MARK: - Reusable glass card shape
+
+extension HermesTheme {
+    /// A card consistent with the handoff: bg/card + 1px white border + given radius.
+    func glassCard(cornerRadius: CGFloat) -> any View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return AnyView(
+            shape
+                .fill(bgCard)
+                .overlay(shape.stroke(cardBorder, lineWidth: cardBorderWidth))
+        )
+    }
 }
 
 // MARK: - Theme Registry
@@ -180,41 +234,57 @@ enum ThemeRegistry {
 
 // MARK: - Hermes (Default Liquid Glass Theme)
 
-/// The default theme. Matches the original GlassTheme statics exactly.
-/// This is the safe fallback that always works.
+/// The default theme matching the design handoff:
+/// bg/base #0A0E16, bg/surface #162032, brand teal #00B398,
+/// brand teal-bright #00D4B3, brand amber #F2A900, danger #CF4520.
 struct HermesDefaultTheme: HermesTheme {
     let id = "hermes"
     let displayName = "Hermes"
     let subtitle = "Liquid Glass, frosted and translucent"
     let usesGlass = true
 
-    let accent = Color(red: 0.176, green: 0.831, blue: 0.749)  // #2DD4BF teal
-    let accentSecondary = Color(red: 0.0, green: 0.702, blue: 0.596)  // #00B398
-    let danger = Color(red: 0.811, green: 0.271, blue: 0.125)  // #CF4520
-    let warning = Color(red: 0.961, green: 0.620, blue: 0.043)  // #F59E0B
+    let accent = Color(red: 0.0, green: 0.702, blue: 0.596)        // #00B398
+    let accentSecondary = Color(red: 0.0, green: 0.831, blue: 0.702) // #00D4B3
+    let danger = Color(red: 0.812, green: 0.271, blue: 0.125)      // #CF4520
+    let warning = Color(red: 0.949, green: 0.663, blue: 0.0)      // #F2A900
 
     var backgroundView: AnyView {
         AnyView(
-            LinearGradient(
-                colors: [
-                    Color(.systemBackground),
-                    Color(.systemBackground).opacity(0.95),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            ZStack {
+                Color(red: 0.039, green: 0.055, blue: 0.086)     // #0A0E16 bg/base
+                RadialGradient(
+                    colors: [
+                        Color(red: 0.055, green: 0.090, blue: 0.137).opacity(0.85), // #0E2441 glow
+                        Color(red: 0.039, green: 0.055, blue: 0.086).opacity(0.0)
+                    ],
+                    center: .topLeading,
+                    startRadius: 0,
+                    endRadius: 500
+                )
+            }
+            .ignoresSafeArea()
         )
     }
 
-    let userBubbleBackground = Color(red: 0.176, green: 0.831, blue: 0.749)  // accent at 0.25 opacity applied by components
-    let assistantBubbleBackground: Color = .clear  // glass effect provides the visual
+    let userBubbleBackground = Color(red: 0.0, green: 0.702, blue: 0.596) // #00B398
+    let assistantBubbleBackground: Color = Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.6) // bg/card rgba(30,42,64,.6)
+    let assistantBubbleBorder: Color = Color.white.opacity(0.07)
+    let assistantBubbleBorderWidth: CGFloat = 1
+
     let userMessageFont: Font = .body
     let assistantMessageFont: Font = .body
 
-    let bubbleRadius: CGFloat = 22
-    let cardRadius: CGFloat = 28
-    let controlRadius: CGFloat = 10
+    let bubbleRadius: CGFloat = 20
+    let cardRadius: CGFloat = 18
+    let controlRadius: CGFloat = 11
     let spacingScale: CGFloat = 1.0
+
+    let cursorCharacter: String = "▋"
+    let cursorColor: Color = Color(red: 0.0, green: 0.831, blue: 0.702)
+
+    let toolChipsUseGlass: Bool = false
+    let toolChipBackground: Color = Color(red: 0.043, green: 0.063, blue: 0.094).opacity(0.7) // #0B1018
+    let toolChipBorder: Color = Color.white.opacity(0.08)
 }
 
 // MARK: - Matrix Terminal Theme

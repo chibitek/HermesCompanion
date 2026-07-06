@@ -86,9 +86,11 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSessionPicker) {
                 SessionPickerView(store: store)
+                    .withActiveTheme(appearance)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView(store: store)
+                    .withActiveTheme(appearance)
             }
             .alert("Error", isPresented: .init(
                 get: { store.error != nil },

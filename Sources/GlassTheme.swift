@@ -79,7 +79,7 @@ struct GlassBubble: View {
                     Text(renderedContent)
                         .font(messageFont)
                         .textSelection(.enabled)
-                        .foregroundStyle(isUser ? .white : .primary)
+                        .foregroundStyle(isUser ? .white : theme.textPrimary)
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -87,7 +87,7 @@ struct GlassBubble: View {
                 if showTimestamp {
                     Text(Date(), style: .time)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.textMuted)
                 }
             }
             .padding(.horizontal, compact ? 12 : theme.spacingL)
@@ -107,19 +107,7 @@ struct GlassBubble: View {
             .accessibilityLabel(isUser ? "Your message: \(content)" : "Hermes response: \(content)")
             .accessibilityHint(isUser ? "" : "Assistant reply")
             .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : theme.bubbleRadius, style: .continuous))
-            .if(isUser) { view in
-                if theme.usesGlass {
-                    view.glassEffect(.regular.tint(accentColor.opacity(0.35)))
-                } else {
-                    view.overlay(
-                        RoundedRectangle(cornerRadius: compact ? 14 : theme.bubbleRadius, style: .continuous)
-                            .stroke(accentColor.opacity(0.4), lineWidth: 1)
-                    )
-                }
-            }
-            .if(!isUser && theme.usesGlass) { view in
-                view.glassEffect(.regular)
-            }
+            .overlay(bubbleBorder)
             .overlay(alignment: .bottomTrailing) {
                 if isStreaming {
                     BlinkingCursor()
@@ -162,13 +150,21 @@ struct GlassBubble: View {
     @ViewBuilder
     private var bubbleBackground: some View {
         if isUser {
-            if theme.usesGlass {
-                accentColor.opacity(0.25)
-            } else {
-                theme.userBubbleBackground
-            }
+            LinearGradient(
+                colors: [theme.accent, theme.accentSecondary],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         } else {
-            theme.assistantBubbleBackground
+            theme.bgCard
+        }
+    }
+
+    @ViewBuilder
+    private var bubbleBorder: some View {
+        if !isUser {
+            RoundedRectangle(cornerRadius: compact ? 14 : theme.bubbleRadius, style: .continuous)
+                .stroke(theme.cardBorder, lineWidth: theme.cardBorderWidth)
         }
     }
 
@@ -212,23 +208,19 @@ struct GlassToolChip: View {
         HStack(spacing: theme.spacingXS) {
             Image(systemName: icon)
                 .font(.caption)
+                .foregroundStyle(color)
             Text(event.toolName)
                 .font(.caption)
                 .fontWeight(.medium)
+                .foregroundStyle(color)
         }
         .padding(.horizontal, theme.spacingM)
         .padding(.vertical, theme.spacingS)
-        .if(theme.toolChipsUseGlass) { view in
-            view.glassEffect(.regular.tint(color.opacity(0.2)))
-        }
-        .if(!theme.toolChipsUseGlass) { view in
-            view
-                .background(theme.toolChipBackground)
-                .overlay(
-                    Capsule()
-                        .stroke(theme.toolChipBorder, lineWidth: 1)
-                )
-        }
+        .background(
+            Capsule()
+                .fill(theme.bgCard)
+                .overlay(Capsule().stroke(theme.cardBorder, lineWidth: theme.cardBorderWidth))
+        )
         .clipShape(Capsule())
     }
 
@@ -243,9 +235,9 @@ struct GlassToolChip: View {
 
     private var color: Color {
         switch event.type {
-        case .progress: return .purple
-        case .started: return .blue
-        case .completed: return .green
+        case .progress: return theme.accent
+        case .started: return theme.accent.opacity(0.7)
+        case .completed: return theme.accentSecondary
         case .failed: return theme.danger
         }
     }
@@ -278,12 +270,7 @@ struct GlassThinkingIndicator: View {
         }
         .padding(.horizontal, theme.spacingL)
         .padding(.vertical, theme.spacingM)
-        .if(theme.usesGlass) { view in
-            view.background(Color(.tertiarySystemFill))
-        }
-        .if(!theme.usesGlass) { view in
-            view.background(Color(.tertiarySystemFill))
-        }
+        .background(AnyView(theme.glassCard(cornerRadius: theme.bubbleRadius)))
         .clipShape(RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous))
         .onAppear { if !reduceMotion { animate = true } }
     }
@@ -306,24 +293,34 @@ struct GlassApprovalCard: View {
                     .foregroundStyle(theme.warning)
                 Text("Approval Required")
                     .font(.headline)
+                    .foregroundStyle(theme.textPrimary)
             }
 
             Text(approval.command)
                 .font(.system(.body, design: .monospaced))
                 .textSelection(.enabled)
+                .foregroundStyle(theme.textBody)
                 .padding(theme.spacingM)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(theme.warning.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous)
+                        .stroke(theme.warning.opacity(0.2), lineWidth: 1)
+                )
 
             HStack(spacing: theme.spacingM) {
-                GlassButton("Allow Once", tint: .green) { onResolve("once") }
-                GlassButton("Allow Session", tint: .blue) { onResolve("session") }
+                GlassButton("Allow Once", tint: theme.accent) { onResolve("once") }
+                GlassButton("Allow Session", tint: theme.accentSecondary) { onResolve("session") }
                 GlassButton("Deny", tint: theme.danger) { onResolve("deny") }
             }
         }
         .padding(theme.spacingL)
-        .background(Color(.tertiarySystemFill))
+        .background(AnyView(theme.glassCard(cornerRadius: theme.radiusXL)))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.radiusXL, style: .continuous)
+                .stroke(theme.warning.opacity(0.25), lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: theme.radiusXL, style: .continuous))
         .padding(.horizontal, theme.spacingL)
         .padding(.bottom, theme.spacingS)
@@ -351,19 +348,17 @@ struct GlassButton: View {
             Text(label)
                 .font(.subheadline)
                 .fontWeight(.medium)
+                .foregroundStyle(tint)
                 .padding(.horizontal, theme.spacingM)
                 .padding(.vertical, theme.spacingS)
-                .if(theme.usesGlass) { view in
-                    view.background(tint.opacity(0.12))
-                }
-                .if(!theme.usesGlass) { view in
-                    view
-                        .background(tint.opacity(0.12))
+                .background(
+                    RoundedRectangle(cornerRadius: theme.controlRadius, style: .continuous)
+                        .fill(theme.bgCard)
                         .overlay(
                             RoundedRectangle(cornerRadius: theme.controlRadius, style: .continuous)
                                 .stroke(tint.opacity(0.3), lineWidth: 1)
                         )
-                }
+                )
                 .clipShape(RoundedRectangle(cornerRadius: theme.controlRadius, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -452,7 +447,7 @@ struct GlassInputBar: View {
 
                     Text(voiceTranscriber.transcribedText.isEmpty ? "Listening..." : voiceTranscriber.transcribedText)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
@@ -480,13 +475,13 @@ struct GlassInputBar: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.textSecondary)
                     }
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal, theme.spacingL)
                 .padding(.vertical, theme.spacingS)
-                .background(theme.danger.opacity(0.06))
+                .background(theme.danger.opacity(0.08))
             }
 
             // Live conversation indicator (compact bar — shown when overlay is visible)
@@ -520,31 +515,31 @@ struct GlassInputBar: View {
                         }
                     } else {
                         Circle()
-                            .fill(.secondary)
+                            .fill(theme.textMuted)
                             .frame(width: 8, height: 8)
                     }
 
                     if voiceConversation.isThinking {
                         Text("Thinking...")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.textSecondary)
                             .lineLimit(1)
                     } else if voiceConversation.isSpeaking {
                         Text(voiceConversation.spokenResponse.isEmpty ? "Speaking..." : String(voiceConversation.spokenResponse.prefix(50)))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     } else if voiceConversation.isListening {
                         Text(voiceConversation.transcribedText.isEmpty ? "Listening..." : voiceConversation.transcribedText)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     } else {
                         Text("Conversation active")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.textSecondary)
                     }
 
                     Spacer()
@@ -571,6 +566,8 @@ struct GlassInputBar: View {
                     .submitLabel(.send)
                     .lineLimit(1...4)
                     .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(theme.textPrimary)
+                    .tint(theme.accent)
                     .onSubmit {
                         guard !suppressNextSubmit else {
                             suppressNextSubmit = false
@@ -584,9 +581,9 @@ struct GlassInputBar: View {
                     Button {
                         showAttachmentMenu = true
                     } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 21, weight: .regular))
-                                .foregroundStyle(.primary)
+                        Image(systemName: "plus")
+                            .font(.system(size: 21, weight: .regular))
+                            .foregroundStyle(theme.textPrimary)
                             .frame(width: 44, height: 44)
                             .background(controlBackground)
                             .clipShape(Circle())
@@ -606,11 +603,11 @@ struct GlassInputBar: View {
                                 .font(.system(size: 14, weight: .medium))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(theme.textPrimary)
                                 .minimumScaleFactor(0.85)
                                 .frame(width: 112, height: 44)
                                 .padding(.horizontal, 10)
-                                .background(controlBackground)
+                                .background(modelPillBackground)
                                 .clipShape(Capsule())
                         }
                         .layoutPriority(1)
@@ -633,7 +630,7 @@ struct GlassInputBar: View {
                         } label: {
                             Image(systemName: "mic.fill")
                                 .font(.system(size: 21, weight: .regular))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(theme.textPrimary)
                                 .frame(width: 44, height: 44)
                                 .background(controlBackground)
                                 .clipShape(Circle())
@@ -671,17 +668,7 @@ struct GlassInputBar: View {
                     suppressNextSubmit = true
                 }
             }
-            .if(theme.usesGlass) { view in
-                view.background(.thinMaterial)
-            }
-            .if(!theme.usesGlass) { view in
-                view
-                    .background(Color(.tertiarySystemFill))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous)
-                            .stroke(theme.accent.opacity(0.15), lineWidth: 1)
-                    )
-            }
+            .background(AnyView(theme.glassCard(cornerRadius: theme.bubbleRadius)))
             .clipShape(RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous))
             .padding(.horizontal, theme.spacingL)
             .padding(.bottom, theme.spacingS)
@@ -701,8 +688,16 @@ struct GlassInputBar: View {
         !text.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty
     }
 
-    private var controlBackground: Color {
-        Color(.tertiarySystemFill)
+    private var controlBackground: some View {
+        Circle()
+            .fill(theme.bgCard)
+            .overlay(Circle().stroke(theme.cardBorder, lineWidth: theme.cardBorderWidth))
+    }
+
+    private var modelPillBackground: some View {
+        Capsule()
+            .fill(theme.bgCard)
+            .overlay(Capsule().stroke(theme.cardBorder, lineWidth: theme.cardBorderWidth))
     }
 
     private var trailingActionIcon: String {
@@ -714,15 +709,28 @@ struct GlassInputBar: View {
 
     private var trailingActionForeground: Color {
         if isStreaming { return theme.danger }
-        if canSend { return theme.accent }
+        if canSend { return .white }
         // For voice conversation mode, use accent color instead of white for better visibility
         return theme.accent
     }
 
-    private var trailingActionBackground: Color {
-        if isStreaming { return Color(.tertiarySystemFill) }
-        if canSend { return theme.accent }
-        return .primary
+    private var trailingActionBackground: some View {
+        let shape = Circle()
+        if isStreaming {
+            return AnyView(
+                shape
+                    .fill(theme.danger.opacity(0.12))
+                    .overlay(shape.stroke(theme.danger, lineWidth: 1))
+            )
+        }
+        if canSend {
+            return AnyView(shape.fill(theme.accent))
+        }
+        return AnyView(
+            shape
+                .fill(theme.accent.opacity(0.12))
+                .overlay(shape.stroke(theme.accent.opacity(0.3), lineWidth: 1))
+        )
     }
 
     private var trailingActionLabel: String {
@@ -749,7 +757,7 @@ struct GlassInputBar: View {
             } label: {
                 Image(systemName: "mic.fill")
                     .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.textSecondary)
             }
             .buttonStyle(.plain)
             .contextMenu {
@@ -779,10 +787,10 @@ struct GlassInputBar: View {
             if showVoiceHint {
                 Text("Hold for 2-way voice")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.textSecondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.ultraThinMaterial)
+                    .background(theme.bgCard)
                     .clipShape(Capsule())
                     .offset(y: -28)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -820,16 +828,16 @@ struct GlassInputBar: View {
             } else {
                 // File icon for non-image attachments
                 RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous)
-                    .fill(Color(.tertiarySystemFill))
+                    .fill(theme.bgCard)
                     .frame(width: 56, height: 56)
                     .overlay(
                         VStack(spacing: 4) {
                             Image(systemName: attachment.fileIcon)
                                 .font(.title3)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(theme.textSecondary)
                             Text(attachment.fileExtension.uppercased())
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(theme.textSecondary)
                         }
                     )
             }
@@ -1146,5 +1154,18 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - Active Theme Environment Modifier
+
+extension View {
+    /// Inject the active HermesTheme into the SwiftUI environment.
+    /// Use this on sheets/fullScreenCovers whose view hierarchy does not
+    /// inherit the environment object from the presenting view.
+    func withActiveTheme(_ appearance: AppearanceSettings) -> some View {
+        self
+            .environmentObject(appearance)
+            .environment(\.activeTheme, appearance.activeTheme)
     }
 }
