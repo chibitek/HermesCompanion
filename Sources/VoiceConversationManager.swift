@@ -108,6 +108,10 @@ final class VoiceConversationManager: ObservableObject {
     private var isFinalizing = false
     private var pendingConversationStartID: UUID?
 
+    // Safety net: if thinking lasts too long, cancel and resume listening
+    private var thinkingSafetyTimer: Timer?
+    private let thinkingSafetyTimeout: TimeInterval = 30
+
     init() {
         delegateBridge.manager = self
         synthesizer.delegate = delegateBridge
@@ -268,6 +272,8 @@ final class VoiceConversationManager: ObservableObject {
     func completeRemoteTurn(response: String?) {
         print("completeRemoteTurn called with response: \(String(describing: response))")
         isThinking = false
+        isFinalizing = false
+        invalidateThinkingSafetyTimer()
         let cleanResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if cleanResponse.isEmpty {
             print("Response is empty, failing turn")
@@ -275,6 +281,7 @@ final class VoiceConversationManager: ObservableObject {
             return
         }
         voiceError = nil
+        stopListening()
         speakResponse(cleanResponse)
     }
 
@@ -284,11 +291,37 @@ final class VoiceConversationManager: ObservableObject {
     func failRemoteTurn(message: String) {
         isThinking = false
         isFinalizing = false
+        invalidateThinkingSafetyTimer()
         voiceError = message
+
+        // Safety net: always speak the error so the user isn't left staring at the screen.
+        speakResponse(message)
 
         guard isConversing else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self,
+                  self.isConversing,
+                  !self.isListening,
+                  !self.isSpeaking,
+                  !self.isThinking
+            else { return }
+            self.startListening()
+        }
+    }
+
+    /// Forcefully cancel the current thinking / network wait and return to
+    /// listening. Called by the UI when the user taps "Stop" while waiting for
+    /// a remote response.
+    func cancelThinking() {
+        guard isConversing else { return }
+        invalidateThinkingSafetyTimer()
+        isThinking = false
+        isFinalizing = false
+        voiceError = nil
+        stopListening()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
             guard let self,
                   self.isConversing,
                   !self.isListening,
@@ -357,33 +390,33 @@ final class VoiceConversationManager: ObservableObject {
 
         // Recognition task with final result detection
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            guard let self = self else { return }
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
 
-            if let error {
-                if self.isStoppingListening || self.isBenignRecognitionCancellation(error) {
-                    self.isStoppingListening = false
-                    if !self.isFinalizing {
-                        self.stopListening()
+                if let error {
+                    if self.isStoppingListening || self.isBenignRecognitionCancellation(error) {
+                        self.isStoppingListening = false
+                        if !self.isFinalizing {
+                            self.stopListening()
+                        }
+                        return
                     }
+
+                    // Don't auto-restart on error -- this was causing infinite loops
+                    // and crashes. Just stop listening and let the user tap to resume.
+                    self.stopListening()
+                    self.voiceError = error.localizedDescription
                     return
                 }
 
-                // Don't auto-restart on error -- this was causing infinite loops
-                // and crashes. Just stop listening and let the user tap to resume.
-                self.stopListening()
-                self.voiceError = error.localizedDescription
-                return
-            }
+                if let result = result {
+                    let text = result.bestTranscription.formattedString
+                    self.transcribedText = text
+                    self.resetSilenceTimer()
 
-            if let result = result {
-                let text = result.bestTranscription.formattedString
-                Task { @MainActor [weak self] in
-                    self?.transcribedText = text
-                    self?.resetSilenceTimer()
-                }
-
-                if result.isFinal {
-                    self.finalizeTranscription(text)
+                    if result.isFinal {
+                        self.finalizeTranscription(text)
+                    }
                 }
             }
         }
@@ -537,11 +570,15 @@ final class VoiceConversationManager: ObservableObject {
             }
 
         case .remote:
+            isThinking = true
+            scheduleThinkingSafetyTimer()
             onTranscriptionComplete?(finalText)
             // For remote mode, isFinalizing will be reset when speakResponse is called
             
         case .premium:
             // For premium mode, we still send to Hermes but speak with premium TTS
+            isThinking = true
+            scheduleThinkingSafetyTimer()
             onTranscriptionComplete?(finalText)
             // For premium mode, isFinalizing will be reset when speakResponse is called
             // by the caller after receiving the API response.
@@ -556,13 +593,28 @@ final class VoiceConversationManager: ObservableObject {
         silenceTimer?.invalidate()
         silenceTimer = Timer.scheduledTimer(withTimeInterval: silenceTimeout, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self = self, self.isListening, !self.isFinalizing else { return }
-                let text = self.transcribedText
-                if !text.isEmpty {
-                    self.finalizeTranscription(text)
+                self?.finalizeTranscription(self?.transcribedText ?? "")
+            }
+        }
+    }
+
+    // MARK: - Thinking safety timer
+
+    private func scheduleThinkingSafetyTimer() {
+        invalidateThinkingSafetyTimer()
+        thinkingSafetyTimer = Timer.scheduledTimer(withTimeInterval: thinkingSafetyTimeout, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.isConversing && self.isThinking {
+                    self.failRemoteTurn(message: "Hermes didn't respond in time. Try again.")
                 }
             }
         }
+    }
+
+    private func invalidateThinkingSafetyTimer() {
+        thinkingSafetyTimer?.invalidate()
+        thinkingSafetyTimer = nil
     }
 
     private func stopSilenceTimer() {
