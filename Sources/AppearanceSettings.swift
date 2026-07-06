@@ -71,6 +71,42 @@ final class AppearanceSettings: ObservableObject {
         return activeTheme.accent
     }
 
+    var accentSecondary: Color {
+        activeTheme.accentSecondary
+    }
+
+    var warning: Color {
+        activeTheme.warning
+    }
+
+    var danger: Color {
+        activeTheme.danger
+    }
+
+    var textPrimary: Color {
+        activeTheme.textPrimary
+    }
+
+    var textBody: Color {
+        activeTheme.textBody
+    }
+
+    var textSecondary: Color {
+        activeTheme.textSecondary
+    }
+
+    var textMuted: Color {
+        activeTheme.textMuted
+    }
+
+    var bgCard: Color {
+        activeTheme.bgCard
+    }
+
+    var cardBorder: Color {
+        activeTheme.cardBorder
+    }
+
     private var customAccentColor: Color {
         switch accentColor {
         case "blue": return .blue

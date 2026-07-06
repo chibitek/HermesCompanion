@@ -1,13 +1,10 @@
 import SwiftUI
 import AVFoundation
 
-/// Settings with clean, Apple-style Form layout.
+/// Settings redesigned per the handoff spec.
 ///
-/// v1.7 layout:
-///   - Server: single picker listing all saved connections (auto-connect on switch).
-///   - Provider / Model / Thinking: three dropdowns synced from the gateway's
-///     /v1/models and macOS Hermes provider list. Persisted in UserDefaults.
-///   - No "Current" row — the pickers themselves are the current state.
+/// Dark background, grouped glass-card sections for Server, Provider, Model,
+/// Reasoning, Capabilities, Appearance/Voice, Disconnect and About.
 struct SettingsView: View {
     @ObservedObject var store: AppStore
     @EnvironmentObject var appearance: AppearanceSettings
@@ -25,23 +22,37 @@ struct SettingsView: View {
     @State private var selectedThinking: String = ""
     @State private var selectedServerURL: String = ""
 
+    private var theme: any HermesTheme { appearance.activeTheme }
+
     var body: some View {
         NavigationStack {
-            Form {
-                serverSection
-                providerSection
-                modelSection
-                thinkingSection
-                capabilitiesSections
-                navigationSections
-                disconnectSection
-                aboutSection
+            ZStack {
+                theme.backgroundView
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: theme.spacingM) {
+                        serverCard
+                        providerCard
+                        modelCard
+                        reasoningCard
+                        capabilitiesCard
+                        toolsCard
+                        appearanceCard
+                        voiceCard
+                        disconnectCard
+                        aboutCard
+                    }
+                    .padding(.horizontal, theme.spacingM)
+                    .padding(.vertical, theme.spacingM)
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
+                        .foregroundStyle(theme.accent)
                 }
             }
             .onAppear {
@@ -65,90 +76,132 @@ struct SettingsView: View {
             .sheet(isPresented: $showingAddServer) {
                 ConnectionSetupView(store: store)
             }
+            .sheet(item: $editingServer) { config in
+                ConnectionSetupView(store: store, initialConfig: config)
+            }
         }
     }
 
-    // MARK: - Server picker
+    // MARK: - Glass card wrapper
 
-    private var serverSection: some View {
-        Section("Server") {
-            if store.savedConnections.isEmpty {
-                Button {
-                    showingAddServer = true
-                } label: {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundStyle(appearance.accent)
-                        Text("Add Server")
-                    }
-                }
-            } else {
-                Picker("Server", selection: $selectedServerURL) {
-                    ForEach(store.savedConnections, id: \.baseURL) { config in
-                        Text(config.label.isEmpty ? config.baseURL : config.label)
-                            .tag(config.baseURL)
-                    }
-                    Text("Add Server…")
-                        .tag("__add__")
-                }
-                .pickerStyle(.menu)
-                .onChange(of: selectedServerURL) { _, newValue in
-                    if newValue == "__add__" {
-                        selectedServerURL = store.connectionConfig?.baseURL ?? ""
+    @ViewBuilder
+    private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ZStack {
+            AnyView(theme.glassCard(cornerRadius: theme.cardRadius))
+            content()
+                .padding(theme.spacingL)
+        }
+    }
+
+    private func cardHeader(_ title: String, icon: String? = nil) -> some View {
+        HStack(spacing: theme.spacingS) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.accent)
+            }
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.textSecondary)
+            Spacer()
+        }
+    }
+
+    // MARK: - Server card
+
+    private var serverCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: theme.spacingM) {
+                cardHeader("Server", icon: "network")
+
+                if store.savedConnections.isEmpty {
+                    Button {
                         showingAddServer = true
-                        return
-                    }
-                    if let target = store.savedConnections.first(where: { $0.baseURL == newValue }),
-                       target.baseURL != store.connectionConfig?.baseURL {
-                        Task { await store.switchToConnection(target) }
-                    }
-                }
-                
-                // Add edit buttons for each server
-                ForEach(store.savedConnections, id: \.baseURL) { config in
-                    HStack {
-                        Text(config.label.isEmpty ? config.baseURL : config.label)
-                            .font(.subheadline)
-                        Spacer()
-                        Button("Edit") {
-                            editServer(config)
-                        }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                    }
-                }
-
-                if let config = store.connectionConfig {
-                    HStack {
-                        Image(systemName: "network")
-                            .foregroundStyle(.secondary)
-                        Text(config.normalizedBaseURL)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Button(role: .destructive) {
-                        Task { await store.deleteConnection(config) }
                     } label: {
                         HStack {
-                            Image(systemName: "trash")
-                            Text("Remove This Server")
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundStyle(theme.accent)
+                            Text("Add Server")
+                                .foregroundStyle(theme.textPrimary)
+                            Spacer()
+                        }
+                    }
+                } else {
+                    Picker("Server", selection: $selectedServerURL) {
+                        ForEach(store.savedConnections, id: \.baseURL) { config in
+                            Text(config.label.isEmpty ? config.baseURL : config.label)
+                                .tag(config.baseURL)
+                        }
+                        Text("Add Server…")
+                            .tag("__add__")
+                    }
+                    .pickerStyle(.menu)
+                    .tint(theme.textPrimary)
+                    .onChange(of: selectedServerURL) { _, newValue in
+                        if newValue == "__add__" {
+                            selectedServerURL = store.connectionConfig?.baseURL ?? ""
+                            showingAddServer = true
+                            return
+                        }
+                        if let target = store.savedConnections.first(where: { $0.baseURL == newValue }),
+                           target.baseURL != store.connectionConfig?.baseURL {
+                            Task { await store.switchToConnection(target) }
+                        }
+                    }
+
+                    ForEach(store.savedConnections, id: \.baseURL) { config in
+                        HStack {
+                            Text(config.label.isEmpty ? config.baseURL : config.label)
+                                .font(.subheadline)
+                                .foregroundStyle(theme.textPrimary)
+                            Spacer()
+                            Button("Edit") {
+                                editServer(config)
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(theme.accent)
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    if let config = store.connectionConfig {
+                        Divider()
+                            .background(theme.cardBorder)
+
+                        HStack(spacing: theme.spacingS) {
+                            Image(systemName: "link")
+                                .font(.caption)
+                                .foregroundStyle(theme.textMuted)
+                            Text(config.normalizedBaseURL)
+                                .font(.caption)
+                                .foregroundStyle(theme.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                        }
+
+                        Button(role: .destructive) {
+                            Task { await store.deleteConnection(config) }
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Remove This Server")
+                                Spacer()
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(theme.danger)
                         }
                     }
                 }
             }
         }
-        .sheet(item: $editingServer) { config in
-            ConnectionSetupView(store: store, initialConfig: config)
-        }
     }
-    
+
     private func editServer(_ config: ConnectionConfig) {
         editingServer = config
     }
 
-    // MARK: - Provider picker
+    // MARK: - Provider card
 
     /// Slugs we know about, in display order. Matches the macOS Hermes provider list.
     private static let knownProviders: [String] = [
@@ -175,75 +228,81 @@ struct SettingsView: View {
 
     private var preferredOrEmpty: String { selectedProvider }
 
-    private var providerSection: some View {
-        Section {
-            Picker("Provider", selection: $selectedProvider) {
-                ForEach(availableProviders, id: \.self) { slug in
-                    Text(displayName(for: slug))
-                        .tag(slug)
+    private var providerCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: theme.spacingM) {
+                cardHeader("Provider", icon: "server.rack")
+
+                Picker("Provider", selection: $selectedProvider) {
+                    ForEach(availableProviders, id: \.self) { slug in
+                        Text(displayName(for: slug))
+                            .tag(slug)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .onChange(of: selectedProvider) { _, newValue in
-                store.preferredProvider = newValue
-                Task {
-                    await loadModels(forProvider: newValue, preferExistingSelection: false)
+                .pickerStyle(.menu)
+                .tint(theme.textPrimary)
+                .onChange(of: selectedProvider) { _, newValue in
+                    store.preferredProvider = newValue
+                    Task {
+                        await loadModels(forProvider: newValue, preferExistingSelection: false)
+                    }
                 }
+
+                Text("Synced with macOS Hermes. The list of providers and their available models comes from the connected server.")
+                    .font(.caption)
+                    .foregroundStyle(theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        } header: {
-            Text("Provider")
-        } footer: {
-            Text("Synced with macOS Hermes. The list of providers and their available models comes from the connected server.")
         }
     }
 
-    // MARK: - Model picker
+    // MARK: - Model card
 
     /// Models filtered to the selected provider, or all if no provider is set.
     private var modelsForSelectedProvider: [ModelInfo] {
         models(for: selectedProvider)
     }
 
-    private var modelSection: some View {
-        Section {
-            if isLoadingModels {
-                HStack {
-                    ProgressView()
-                    Text("Loading models...")
+    private var modelCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: theme.spacingM) {
+                cardHeader("Model", icon: "cpu")
+
+                if isLoadingModels {
+                    HStack(spacing: theme.spacingS) {
+                        ProgressView()
+                            .tint(theme.accent)
+                        Text("Loading models...")
+                            .font(.subheadline)
+                            .foregroundStyle(theme.textSecondary)
+                    }
+                } else if availableModels.isEmpty {
+                    Text("No models available — connect to a server to load them.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            } else if availableModels.isEmpty {
-                Text("No models available — connect to a server to load them.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                Picker("Active Model", selection: $selectedModel) {
-                    if availableModels.isEmpty {
-                        Text("No models available")
-                            .tag("")
-                    } else {
-                        ForEach(availableModels) { model in
-                            Text(displayName(for: model))
-                                .tag(model.id)
+                        .foregroundStyle(theme.textSecondary)
+                } else {
+                    Picker("Active Model", selection: $selectedModel) {
+                        if availableModels.isEmpty {
+                            Text("No models available")
+                                .tag("")
+                        } else {
+                            ForEach(availableModels) { model in
+                                Text(displayName(for: model))
+                                    .tag(model.id)
+                            }
                         }
                     }
+                    .pickerStyle(.menu)
+                    .tint(theme.textPrimary)
+                    .onChange(of: selectedModel) { _, newValue in
+                        store.preferredModel = newValue
+                    }
                 }
-                .pickerStyle(.menu)
-                .onChange(of: selectedModel) { _, newValue in
-                    store.preferredModel = newValue
-                }
-            }
-        } header: {
-            Text("Model")
-        } footer: {
-            if !selectedProvider.isEmpty {
-                Text("Models are synced from your connected Hermes server.")
             }
         }
     }
 
-    // MARK: - Thinking picker
+    // MARK: - Reasoning card
 
     private static let thinkingOptions: [(value: String, label: String)] = [
         ("", "Off"),
@@ -252,152 +311,211 @@ struct SettingsView: View {
         ("high", "High"),
     ]
 
-    private var thinkingSection: some View {
-        Section {
-            Picker("Thinking", selection: $selectedThinking) {
-                ForEach(Self.thinkingOptions, id: \.value) { opt in
-                    Text(opt.label).tag(opt.value)
+    private var reasoningCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: theme.spacingM) {
+                cardHeader("Reasoning", icon: "brain")
+
+                Picker("Thinking", selection: $selectedThinking) {
+                    ForEach(Self.thinkingOptions, id: \.value) { opt in
+                        Text(opt.label).tag(opt.value)
+                    }
                 }
+                .pickerStyle(.menu)
+                .tint(theme.textPrimary)
+                .onChange(of: selectedThinking) { _, newValue in
+                    store.preferredThinking = newValue
+                }
+
+                Text("Local preference only — the gateway's chat endpoint doesn't currently honor a per-message reasoning override. Saved so it's ready when server support lands.")
+                    .font(.caption)
+                    .foregroundStyle(theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .pickerStyle(.menu)
-            .onChange(of: selectedThinking) { _, newValue in
-                store.preferredThinking = newValue
-            }
-        } header: {
-            Text("Reasoning")
-        } footer: {
-            Text("Local preference only — the gateway's chat endpoint doesn't currently honor a per-message reasoning override. Saved so it's ready when server support lands.")
         }
     }
 
-    // MARK: - Server capabilities
+    // MARK: - Capabilities card
 
     @ViewBuilder
-    private var capabilitiesSections: some View {
+    private var capabilitiesCard: some View {
         if let caps = store.capabilities {
-            Section("Server") {
-                settingRow("Platform", caps.platform)
-                settingRow("Default Model", caps.currentModel?.isEmpty == false ? caps.currentModel! : caps.model)
-                if let provider = caps.currentProvider, !provider.isEmpty {
-                    settingRow("Current Provider", displayName(for: provider))
+            glassCard {
+                VStack(alignment: .leading, spacing: theme.spacingM) {
+                    cardHeader("Capabilities", icon: "sparkles")
+
+                    Toggle("Skills API", isOn: .constant(caps.features.skillsAPI))
+                        .tint(theme.accent)
+                        .disabled(true)
+
+                    capabilityRow("Streaming Chat", caps.features.sessionChatStreaming)
+                    capabilityRow("Async Runs", caps.features.runSubmission)
+                    capabilityRow("Tool Approvals", caps.features.runApprovalResponse)
+                    capabilityRow("Session Forking", caps.features.sessionFork)
                 }
-                if let model = caps.currentModel, !model.isEmpty {
-                    settingRow("Current Model", model)
-                }
-                settingRow("Auth", caps.auth.type)
-            }
-            Section("Features") {
-                featureRow("Streaming Chat", caps.features.sessionChatStreaming)
-                featureRow("Async Runs", caps.features.runSubmission)
-                featureRow("Tool Approvals", caps.features.runApprovalResponse)
-                featureRow("Session Forking", caps.features.sessionFork)
-                featureRow("Skills API", caps.features.skillsAPI)
             }
         }
     }
 
-    // MARK: - Navigation links (Skills, Appearance, Voice)
+    private func capabilityRow(_ label: String, _ enabled: Bool) -> some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(theme.textPrimary)
+            Spacer()
+            Image(systemName: enabled ? "checkmark.circle.fill" : "xmark.circle")
+                .foregroundStyle(enabled ? theme.accent : theme.textMuted)
+        }
+    }
 
-    private var navigationSections: some View {
-        Group {
-            Section {
+    // MARK: - Tools card (Skills / Toolsets)
+
+    private var toolsCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: theme.spacingM) {
+                cardHeader("Tools", icon: "wrench.and.screwdriver")
+
                 NavigationLink {
                     SkillsListView(store: store)
                 } label: {
                     HStack {
                         Image(systemName: "books.vertical")
-                            .foregroundStyle(appearance.accent)
+                            .foregroundStyle(theme.accent)
                         Text("Skills")
+                            .foregroundStyle(theme.textPrimary)
                         Spacer()
                         Text("\(store.skills.count)")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.textSecondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
                     }
                 }
+
                 NavigationLink {
                     ToolsetsListView(store: store)
                 } label: {
                     HStack {
-                        Image(systemName: "wrench.and.screwdriver")
-                            .foregroundStyle(appearance.accent)
+                        Image(systemName: "gearshape.2")
+                            .foregroundStyle(theme.accent)
                         Text("Toolsets")
+                            .foregroundStyle(theme.textPrimary)
                         Spacer()
                         Text("\(store.toolsets.filter(\.enabled).count)/\(store.toolsets.count)")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Section {
-                NavigationLink {
-                    AppearanceSettingsView(appearance: appearance)
-                } label: {
-                    HStack {
-                        Image(systemName: "paintpalette")
-                            .foregroundStyle(appearance.accent)
-                        Text("Appearance")
-                        Spacer()
-                        Text(appearance.colorScheme.capitalized)
+                            .foregroundStyle(theme.textSecondary)
+                        Image(systemName: "chevron.right")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Section {
-                NavigationLink {
-                    VoiceSettingsView()
-                } label: {
-                    HStack {
-                        Image(systemName: "waveform")
-                            .foregroundStyle(appearance.accent)
-                        Text("Voice")
-                        Spacer()
-                        Text(voiceName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(theme.textMuted)
                     }
                 }
             }
         }
     }
 
-    // MARK: - Disconnect
+    // MARK: - Appearance card
 
-    private var disconnectSection: some View {
-        Section {
-            Button(role: .destructive) {
+    private var appearanceCard: some View {
+        glassCard {
+            NavigationLink {
+                AppearanceSettingsView(appearance: appearance)
+            } label: {
+                HStack {
+                    Image(systemName: "paintpalette")
+                        .foregroundStyle(theme.accent)
+                    Text("Appearance")
+                        .foregroundStyle(theme.textPrimary)
+                    Spacer()
+                    Text(appearance.colorScheme.capitalized)
+                        .font(.caption)
+                        .foregroundStyle(theme.textSecondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+        }
+    }
+
+    // MARK: - Voice card
+
+    private var voiceCard: some View {
+        glassCard {
+            NavigationLink {
+                VoiceSettingsView()
+            } label: {
+                HStack {
+                    Image(systemName: "waveform")
+                        .foregroundStyle(theme.accent)
+                    Text("Voice")
+                        .foregroundStyle(theme.textPrimary)
+                    Spacer()
+                    Text(voiceName)
+                        .font(.caption)
+                        .foregroundStyle(theme.textSecondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+        }
+    }
+
+    // MARK: - Disconnect card
+
+    private var disconnectCard: some View {
+        glassCard {
+            Button {
                 store.disconnect()
                 dismiss()
             } label: {
                 HStack {
                     Image(systemName: "wifi.slash")
                     Text("Disconnect")
+                    Spacer()
                 }
+                .font(.subheadline)
+                .foregroundStyle(theme.danger)
             }
         }
     }
 
-    // MARK: - About
+    // MARK: - About card
 
-    private var aboutSection: some View {
-        Section("About") {
-            settingRow("Version", appVersion)
-            Link(destination: URL(string: AppConfig.hermesDocsURL)!) {
+    private var aboutCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: theme.spacingM) {
+                cardHeader("About", icon: "info.circle")
+
                 HStack {
-                    Text("Hermes Docs")
+                    Text("Version")
+                        .foregroundStyle(theme.textSecondary)
                     Spacer()
-                    Image(systemName: "arrow.up.right")
+                    Text(appVersion)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.textMuted)
                 }
-            }
-            Link(destination: URL(string: AppConfig.repoURL)!) {
-                HStack {
-                    Text("GitHub")
-                    Spacer()
-                    Image(systemName: "arrow.up.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+
+                Link(destination: URL(string: AppConfig.hermesDocsURL)!) {
+                    HStack {
+                        Text("Hermes Docs")
+                            .foregroundStyle(theme.textPrimary)
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption)
+                            .foregroundStyle(theme.textSecondary)
+                    }
+                }
+
+                Link(destination: URL(string: AppConfig.repoURL)!) {
+                    HStack {
+                        Text("GitHub")
+                            .foregroundStyle(theme.textPrimary)
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption)
+                            .foregroundStyle(theme.textSecondary)
+                    }
                 }
             }
         }
@@ -457,20 +575,11 @@ struct SettingsView: View {
     private func settingRow(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.textSecondary)
             Spacer()
             Text(value)
                 .lineLimit(1)
                 .truncationMode(.middle)
-        }
-    }
-
-    private func featureRow(_ label: String, _ enabled: Bool) -> some View {
-        HStack {
-            Text(label)
-            Spacer()
-            Image(systemName: enabled ? "checkmark.circle.fill" : "xmark.circle")
-                .foregroundStyle(enabled ? .green : .secondary)
         }
     }
 
@@ -577,6 +686,8 @@ struct SkillsListView: View {
     @EnvironmentObject var appearance: AppearanceSettings
     @State private var searchText = ""
 
+    private var theme: any HermesTheme { appearance.activeTheme }
+
     private var filteredSkills: [Skill] {
         if searchText.isEmpty {
             return store.skills
@@ -588,31 +699,38 @@ struct SkillsListView: View {
     }
 
     var body: some View {
-        List {
-            if filteredSkills.isEmpty {
-                ContentUnavailableView(
-                    "No Skills",
-                    systemImage: "books.vertical",
-                    description: Text("No skills are loaded on this server.")
-                )
-            } else {
-                ForEach(filteredSkills) { skill in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(skill.name)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        if let desc = skill.description {
-                            Text(desc)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
+        ZStack {
+            theme.backgroundView
+                .ignoresSafeArea()
+
+            List {
+                if filteredSkills.isEmpty {
+                    ContentUnavailableView(
+                        "No Skills",
+                        systemImage: "books.vertical",
+                        description: Text("No skills are loaded on this server.")
+                    )
+                } else {
+                    ForEach(filteredSkills) { skill in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(skill.name)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(theme.textPrimary)
+                            if let desc = skill.description {
+                                Text(desc)
+                                    .font(.caption)
+                                    .foregroundStyle(theme.textSecondary)
+                                    .lineLimit(3)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("Skills")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search skills")
@@ -622,15 +740,21 @@ struct SkillsListView: View {
                     Task { await store.refreshSkills() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(theme.accent)
                 }
             }
         }
     }
 }
 
+// MARK: - Toolsets List View
+
 struct ToolsetsListView: View {
     @ObservedObject var store: AppStore
+    @EnvironmentObject var appearance: AppearanceSettings
     @State private var searchText = ""
+
+    private var theme: any HermesTheme { appearance.activeTheme }
 
     private var filteredToolsets: [ToolsetInfo] {
         let sorted = store.toolsets.sorted {
@@ -647,48 +771,56 @@ struct ToolsetsListView: View {
     }
 
     var body: some View {
-        List {
-            if filteredToolsets.isEmpty {
-                ContentUnavailableView(
-                    "No Toolsets",
-                    systemImage: "wrench.and.screwdriver",
-                    description: Text("No toolsets are reported by this server.")
-                )
-            } else {
-                ForEach(filteredToolsets) { toolset in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(toolset.label)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                Text(toolset.name)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+        ZStack {
+            theme.backgroundView
+                .ignoresSafeArea()
+
+            List {
+                if filteredToolsets.isEmpty {
+                    ContentUnavailableView(
+                        "No Toolsets",
+                        systemImage: "wrench.and.screwdriver",
+                        description: Text("No toolsets are reported by this server.")
+                    )
+                } else {
+                    ForEach(filteredToolsets) { toolset in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(toolset.label)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(theme.textPrimary)
+                                    Text(toolset.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(theme.textSecondary)
+                                }
+                                Spacer()
+                                Label(toolset.enabled ? "Enabled" : "Disabled",
+                                      systemImage: toolset.enabled ? "checkmark.circle.fill" : "circle")
+                                    .labelStyle(.iconOnly)
+                                    .foregroundStyle(toolset.enabled ? theme.accent : theme.textMuted)
                             }
-                            Spacer()
-                            Label(toolset.enabled ? "Enabled" : "Disabled",
-                                  systemImage: toolset.enabled ? "checkmark.circle.fill" : "circle")
-                                .labelStyle(.iconOnly)
-                                .foregroundStyle(toolset.enabled ? .green : .secondary)
-                        }
 
-                        Text(toolset.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text(toolset.description)
+                                .font(.caption)
+                                .foregroundStyle(theme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                        if !toolset.tools.isEmpty {
-                            Text(toolset.tools.joined(separator: ", "))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(3)
+                            if !toolset.tools.isEmpty {
+                                Text(toolset.tools.joined(separator: ", "))
+                                    .font(.caption2)
+                                    .foregroundStyle(theme.textMuted)
+                                    .lineLimit(3)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("Toolsets")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search toolsets")
@@ -698,6 +830,7 @@ struct ToolsetsListView: View {
                     Task { await store.refreshToolsets() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(theme.accent)
                 }
             }
         }
