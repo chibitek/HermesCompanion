@@ -300,55 +300,40 @@ struct ChatView: View {
         Task { await store.sendMessage(text, images: images, attachments: fileAttachments) }
     }
 
+    @MainActor
     private func handleVoiceTranscription(_ transcription: String) {
-        print("handleVoiceTranscription called with transcription: \(transcription)")
+        print("ChatView: handleVoiceTranscription called: \(transcription)")
         let priorErrorID = store.error?.id
         Task {
+            print("ChatView: setting isThinking true")
             voiceConversation.isThinking = true
-            print("Sending message to Hermes...")
-            
-            // Cap the network turn at 30 seconds so voice mode doesn't hang silently.
-            let responseMessage = await withTimeout(seconds: 30) {
-                await store.sendMessage(transcription)
-            }
-            
-            print("Response message: \(String(describing: responseMessage))")
+            print("ChatView: calling store.sendMessage...")
+            let responseMessage = await store.sendMessage(transcription)
+            print("ChatView: store.sendMessage returned \(String(describing: responseMessage))")
             
             guard let responseMessage = responseMessage else {
-                print("Hermes request timed out")
-                voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
+                print("ChatView: no response message")
+                if let error = store.error, error.id != priorErrorID {
+                    voiceConversation.failRemoteTurn(message: error.message)
+                } else {
+                    voiceConversation.failRemoteTurn(message: "Hermes did not respond. Please try again.")
+                }
                 return
             }
             
             let response = responseMessage.content
-            print("Received response from Hermes: \(String(describing: response))")
+            print("ChatView: response content: \(response)")
             
             if !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                print("Response is not empty, calling completeRemoteTurn")
+                print("ChatView: calling completeRemoteTurn")
                 voiceConversation.completeRemoteTurn(response: response)
             } else if let error = store.error, error.id != priorErrorID {
-                print("Error occurred: \(error.message)")
+                print("ChatView: error after empty response: \(error.message)")
                 voiceConversation.failRemoteTurn(message: error.message)
             } else {
-                // Empty content from a completed assistant message.
-                print("Assistant returned empty response")
+                print("ChatView: empty response")
                 voiceConversation.failRemoteTurn(message: "Hermes returned an empty response.")
             }
-        }
-    }
-    
-    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async -> T?) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask {
-                await operation()
-            }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                return nil
-            }
-            let result = await group.next()!
-            group.cancelAll()
-            return result
         }
     }
 

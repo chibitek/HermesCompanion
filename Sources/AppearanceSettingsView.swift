@@ -180,6 +180,21 @@ struct AppearanceSettingsView: View {
                     }
                     .padding(appearance.activeTheme.spacingL)
                 }
+
+                // MARK: - Keyboard
+
+                glassCard {
+                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
+                        Label("Keyboard", systemImage: "keyboard")
+                            .font(.headline)
+
+                        Toggle("Return key sends message", isOn: $appearance.returnKeySends)
+                        Text("When on, the Return key sends your message. Turn off to insert a new line instead.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(appearance.activeTheme.spacingL)
+                }
             }
             .padding(appearance.activeTheme.spacingL)
         }

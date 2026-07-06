@@ -543,11 +543,14 @@ final class VoiceConversationManager: ObservableObject {
     /// Finalize the current transcription and trigger the conversation flow.
     /// In local mode: generates a response via LocalLLMManager, speaks it, resumes listening.
     /// In remote mode: calls the onTranscriptionComplete callback.
+    @MainActor
     func finalizeTranscription(_ text: String) {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        print("VoiceManager: finalizeTranscription called with '\(finalText)'")
         guard !finalText.isEmpty, !isFinalizing else {
             // Empty transcription -- just stop listening.
             // Don't auto-restart to avoid loops. User can tap mic to resume.
+            print("VoiceManager: empty or already finalizing")
             stopListening()
             return
         }
@@ -559,10 +562,13 @@ final class VoiceConversationManager: ObservableObject {
         switch conversationMode {
         case .local:
             isThinking = true
+            invalidateThinkingSafetyTimer()
             Task {
                 let response = await localLLM.generateResponse(to: finalText)
-                isThinking = false
-                isFinalizing = false
+                await MainActor.run {
+                    isThinking = false
+                    isFinalizing = false
+                }
                 if isConversing {
                     speakResponse(response)
                     onLocalResponse?(response)
@@ -572,6 +578,7 @@ final class VoiceConversationManager: ObservableObject {
         case .remote:
             isThinking = true
             scheduleThinkingSafetyTimer()
+            print("VoiceManager: remote mode, calling onTranscriptionComplete with '\(finalText)'")
             onTranscriptionComplete?(finalText)
             // For remote mode, isFinalizing will be reset when speakResponse is called
             
@@ -579,6 +586,7 @@ final class VoiceConversationManager: ObservableObject {
             // For premium mode, we still send to Hermes but speak with premium TTS
             isThinking = true
             scheduleThinkingSafetyTimer()
+            print("VoiceManager: premium mode, calling onTranscriptionComplete with '\(finalText)'")
             onTranscriptionComplete?(finalText)
             // For premium mode, isFinalizing will be reset when speakResponse is called
             // by the caller after receiving the API response.

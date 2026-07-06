@@ -563,17 +563,26 @@ struct GlassInputBar: View {
                 TextField("Chat with Hermes", text: $text, axis: .vertical)
                     .textFieldStyle(.plain)
                     .focused($focused)
-                    .submitLabel(.send)
+                    .submitLabel(appearance.returnKeySends ? .send : .return)
                     .lineLimit(1...4)
                     .font(.system(size: 22, weight: .regular))
                     .foregroundStyle(theme.textPrimary)
                     .tint(theme.accent)
+                    .onChange(of: text) { _, newValue in
+                        // When return-sends is enabled, strip any newlines the user may have
+                        // pasted or the keyboard inserted so Return stays a send action.
+                        if appearance.returnKeySends && newValue.contains("\n") {
+                            text = newValue.replacingOccurrences(of: "\n", with: " ")
+                        }
+                    }
                     .onSubmit {
                         guard !suppressNextSubmit else {
                             suppressNextSubmit = false
                             return
                         }
-                        onSend()
+                        if appearance.returnKeySends {
+                            onSend()
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 

@@ -24,12 +24,16 @@ final class AppearanceSettings: ObservableObject {
     // Show timestamps on messages
     @AppStorage("showTimestamps") var showTimestamps: Bool = false
 
+    // Return key behavior in the chat composer
+    @AppStorage("returnKeySends") var returnKeySends: Bool = true
+
     // MARK: - Plain accessors (for passing to child views without Binding issues)
 
     var showTimestampsBool: Bool { showTimestamps }
     var compactModeBool: Bool { compactMode }
     var fontScaleDouble: Double { fontScale }
     var messageFontSizeDouble: Double { messageFontSize }
+    var returnKeySendsBool: Bool { returnKeySends }
 
     init() {
         let defaults = UserDefaults.standard
