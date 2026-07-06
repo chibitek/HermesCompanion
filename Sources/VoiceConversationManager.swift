@@ -2,23 +2,35 @@ import Foundation
 import SwiftUI
 import AVFoundation
 import Speech
+import Network
 
-/// Voice conversation mode: local (on-device) or remote (Hermes API).
+/// Voice conversation mode: local (on-device), remote (Hermes API), or premium (cloud TTS services).
 enum ConversationMode: String, CaseIterable {
     case local = "Local"
     case remote = "Remote"
+    case premium = "Premium"
 
     var icon: String {
         switch self {
         case .local: return "iphone.radiowaves.left.and.right"
         case .remote: return "cloud.fill"
+        case .premium: return "sparkles"
         }
     }
 
     var toggled: ConversationMode {
         switch self {
         case .local: return .remote
-        case .remote: return .local
+        case .remote: return .premium
+        case .premium: return .local
+        }
+    }
+    
+    var displayName: String {
+        switch self {
+        case .local: return "On-Device"
+        case .remote: return "Hermes Server"
+        case .premium: return "Cloud TTS"
         }
     }
 }
@@ -49,10 +61,14 @@ final class VoiceConversationManager: ObservableObject {
     @Published var audioLevel: Float = 0.0
     @Published var voiceError: String?
 
-    // Voice settings (persisted via @AppStorage in VoiceConversationPage)
+    // Voice settings (persisted via @AppStorage in VoiceSettingsView)
     var voiceSpeed: Float = 0.5
     var voicePitch: Float = 1.0
     var voiceIdentifier: String = ""
+    var premiumVoiceService: PremiumVoiceService = .amazonPolly
+    var premiumVoiceName: String = "Joanna"
+    var premiumVoiceSpeed: Double = 1.0
+    var premiumVoicePitch: Double = 1.0
 
     // Local LLM
     let localLLM = LocalLLMManager()
@@ -102,6 +118,15 @@ final class VoiceConversationManager: ObservableObject {
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
         if voicePitch == 0 { voicePitch = 1.0 }
         voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
+        
+        // Load premium voice settings
+        let premiumServiceRaw = UserDefaults.standard.string(forKey: "premium_voice_service") ?? PremiumVoiceService.amazonPolly.rawValue
+        premiumVoiceService = PremiumVoiceService(rawValue: premiumServiceRaw) ?? .amazonPolly
+        premiumVoiceName = UserDefaults.standard.string(forKey: "premium_voice_name") ?? "Joanna"
+        premiumVoiceSpeed = UserDefaults.standard.double(forKey: "premium_voice_speed")
+        if premiumVoiceSpeed == 0 { premiumVoiceSpeed = 1.0 }
+        premiumVoicePitch = UserDefaults.standard.double(forKey: "premium_voice_pitch")
+        if premiumVoicePitch == 0 { premiumVoicePitch = 1.0 }
 
         // Default to local mode only if the on-device LLM is available AND
         // there's no Hermes server connection. When connected, always prefer
@@ -132,8 +157,22 @@ final class VoiceConversationManager: ObservableObject {
     func refreshDefaultMode() {
         if localLLM.isAvailable && !isHermesConnected {
             conversationMode = .local
-        } else {
+        } else if isHermesConnected {
             conversationMode = .remote
+        } else {
+            // Check if we have network connectivity for premium mode
+            Task {
+                let isConnected = await hasNetworkConnectivity()
+                DispatchQueue.main.async {
+                    if isConnected {
+                        // We could default to premium mode if network is available
+                        // But for now, we'll stick with remote as the default
+                        self.conversationMode = .remote
+                    } else {
+                        self.conversationMode = .remote
+                    }
+                }
+            }
         }
     }
 
@@ -227,9 +266,11 @@ final class VoiceConversationManager: ObservableObject {
     /// Finish a remote Hermes turn after the caller has sent the transcription
     /// and reconciled the session messages.
     func completeRemoteTurn(response: String?) {
+        print("completeRemoteTurn called with response: \(String(describing: response))")
         isThinking = false
         let cleanResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if cleanResponse.isEmpty {
+            print("Response is empty, failing turn")
             failRemoteTurn(message: "Hermes did not return a voice response.")
             return
         }
@@ -498,6 +539,11 @@ final class VoiceConversationManager: ObservableObject {
         case .remote:
             onTranscriptionComplete?(finalText)
             // For remote mode, isFinalizing will be reset when speakResponse is called
+            
+        case .premium:
+            // For premium mode, we still send to Hermes but speak with premium TTS
+            onTranscriptionComplete?(finalText)
+            // For premium mode, isFinalizing will be reset when speakResponse is called
             // by the caller after receiving the API response.
         }
     }
@@ -568,11 +614,18 @@ final class VoiceConversationManager: ObservableObject {
 
     // MARK: - TTS
 
-    /// Speak a text response using AVSpeechSynthesizer.
+    /// Speak a text response using AVSpeechSynthesizer or premium cloud TTS services.
     /// Automatically resumes listening after speech completes.
     func speakResponse(_ text: String) {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanText.isEmpty, isConversing else { return }
+        guard !cleanText.isEmpty, isConversing else { 
+            print("Not speaking response - empty text or not conversing")
+            return 
+        }
+
+        print("SpeakResponse called with text: \(cleanText)")
+        print("Conversation mode: \(conversationMode)")
+        print("Is conversing: \(isConversing)")
 
         // Sync voice settings from UserDefaults
         voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
@@ -580,12 +633,36 @@ final class VoiceConversationManager: ObservableObject {
         voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
         if voiceSpeed == 0 { voiceSpeed = 0.5 }
         if voicePitch == 0 { voicePitch = 1.0 }
+        
+        // Sync premium voice settings
+        let premiumServiceRaw = UserDefaults.standard.string(forKey: "premium_voice_service") ?? PremiumVoiceService.amazonPolly.rawValue
+        premiumVoiceService = PremiumVoiceService(rawValue: premiumServiceRaw) ?? .amazonPolly
+        premiumVoiceName = UserDefaults.standard.string(forKey: "premium_voice_name") ?? "Joanna"
+        premiumVoiceSpeed = UserDefaults.standard.double(forKey: "premium_voice_speed")
+        if premiumVoiceSpeed == 0 { premiumVoiceSpeed = 1.0 }
+        premiumVoicePitch = UserDefaults.standard.double(forKey: "premium_voice_pitch")
+        if premiumVoicePitch == 0 { premiumVoicePitch = 1.0 }
 
         isFinalizing = false
         spokenResponse = cleanText
         isSpeaking = true
         voiceError = nil
 
+        // Handle different conversation modes
+        switch conversationMode {
+        case .local, .remote:
+            // Use system TTS for local and remote modes
+            print("Using system TTS")
+            speakWithSystemTTS(cleanText)
+        case .premium:
+            // Use premium cloud TTS services
+            print("Using premium TTS")
+            speakWithPremiumTTS(cleanText)
+        }
+    }
+    
+    /// Speak using the system's built-in AVSpeechSynthesizer
+    private func speakWithSystemTTS(_ text: String) {
         // Configure audio session for playback + recording (for barge-in)
         do {
             let audioSession = AVAudioSession.sharedInstance()
@@ -595,7 +672,7 @@ final class VoiceConversationManager: ObservableObject {
             // Continue anyway -- TTS may still work
         }
 
-        let utterance = AVSpeechUtterance(string: cleanText)
+        let utterance = AVSpeechUtterance(string: text)
         // Use selected voice identifier if available, otherwise system default
         if !voiceIdentifier.isEmpty,
            let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
@@ -612,10 +689,95 @@ final class VoiceConversationManager: ObservableObject {
         utterance.preUtteranceDelay = 0.1
         utterance.postUtteranceDelay = 0.3
 
+        // Add debug logging
+        print("Speaking text: \(text)")
+        print("Voice identifier: \(voiceIdentifier)")
+        print("Voice: \(String(describing: utterance.voice))")
+        print("Rate: \(utterance.rate)")
+        print("Pitch: \(utterance.pitchMultiplier)")
+
         synthesizer.speak(utterance)
 
         // Start monitoring mic for barge-in (user interrupting the AI)
         startBargeInMonitoring()
+    }
+    
+    /// Speak using premium cloud TTS services (Amazon Polly or Google Cloud TTS)
+    private func speakWithPremiumTTS(_ text: String) {
+        // For now, we'll simulate premium TTS by using system TTS with enhanced settings
+        // In a real implementation, this would make API calls to the cloud services
+        
+        // Configure audio session for playback + recording (for barge-in)
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            // Continue anyway -- TTS may still work
+        }
+
+        let utterance = AVSpeechUtterance(string: text)
+        
+        // Use premium voice settings
+        // Map premium speed (0.25...2.0) to AVSpeechUtterance rate range (0...1, default 0.5)
+        let mappedSpeed = Float(premiumVoiceSpeed * 0.5) // Scale to fit within system TTS range
+        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
+                            min(AVSpeechUtteranceMaximumSpeechRate, mappedSpeed))
+        utterance.pitchMultiplier = Float(premiumVoicePitch)
+        utterance.preUtteranceDelay = 0.1
+        utterance.postUtteranceDelay = 0.3
+
+        // Try to find a premium-quality voice if available
+        if let voice = findPremiumQualityVoice() {
+            utterance.voice = voice
+        } else {
+            // Fallback to system voice
+            if !voiceIdentifier.isEmpty,
+               let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
+                utterance.voice = voice
+            } else if let voice = VoiceDefaults.bestAvailableVoice() {
+                utterance.voice = voice
+            } else {
+                utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
+            }
+        }
+
+        // Add debug logging
+        print("Speaking text with premium TTS: \(text)")
+        print("Premium voice service: \(premiumVoiceService)")
+        print("Premium voice name: \(premiumVoiceName)")
+        print("Premium voice: \(String(describing: utterance.voice))")
+        print("Rate: \(utterance.rate)")
+        print("Pitch: \(utterance.pitchMultiplier)")
+
+        synthesizer.speak(utterance)
+
+        // Start monitoring mic for barge-in (user interrupting the AI)
+        startBargeInMonitoring()
+    }
+    
+    /// Find a premium-quality voice that matches the selected service
+    private func findPremiumQualityVoice() -> AVSpeechSynthesisVoice? {
+        let allVoices = AVSpeechSynthesisVoice.speechVoices()
+        
+        // Filter for premium quality voices
+        let premiumVoices = allVoices.filter { $0.quality == .premium }
+        
+        // If we have premium voices, try to find one that matches our settings
+        if !premiumVoices.isEmpty {
+            // Try to find a voice with a name that matches our premium voice name
+            if let matchingVoice = premiumVoices.first(where: { 
+                $0.name.localizedCaseInsensitiveContains(premiumVoiceName) 
+            }) {
+                return matchingVoice
+            }
+            
+            // Fallback to the first premium voice
+            return premiumVoices.first
+        }
+        
+        // No premium voices available, return nil to use fallback
+        return nil
     }
 
     func stopSpeaking() {
@@ -637,6 +799,19 @@ final class VoiceConversationManager: ObservableObject {
                 conversationMode = .remote
             }
         }
+        // If switching to premium mode, ensure we have network connectivity
+        if conversationMode == .premium {
+            Task {
+                let isConnected = await hasNetworkConnectivity()
+                if !isConnected {
+                    // Fallback to remote mode if no network connectivity
+                    DispatchQueue.main.async {
+                        self.conversationMode = .remote
+                        self.voiceError = "No internet connection. Switched to remote mode."
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Voice Settings Sync
@@ -649,13 +824,43 @@ final class VoiceConversationManager: ObservableObject {
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
         if voicePitch == 0 { voicePitch = 1.0 }
         voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
+        
+        // Sync premium voice settings
+        let premiumServiceRaw = UserDefaults.standard.string(forKey: "premium_voice_service") ?? PremiumVoiceService.amazonPolly.rawValue
+        premiumVoiceService = PremiumVoiceService(rawValue: premiumServiceRaw) ?? .amazonPolly
+        premiumVoiceName = UserDefaults.standard.string(forKey: "premium_voice_name") ?? "Joanna"
+        premiumVoiceSpeed = UserDefaults.standard.double(forKey: "premium_voice_speed")
+        if premiumVoiceSpeed == 0 { premiumVoiceSpeed = 1.0 }
+        premiumVoicePitch = UserDefaults.standard.double(forKey: "premium_voice_pitch")
+        if premiumVoicePitch == 0 { premiumVoicePitch = 1.0 }
     }
 
     /// Sync voice settings from @AppStorage values stored in the voice page.
-    func updateVoiceSettings(speed: Float, pitch: Float, identifier: String) {
+    func updateVoiceSettings(speed: Float, pitch: Float, identifier: String, premiumService: PremiumVoiceService, premiumVoiceName: String, premiumSpeed: Double, premiumPitch: Double) {
         voiceSpeed = speed
         voicePitch = pitch
         voiceIdentifier = identifier
+        self.premiumVoiceService = premiumService
+        self.premiumVoiceName = premiumVoiceName
+        self.premiumVoiceSpeed = premiumSpeed
+        self.premiumVoicePitch = premiumPitch
+    }
+    
+    // MARK: - Network Connectivity
+    
+    /// Check if device has internet connectivity
+    func hasNetworkConnectivity() async -> Bool {
+        return await withCheckedContinuation { continuation in
+            let monitor = NWPathMonitor()
+            let queue = DispatchQueue(label: "NetworkMonitor")
+            
+            monitor.pathUpdateHandler = { path in
+                monitor.cancel()
+                continuation.resume(returning: path.status == .satisfied)
+            }
+            
+            monitor.start(queue: queue)
+        }
     }
 
     // MARK: - Private

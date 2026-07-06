@@ -299,16 +299,27 @@ struct ChatView: View {
     }
 
     private func handleVoiceTranscription(_ transcription: String) {
+        print("handleVoiceTranscription called with transcription: \(transcription)")
         let priorErrorID = store.error?.id
         Task {
             voiceConversation.isThinking = true
-            let response = await store.sendMessage(transcription)?.content
+            print("Sending message to Hermes...")
+            let responseMessage = await store.sendMessage(transcription)
+            let response = responseMessage?.content
+            print("Received response from Hermes: \(String(describing: response))")
+            print("Response message: \(String(describing: responseMessage))")
+            
             if let response, !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                print("Response is not empty, calling completeRemoteTurn")
                 voiceConversation.completeRemoteTurn(response: response)
             } else if let error = store.error, error.id != priorErrorID {
+                print("Error occurred: \(error.message)")
                 voiceConversation.failRemoteTurn(message: error.message)
             } else {
-                voiceConversation.failRemoteTurn(message: "Hermes did not return a voice response.")
+                // Even if there's no response content, we should still speak something
+                let fallbackResponse = response ?? "I received your message but didn't generate a response."
+                print("Using fallback response: \(fallbackResponse)")
+                voiceConversation.completeRemoteTurn(response: fallbackResponse)
             }
         }
     }

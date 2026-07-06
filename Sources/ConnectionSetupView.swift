@@ -8,8 +8,22 @@ struct ConnectionSetupView: View {
     @State private var apiKey = ""
     @State private var label = "My Hermes"
     @State private var isTesting = false
-    @State private var testResult: TestResult?
+    
+    // Whether we're editing an existing connection
+    private let initialConfig: ConnectionConfig?
 
+    init(store: AppStore, initialConfig: ConnectionConfig? = nil) {
+        self.store = store
+        self.initialConfig = initialConfig
+    }
+
+    private var versionString: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+        return "\(version) ($build)"
+    }
+    @State private var testResult: TestResult?
+    
     enum TestResult {
         case success(String)
         case failure(String)
@@ -30,9 +44,13 @@ struct ConnectionSetupView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
 
-                        Text("Connect to your Hermes Agent")
+                        Text(initialConfig == nil ? "Connect to your Hermes Agent" : "Edit Server Connection")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+
+                        Text(versionString)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
@@ -94,7 +112,7 @@ struct ConnectionSetupView: View {
                         Button {
                             Task { await saveAndConnect() }
                         } label: {
-                            Text("Save & Connect")
+                            Text(initialConfig == nil ? "Save & Connect" : "Update")
                                 .fontWeight(.semibold)
                         }
                         .disabled(baseURL.isEmpty || apiKey.isEmpty)
@@ -112,10 +130,11 @@ struct ConnectionSetupView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
-            .navigationTitle("Setup")
+            .navigationTitle(initialConfig == nil ? "Setup" : "Edit Server")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 prefillDebugConnectionIfAvailable()
+                prefillExistingConnectionIfAvailable()
             }
         }
     }
@@ -216,12 +235,51 @@ struct ConnectionSetupView: View {
 
     private func saveAndConnect() async {
         let config = ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label)
+        
+        // If we're editing an existing connection with the same baseURL, update it
+        if let initialConfig = initialConfig, initialConfig.baseURL == baseURL {
+            // Update the existing connection in keychain
+            do {
+                try KeychainManager.shared.addOrUpdate(config)
+                // If this was the active connection, update it by reconnecting
+                if store.connectionConfig?.baseURL == baseURL {
+                    // Update the saved connections list
+                    store.savedConnections = KeychainManager.shared.loadAll()
+                    // Reconnect to update the active connection
+                    _ = await store.connect(config: config)
+                    return
+                }
+                // Update the saved connections list
+                store.savedConnections = KeychainManager.shared.loadAll()
+            } catch {
+                testResult = .failure("Failed to update connection: \(error.localizedDescription)")
+                return
+            }
+        } else {
+            // Save as new connection
+            do {
+                try KeychainManager.shared.addOrUpdate(config)
+                store.savedConnections = KeychainManager.shared.loadAll()
+            } catch {
+                testResult = .failure("Failed to save connection: \(error.localizedDescription)")
+                return
+            }
+        }
+        
+        // Connect to the new/updated configuration
         let success = await store.connect(config: config)
         if !success {
             testResult = .failure(store.error?.message ?? "Connection failed")
         }
     }
 
+    private func prefillExistingConnectionIfAvailable() {
+        guard let config = initialConfig else { return }
+        baseURL = config.baseURL
+        apiKey = config.apiKey
+        label = config.label
+    }
+    
     private func prefillDebugConnectionIfAvailable() {
         #if DEBUG
         let defaults = UserDefaults.standard

@@ -708,12 +708,15 @@ struct GlassInputBar: View {
     private var trailingActionIcon: String {
         if isStreaming { return "stop.fill" }
         if canSend { return "arrow.up" }
-        return "waveform"
+        // Use a more distinctive icon for voice conversation mode
+        return "waveform.badge.mic"
     }
 
     private var trailingActionForeground: Color {
         if isStreaming { return theme.danger }
-        return .white
+        if canSend { return theme.accent }
+        // For voice conversation mode, use accent color instead of white for better visibility
+        return theme.accent
     }
 
     private var trailingActionBackground: Color {

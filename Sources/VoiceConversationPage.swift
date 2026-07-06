@@ -10,10 +10,37 @@ struct CyberpunkVoicePreset: Identifiable, CaseIterable, Equatable {
     let secondary: Color
     let background: Color
 
-    static let matrix = CyberpunkVoicePreset(id: "matrix", name: "MATRIX", primary: Color(red: 0, green: 1, blue: 0.25), secondary: Color(red: 0, green: 0.56, blue: 0.07), background: .black)
-    static let retroAmber = CyberpunkVoicePreset(id: "amber", name: "AMBER", primary: Color(red: 1, green: 0.65, blue: 0), secondary: Color(red: 0.8, green: 0.52, blue: 0), background: .black)
-    static let neon = CyberpunkVoicePreset(id: "neon", name: "NEON", primary: Color(red: 1, green: 0, blue: 0.9), secondary: Color(red: 0, green: 0.94, blue: 1), background: .black)
-    static let blueHacker = CyberpunkVoicePreset(id: "blue", name: "BLUE", primary: Color(red: 0, green: 0.74, blue: 1), secondary: Color(red: 0, green: 0.47, blue: 0.74), background: .black)
+    static let matrix = CyberpunkVoicePreset(
+        id: "matrix", 
+        name: "MATRIX", 
+        primary: Color(red: 0, green: 1, blue: 0.25), // #00FF41
+        secondary: Color(red: 0, green: 0.56, blue: 0.07), 
+        background: .black
+    )
+    
+    static let retroAmber = CyberpunkVoicePreset(
+        id: "amber", 
+        name: "AMBER", 
+        primary: Color(red: 1, green: 0.65, blue: 0), // #F2A900
+        secondary: Color(red: 0.8, green: 0.52, blue: 0), 
+        background: .black
+    )
+    
+    static let neon = CyberpunkVoicePreset(
+        id: "neon", 
+        name: "NEON", 
+        primary: Color(red: 1, green: 0, blue: 0.9), // #FF00E6
+        secondary: Color(red: 0, green: 0.94, blue: 1), 
+        background: .black
+    )
+    
+    static let blueHacker = CyberpunkVoicePreset(
+        id: "blue", 
+        name: "BLUE", 
+        primary: Color(red: 0, green: 0.74, blue: 1), // #00BDFF
+        secondary: Color(red: 0, green: 0.47, blue: 0.74), 
+        background: .black
+    )
 
     static var allCases: [CyberpunkVoicePreset] = [.matrix, .retroAmber, .neon, .blueHacker]
 
@@ -50,7 +77,8 @@ struct VoiceConversationPage: View {
 
     var body: some View {
         ZStack {
-            // Matrix digital rain background
+            // Background layers (bottom→top)
+            // 1. Matrix digital rain background
             MatrixRainView(
                 color: preset.primary,
                 secondaryColor: preset.secondary,
@@ -58,15 +86,19 @@ struct VoiceConversationPage: View {
             )
             .ignoresSafeArea()
 
-            // Subtle scanlines on top of rain
+            // 2. Scanlines
             ScanlineOverlay(lineColor: preset.primary, lineOpacity: 0.05)
 
+            // 3. Vignette + CRT glow
+            VoiceCRTGlowOverlay(color: preset.primary, intensity: 0.06)
+
+            // Content
             VStack(spacing: 0) {
                 topBar
                 Spacer()
-                visualizer
+                transcriptionDisplay
                 Spacer()
-                transcriptionCards
+                audioWaveform
                 bottomControls
             }
             .padding()
@@ -101,54 +133,25 @@ struct VoiceConversationPage: View {
 
     private var topBar: some View {
         HStack {
+            // Top bar: ◉ VOICE_MODE (green, mono, subtle glitch animation) + ✕ close
+            Text("◉ VOICE_MODE")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(preset.primary)
+                .shadow(color: preset.primary.opacity(0.6), radius: 4)
+                .modifier(GlitchAnimation())
+            
+            Spacer()
+            
             Button { onClose?() } label: {
-                Image(systemName: "xmark")
-                    .font(.title3)
+                Text("✕")
+                    .font(.title2)
                     .foregroundStyle(preset.primary)
-            }
-
-            Spacer()
-
-            // Session picker -- shows current session title, tap to change
-            if let store = store {
-                Button {
-                    showSessionPicker = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.caption)
-                        Text(store.activeSession?.title?.prefix(20) ?? "Latest")
-                            .font(.system(.caption, design: .monospaced).weight(.bold))
-                    }
-                    .foregroundStyle(preset.primary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(preset.primary.opacity(0.1))
-                    .clipShape(Capsule())
-                }
-            } else {
-                Text("MATRIX MODE")
-                    .font(.system(.headline, design: .monospaced).weight(.bold))
-                    .foregroundStyle(preset.primary)
-                    .shadow(color: preset.primary.opacity(0.6), radius: 4)
-            }
-
-            Spacer()
-
-            Button { preset = preset.next } label: {
-                Text(preset.name)
-                    .font(.system(.caption, design: .monospaced).weight(.bold))
-                    .foregroundStyle(preset.background)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(preset.primary)
-                    .clipShape(Capsule())
-            }
-
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape")
-                    .font(.title3)
-                    .foregroundStyle(preset.primary)
+                    .padding(8)
+                    .background(
+                        Circle()
+                            .fill(preset.background)
+                            .stroke(preset.primary.opacity(0.4), lineWidth: 1)
+                    )
             }
         }
     }
@@ -186,12 +189,19 @@ struct VoiceConversationPage: View {
                     .frame(width: 90, height: 90)
 
                 // Audio level bars inside the orb -- react to real mic input
-                AudioVisualizerBar(
-                    color: preset.primary,
-                    secondaryColor: preset.secondary,
-                    audioLevel: voiceConversation.audioLevel,
-                    isActive: voiceConversation.isListening || voiceConversation.isSpeaking
-                )
+                ZStack {
+                    // Only show the visualizer when there's audio activity
+                    if voiceConversation.isListening || voiceConversation.isSpeaking || voiceConversation.audioLevel > 0.01 {
+                        // Audio level bars - 5 vertical bars that animate with audio level
+                        ForEach(0..<5, id: \.self) { index in
+                            Rectangle()
+                                .fill(preset.primary)
+                                .frame(width: 4, height: 20 + CGFloat(voiceConversation.audioLevel) * 30)
+                                .offset(x: CGFloat(index - 2) * 8, y: 0)
+                                .opacity(0.7 + Double(voiceConversation.audioLevel) * 0.3)
+                        }
+                    }
+                }
                 .frame(width: 80, height: 50)
             }
 
@@ -251,37 +261,85 @@ struct VoiceConversationPage: View {
     // MARK: - Bottom Controls
 
     private var bottomControls: some View {
-        VStack(spacing: 12) {
-            // Mic button
-            Button {
-                if voiceConversation.isConversing {
-                    if voiceConversation.isListening {
-                        voiceConversation.stopListening()
-                    } else {
-                        voiceConversation.startListening()
-                    }
-                } else {
-                    startVoiceConversationIfNeeded()
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .stroke(preset.primary, lineWidth: 3)
-                        .frame(width: 72, height: 72)
-                    Circle()
-                        .fill(voiceConversation.isListening ? preset.primary.opacity(0.2) : .clear)
-                        .frame(width: 64, height: 64)
-                    Image(systemName: voiceConversation.isListening ? "stop.fill" : "mic.fill")
-                        .font(.title)
+        // Controls: MUTE (toggle mic), center END (green, ends the voice session → back to Chat), LOCAL (toggle local/remote or device mode)
+        HStack(spacing: 26) {
+            // MUTE button
+            VStack(spacing: 7) {
+                Button {
+                    // Toggle mute functionality
+                } label: {
+                    Text("􀊱")
+                        .font(.title2)
                         .foregroundStyle(preset.primary)
+                        .frame(width: 54, height: 54)
+                        .background(
+                            Circle()
+                                .fill(preset.background)
+                                .stroke(preset.primary.opacity(0.35), lineWidth: 1)
+                        )
                 }
+                Text("MUTE")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(preset.secondary.opacity(0.8))
+            }
+            
+            // END button
+            VStack(spacing: 7) {
+                Button {
+                    voiceConversation.stopConversation()
+                    onClose?()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [preset.primary, preset.secondary],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 41
+                                )
+                            )
+                            .shadow(color: preset.primary.opacity(0.6), radius: 20)
+                        Circle()
+                            .fill(Color(red: 0.01, green: 0.13, blue: 0.04)) // #03210a
+                            .frame(width: 26, height: 26)
+                    }
+                    .frame(width: 82, height: 82)
+                }
+                Text("END")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(preset.primary)
+                    .shadow(color: preset.primary.opacity(0.6), radius: 3)
+            }
+            
+            // LOCAL button
+            VStack(spacing: 7) {
+                Button {
+                    // Toggle local/remote mode
+                } label: {
+                    Text("⇄")
+                        .font(.title2)
+                        .foregroundStyle(preset.primary)
+                        .frame(width: 54, height: 54)
+                        .background(
+                            Circle()
+                                .fill(preset.background)
+                                .stroke(preset.primary.opacity(0.35), lineWidth: 1)
+                        )
+                }
+                Text("LOCAL")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(preset.secondary.opacity(0.8))
             }
         }
+        .padding(.bottom, 44)
     }
 
     private func startVoiceConversationIfNeeded() {
         guard !voiceConversation.isConversing else { return }
-        voiceConversation.conversationMode = .remote
+        // Set to premium mode if that's what the user has selected
+        let preferredMode = voiceConversation.conversationMode
+        voiceConversation.conversationMode = preferredMode
         voiceConversation.startConversation(
             onTranscription: { text in
                 // Forward to ChatView so it sends through the active Hermes
@@ -291,93 +349,71 @@ struct VoiceConversationPage: View {
             onLocalResponse: { _ in }
         )
     }
-}
+    
+    // MARK: - Transcription Display
 
-// MARK: - Audio Visualizer Bar
-
-struct AudioVisualizerBar: View {
-    let color: Color
-    var secondaryColor: Color = .gray
-    var audioLevel: Float = 0
-    let isActive: Bool
-    private let barCount = 24
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // ~25fps, lighter than .animation
-            Canvas { context, size in
-                let barWidth = max(3, size.width / CGFloat(barCount) - 3)
-                let spacing: CGFloat = 3
-                let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * spacing
-                let startX = (size.width - totalWidth) / 2
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                let level = CGFloat(audioLevel)
-
-                for i in 0..<barCount {
-                    let center = Double(barCount) / 2.0
-                    let dist = abs(Double(i) - center) / center
-                    let base = 1.0 - dist * 0.35
-
-                    let h: CGFloat
-                    if isActive {
-                        let wave = sin(t * 4 + Double(i) * 0.6) * 0.12
-                        let noise = Double.random(in: -0.08...0.08)
-                        let val = base + Double(level) * 0.9 + wave + noise
-                        h = CGFloat(max(0.05, min(1.0, val)))
-                    } else {
-                        let breath = sin(t * 1.2 + Double(i) * 0.4) * 0.04 + 0.06
-                        h = CGFloat(breath)
-                    }
-
-                    let x = startX + CGFloat(i) * (barWidth + spacing)
-                    let barHeight = max(3, size.height * h)
-                    let y = (size.height - barHeight) / 2
-                    let rect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
-                    let barColor = i % 3 == 2 ? secondaryColor : color
-                    context.fill(Path(rect), with: .color(barColor))
+    private var transcriptionDisplay: some View {
+        VStack(spacing: 22) {
+            // > YOU line (dim green) and > HERMES line (bright green with glow)
+            if !voiceConversation.transcribedText.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("> YOU")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(preset.secondary)
+                        .opacity(0.8)
+                    Text(voiceConversation.transcribedText)
+                        .font(.system(size: 16, design: .monospaced))
+                        .foregroundStyle(preset.secondary.opacity(0.9))
+                        .lineLimit(3)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            if !voiceConversation.spokenResponse.isEmpty || voiceConversation.isSpeaking {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("> HERMES")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(preset.primary)
+                        .shadow(color: preset.primary.opacity(0.6), radius: 4)
+                    Text(voiceConversation.spokenResponse + (voiceConversation.isSpeaking ? "█" : ""))
+                        .font(.system(size: 17, design: .monospaced))
+                        .foregroundStyle(preset.primary)
+                        .shadow(color: preset.primary.opacity(0.55), radius: 6)
+                        .lineLimit(3)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
-}
+    
+    // MARK: - Audio Waveform
 
-// MARK: - Scanline Overlay
-
-struct ScanlineOverlay: View {
-    var lineColor: Color = .white
-    var lineSpacing: CGFloat = 3
-    var lineOpacity: Double = 0.07
-
-    var body: some View {
-        Canvas { context, size in
-            var y: CGFloat = 0
-            while y < size.height {
-                context.fill(
-                    Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
-                    with: .color(lineColor.opacity(lineOpacity))
-                )
-                y += lineSpacing
+    private var audioWaveform: some View {
+        // Audio waveform: row of vertical bars animating with amplitude
+        HStack(spacing: 4) {
+            ForEach(0..<34, id: \.self) { index in
+                waveformBar(index: index)
             }
         }
-        .allowsHitTesting(false)
+        .frame(height: 96)
+        .padding(.horizontal, 30)
     }
-}
 
-// MARK: - CRT Glow Modifier
-
-struct CRTGlow: ViewModifier {
-    let color: Color
-    var radius: CGFloat = 6
-    var opacity: Double = 0.8
-
-    func body(content: Content) -> some View {
-        content
-            .shadow(color: color.opacity(opacity), radius: radius)
-    }
-}
-
-extension View {
-    func crtGlow(_ color: Color, radius: CGFloat = 6, opacity: Double = 0.8) -> some View {
-        modifier(CRTGlow(color: color, radius: radius, opacity: opacity))
+    private func waveformBar(index: Int) -> some View {
+        let barCount = 34
+        let center = Double(barCount) / 2.0
+        let dist = abs(Double(index) - center) / center
+        let baseHeight = 8.0 + (1.0 - dist) * 20.0 // Vary height based on position
+        
+        return Rectangle()
+            .fill(LinearGradient(
+                colors: [preset.secondary, preset.primary],
+                startPoint: .top,
+                endPoint: .bottom
+            ))
+            .shadow(color: preset.primary.opacity(0.55), radius: 4)
+            .frame(width: 5, height: CGFloat(baseHeight))
+            .animation(.easeInOut(duration: 0.09), value: voiceConversation.audioLevel)
     }
 }
 
@@ -388,6 +424,10 @@ struct VoiceSettingsSheet: View {
     @AppStorage("voice_speed") private var speed: Double = 0.5
     @AppStorage("voice_pitch") private var pitch: Double = 1.0
     @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
+    @AppStorage("premium_voice_service") private var premiumVoiceService: String = PremiumVoiceService.amazonPolly.rawValue
+    @AppStorage("premium_voice_name") private var premiumVoiceName: String = "Joanna"
+    @AppStorage("premium_voice_speed") private var premiumVoiceSpeed: Double = 1.0
+    @AppStorage("premium_voice_pitch") private var premiumVoicePitch: Double = 1.0
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @Environment(\.dismiss) private var dismiss
 
@@ -400,6 +440,7 @@ struct VoiceSettingsSheet: View {
                         speedSection
                         pitchSection
                         voiceSection
+                        premiumVoiceSection
                     }
                     .padding(20)
                 }
@@ -420,7 +461,7 @@ struct VoiceSettingsSheet: View {
             selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
         }
     }
-
+    
     private var speedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SPEED")
@@ -470,6 +511,54 @@ struct VoiceSettingsSheet: View {
         .background(preset.primary.opacity(0.03))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
+    
+    private var premiumVoiceSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("PREMIUM VOICE")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(preset.secondary)
+            
+            Picker("Service", selection: $premiumVoiceService) {
+                ForEach(PremiumVoiceService.allCases, id: \.rawValue) { service in
+                    Text(service.displayName).tag(service.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(preset.secondary)
+            
+            let currentService = PremiumVoiceService(rawValue: premiumVoiceService) ?? .amazonPolly
+            Picker("Voice", selection: $premiumVoiceName) {
+                ForEach(currentService.availableVoices, id: \.self) { voice in
+                    Text(voice).tag(voice)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(preset.secondary)
+            
+            HStack {
+                Text("Speed")
+                Spacer()
+                Text(String(format: "%.2f", premiumVoiceSpeed))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(preset.secondary)
+            }
+            Slider(value: $premiumVoiceSpeed, in: 0.25...2.0, step: 0.05)
+                .tint(preset.secondary)
+                
+            HStack {
+                Text("Pitch")
+                Spacer()
+                Text(String(format: "%.1f", premiumVoicePitch))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(preset.secondary)
+            }
+            Slider(value: $premiumVoicePitch, in: 0.5...2.0, step: 0.1)
+                .tint(preset.secondary)
+        }
+        .padding(16)
+        .background(preset.secondary.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
 
     private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
         let isSelected = voice.identifier == selectedVoiceId
@@ -492,6 +581,83 @@ struct VoiceSettingsSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Scanline Overlay
+
+struct ScanlineOverlay: View {
+    var lineColor: Color = .white
+    var lineSpacing: CGFloat = 3
+    var lineOpacity: Double = 0.07
+
+    var body: some View {
+        Canvas { context, size in
+            var y: CGFloat = 0
+            while y < size.height {
+                context.fill(
+                    Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                    with: .color(lineColor.opacity(lineOpacity))
+                )
+                y += lineSpacing
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Voice CRT Glow Overlay
+
+struct VoiceCRTGlowOverlay: View {
+    var color: Color = .white
+    var intensity: Double = 0.06
+    
+    var body: some View {
+        Canvas { context, size in
+            // Vignette effect
+            _ = RadialGradient(
+                colors: [.clear, .black.opacity(0.7)],
+                center: .center,
+                startRadius: 0,
+                endRadius: min(size.width, size.height) * 0.7
+            )
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.black.opacity(0.15)))
+            
+            // CRT glow effect
+            _ = RadialGradient(
+                colors: [color.opacity(intensity * 0.3), color.opacity(intensity * 0.1), .clear],
+                center: .center,
+                startRadius: 0,
+                endRadius: min(size.width, size.height) * 0.8
+            )
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color.opacity(intensity)))
+        }
+        .allowsHitTesting(false)
+        .blendMode(.screen)
+    }
+}
+
+// MARK: - Glitch Animation Modifier
+
+struct GlitchAnimation: ViewModifier {
+    @State private var glitch = false
+    
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(glitch ? 1.02 : 1.0)
+            .offset(x: glitch ? 2 : 0)
+            .animation(.easeInOut(duration: 0.1).repeatForever(autoreverses: true), value: glitch)
+            .onAppear { 
+                // Randomly trigger glitch effect
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 2...8)) {
+                    withAnimation {
+                        glitch = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        glitch = false
+                    }
+                }
+            }
     }
 }
 
