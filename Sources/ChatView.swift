@@ -208,9 +208,25 @@ struct ChatView: View {
                 .padding(.horizontal, GlassTheme.spacingL)
                 .padding(.vertical, GlassTheme.spacingM)
             }
+            .onAppear {
+                // Scroll to the most recent message when the view first appears.
+                DispatchQueue.main.async {
+                    withAnimation(.none) {
+                        proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
+                    }
+                }
+            }
             .onChange(of: store.messages.count) { _, _ in
                 withAnimation(.smooth) {
                     proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
+                }
+            }
+            .onChange(of: store.activeSession?.id) { _, _ in
+                // When switching sessions, jump to the bottom of the new conversation.
+                DispatchQueue.main.async {
+                    withAnimation(.none) {
+                        proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
+                    }
                 }
             }
             .onChange(of: store.streamingText) { _, _ in

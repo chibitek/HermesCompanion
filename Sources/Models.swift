@@ -43,7 +43,7 @@ struct FileLogger {
 
 // MARK: - Connection
 
-struct ConnectionConfig: Codable, Equatable, Sendable, Identifiable {
+struct ConnectionConfig: Codable, Identifiable, Equatable {
     var baseURL: String
     var apiKey: String
     var label: String
