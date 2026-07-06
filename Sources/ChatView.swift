@@ -306,23 +306,49 @@ struct ChatView: View {
         Task {
             voiceConversation.isThinking = true
             print("Sending message to Hermes...")
-            let responseMessage = await store.sendMessage(transcription)
-            let response = responseMessage?.content
-            print("Received response from Hermes: \(String(describing: response))")
+            
+            // Cap the network turn at 30 seconds so voice mode doesn't hang silently.
+            let responseMessage = await withTimeout(seconds: 30) {
+                await store.sendMessage(transcription)
+            }
+            
             print("Response message: \(String(describing: responseMessage))")
             
-            if let response, !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let responseMessage = responseMessage else {
+                print("Hermes request timed out")
+                voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
+                return
+            }
+            
+            let response = responseMessage.content
+            print("Received response from Hermes: \(String(describing: response))")
+            
+            if !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 print("Response is not empty, calling completeRemoteTurn")
                 voiceConversation.completeRemoteTurn(response: response)
             } else if let error = store.error, error.id != priorErrorID {
                 print("Error occurred: \(error.message)")
                 voiceConversation.failRemoteTurn(message: error.message)
             } else {
-                // Even if there's no response content, we should still speak something
-                let fallbackResponse = response ?? "I received your message but didn't generate a response."
-                print("Using fallback response: \(fallbackResponse)")
-                voiceConversation.completeRemoteTurn(response: fallbackResponse)
+                // Empty content from a completed assistant message.
+                print("Assistant returned empty response")
+                voiceConversation.failRemoteTurn(message: "Hermes returned an empty response.")
             }
+        }
+    }
+    
+    private func withTimeout<T>(seconds: TimeInterval, operation: @escaping () async -> T?) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask {
+                await operation()
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let result = await group.next()!
+            group.cancelAll()
+            return result
         }
     }
 
