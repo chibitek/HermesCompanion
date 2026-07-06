@@ -331,12 +331,15 @@ struct VoiceConversationPage: View {
     }
 
     private func startVoiceConversationIfNeeded() {
-        guard !voiceConversation.isConversing else { return }
-        // Set to premium mode if that's what the user has selected
-        let preferredMode = voiceConversation.conversationMode
-        voiceConversation.conversationMode = preferredMode
+        guard !voiceConversation.isConversing else {
+            print("VoicePage: already conversing, not restarting")
+            return
+        }
+        print("VoicePage: starting conversation, mode=\(voiceConversation.conversationMode)")
+        voiceConversation.conversationMode = .remote
         voiceConversation.startConversation(
             onTranscription: { text in
+                print("VoicePage: transcription callback fired with text: \(text)")
                 // Forward to ChatView so it sends through the active Hermes
                 // session. Only fires in remote mode.
                 onVoiceTranscription?(text)
