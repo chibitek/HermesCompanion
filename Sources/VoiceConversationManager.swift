@@ -268,9 +268,8 @@ final class VoiceConversationManager: ObservableObject {
         onLocalResponse = nil
     }
 
-    /// Finish a remote Hermes turn after the caller has sent the transcription
-    /// and reconciled the session messages.
     func completeRemoteTurn(response: String?) {
+        FileLogger.shared.log("completeRemoteTurn called with response: \(String(describing: response?.prefix(120)))")
         print("completeRemoteTurn called with response: \(String(describing: response))")
         isThinking = false
         isFinalizing = false
@@ -290,6 +289,7 @@ final class VoiceConversationManager: ObservableObject {
     /// speakable assistant message. Keep the conversation hands-free by
     /// returning to listening after the error is surfaced.
     func failRemoteTurn(message: String) {
+        FileLogger.shared.log("failRemoteTurn called: \(message)")
         isThinking = false
         isFinalizing = false
         invalidateThinkingSafetyTimer()
@@ -577,16 +577,18 @@ final class VoiceConversationManager: ObservableObject {
             }
 
         case .remote:
+            FileLogger.shared.log("VoiceManager: remote mode finalize for '\(finalText)'")
             isThinking = true
-            scheduleThinkingSafetyTimer()
+            FileLogger.shared.log("VoiceManager: remote mode, calling onTranscriptionComplete with '\(finalText)'")
             print("VoiceManager: remote mode, calling onTranscriptionComplete with '\(finalText)'")
             onTranscriptionComplete?(finalText)
             // For remote mode, isFinalizing will be reset when speakResponse is called
-            
+
         case .premium:
+            FileLogger.shared.log("VoiceManager: premium mode finalize for '\(finalText)'")
             // For premium mode, we still send to Hermes but speak with premium TTS
             isThinking = true
-            scheduleThinkingSafetyTimer()
+            FileLogger.shared.log("VoiceManager: premium mode, calling onTranscriptionComplete with '\(finalText)'")
             print("VoiceManager: premium mode, calling onTranscriptionComplete with '\(finalText)'")
             onTranscriptionComplete?(finalText)
             // For premium mode, isFinalizing will be reset when speakResponse is called
@@ -614,6 +616,7 @@ final class VoiceConversationManager: ObservableObject {
         thinkingSafetyTimer = Timer.scheduledTimer(withTimeInterval: thinkingSafetyTimeout, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
+                FileLogger.shared.log("VoiceManager: thinking safety timer fired, isConversing=\(self.isConversing), isThinking=\(self.isThinking)")
                 if self.isConversing && self.isThinking {
                     self.failRemoteTurn(message: "Hermes didn't respond in time. Try again.")
                 }
