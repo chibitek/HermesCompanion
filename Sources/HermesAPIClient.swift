@@ -131,6 +131,7 @@ final class HermesAPIClient: Sendable {
         sessionId: String,
         message: String,
         systemMessage: String? = nil,
+        model: String? = nil,
         images: [Data] = [],
         attachments: [AttachmentData] = []
     ) async throws -> SessionChatResponse {
@@ -145,7 +146,7 @@ final class HermesAPIClient: Sendable {
         let body: Data
         if !hasImages && !hasFileAttachments && !hasImageAttachments {
             // Plain text message
-            let chatBody = SessionChatRequest(message: message, systemMessage: systemMessage)
+            let chatBody = SessionChatRequest(message: message, systemMessage: systemMessage, model: model)
             body = try JSONEncoder().encode(chatBody)
         } else {
             // Multimodal: build content parts array
@@ -202,6 +203,9 @@ final class HermesAPIClient: Sendable {
             if let sys = systemMessage {
                 bodyDict["system_message"] = sys
             }
+            if let mdl = model {
+                bodyDict["model"] = mdl
+            }
             body = try JSONSerialization.data(withJSONObject: bodyDict)
         }
         req.httpBody = body
@@ -223,13 +227,13 @@ final class HermesAPIClient: Sendable {
     ///   - tool.progress, tool.started, tool.completed, tool.failed
     ///   - assistant.completed, run.completed
     ///   - error, done
-    func streamChat(sessionId: String, message: String, systemMessage: String? = nil) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
+    func streamChat(sessionId: String, message: String, systemMessage: String? = nil, model: String? = nil) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
         var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)/chat/stream"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
-        let body = SessionChatRequest(message: message, systemMessage: systemMessage)
+        let body = SessionChatRequest(message: message, systemMessage: systemMessage, model: model)
         req.httpBody = try JSONEncoder().encode(body)
 
         let (bytes, response) = try await session.bytes(for: req)

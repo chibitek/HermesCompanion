@@ -38,6 +38,8 @@ All terminal themes use monospaced fonts, sharp corners, dense spacing, CRT scan
 - Skills browser with search
 - Connection management with auto-reconnect
 - Appearance settings (theme, font size, color scheme)
+- Voice configuration (speed, pitch, voice selection)
+- Premium voice service integration (Amazon Polly, Google Cloud TTS)
 
 ### Input Bar
 - Claude-style model picker pill
@@ -45,6 +47,11 @@ All terminal themes use monospaced fonts, sharp corners, dense spacing, CRT scan
 - Mic button (voice-to-text)
 - Waveform button (2-way voice conversation)
 - Enter key sends message
+
+## Design Handoff
+This project includes comprehensive design handoff documents for creating a unified look and feel:
+- [DESIGN_HANDOFF.md](DESIGN_HANDOFF.md) - High-level design requirements and goals
+- [TECHNICAL_SPEC_FOR_DESIGN.md](TECHNICAL_SPEC_FOR_DESIGN.md) - Detailed technical specifications for designers
 
 ## Technical
 

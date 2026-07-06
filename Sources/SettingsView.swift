@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var availableModels: [ModelInfo] = []
     @State private var isLoadingModels = false
     @State private var showingAddServer = false
+    @State private var editingServer: ConnectionConfig?
 
     // Local working copies of picker selections, so the pickers don't
     // fight the parent's @Published when the user is mid-edit.
@@ -102,6 +103,20 @@ struct SettingsView: View {
                         Task { await store.switchToConnection(target) }
                     }
                 }
+                
+                // Add edit buttons for each server
+                ForEach(store.savedConnections, id: \.baseURL) { config in
+                    HStack {
+                        Text(config.label.isEmpty ? config.baseURL : config.label)
+                            .font(.subheadline)
+                        Spacer()
+                        Button("Edit") {
+                            editServer(config)
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                    }
+                }
 
                 if let config = store.connectionConfig {
                     HStack {
@@ -124,6 +139,13 @@ struct SettingsView: View {
                 }
             }
         }
+        .sheet(item: $editingServer) { config in
+            ConnectionSetupView(store: store, initialConfig: config)
+        }
+    }
+    
+    private func editServer(_ config: ConnectionConfig) {
+        editingServer = config
     }
 
     // MARK: - Provider picker
@@ -197,11 +219,11 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 Picker("Active Model", selection: $selectedModel) {
-                    if modelsForSelectedProvider.isEmpty {
-                        Text("No models for \(displayName(for: selectedProvider))")
+                    if availableModels.isEmpty {
+                        Text("No models available")
                             .tag("")
                     } else {
-                        ForEach(modelsForSelectedProvider) { model in
+                        ForEach(availableModels) { model in
                             Text(displayName(for: model))
                                 .tag(model.id)
                         }
@@ -216,7 +238,7 @@ struct SettingsView: View {
             Text("Model")
         } footer: {
             if !selectedProvider.isEmpty {
-                Text("Models refresh from the connected Hermes server whenever you choose a provider.")
+                Text("Models are synced from your connected Hermes server.")
             }
         }
     }

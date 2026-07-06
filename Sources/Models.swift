@@ -2,10 +2,12 @@ import Foundation
 
 // MARK: - Connection
 
-struct ConnectionConfig: Codable, Equatable, Sendable {
+struct ConnectionConfig: Codable, Equatable, Sendable, Identifiable {
     var baseURL: String
     var apiKey: String
     var label: String
+
+    var id: String { baseURL }
 
     var isValid: Bool {
         !baseURL.isEmpty && !apiKey.isEmpty && URL(string: baseURL) != nil
@@ -163,10 +165,12 @@ struct SessionMessagesResponse: Codable {
 struct SessionChatRequest: Codable {
     let message: String
     let systemMessage: String?
+    let model: String?
 
     enum CodingKeys: String, CodingKey {
         case message
         case systemMessage = "system_message"
+        case model
     }
 }
 

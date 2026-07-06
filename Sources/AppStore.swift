@@ -528,7 +528,7 @@ final class AppStore: ObservableObject {
             guard let self = self else { return }
             do {
                 if images.isEmpty && attachments.isEmpty {
-                    let stream = try await client.streamChat(sessionId: session.id, message: messagePayload)
+                    let stream = try await client.streamChat(sessionId: session.id, message: messagePayload, model: effectiveCurrentModel)
                     for try await event in stream {
                         if Task.isCancelled { return }
                         if event.event == "assistant.completed" || event.event == "run.completed" {
@@ -556,6 +556,7 @@ final class AppStore: ObservableObject {
                     let response = try await client.sendChat(
                         sessionId: session.id,
                         message: messagePayload,
+                        model: effectiveCurrentModel,
                         images: images,
                         attachments: attachments
                     )
