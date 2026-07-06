@@ -96,9 +96,9 @@ struct VoiceConversationPage: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer()
-                transcriptionDisplay
+                visualizer
                 Spacer()
-                audioWaveform
+                transcriptionDisplay
                 bottomControls
             }
             .padding()
@@ -189,19 +189,12 @@ struct VoiceConversationPage: View {
                     .frame(width: 90, height: 90)
 
                 // Audio level bars inside the orb -- react to real mic input
-                ZStack {
-                    // Only show the visualizer when there's audio activity
-                    if voiceConversation.isListening || voiceConversation.isSpeaking || voiceConversation.audioLevel > 0.01 {
-                        // Audio level bars - 5 vertical bars that animate with audio level
-                        ForEach(0..<5, id: \.self) { index in
-                            Rectangle()
-                                .fill(preset.primary)
-                                .frame(width: 4, height: 20 + CGFloat(voiceConversation.audioLevel) * 30)
-                                .offset(x: CGFloat(index - 2) * 8, y: 0)
-                                .opacity(0.7 + Double(voiceConversation.audioLevel) * 0.3)
-                        }
-                    }
-                }
+                AudioVisualizerBar(
+                    color: preset.primary,
+                    secondaryColor: preset.secondary,
+                    audioLevel: Double(voiceConversation.audioLevel),
+                    isActive: voiceConversation.isListening || voiceConversation.isSpeaking
+                )
                 .frame(width: 80, height: 50)
             }
 
@@ -385,35 +378,39 @@ struct VoiceConversationPage: View {
             }
         }
     }
-    
-    // MARK: - Audio Waveform
+}
 
-    private var audioWaveform: some View {
-        // Audio waveform: row of vertical bars animating with amplitude
-        HStack(spacing: 4) {
-            ForEach(0..<34, id: \.self) { index in
-                waveformBar(index: index)
+// MARK: - Audio Visualizer Bar (center wave)
+
+struct AudioVisualizerBar: View {
+    let color: Color
+    let secondaryColor: Color
+    let audioLevel: Double
+    let isActive: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(0..<5, id: \.self) { index in
+                let centerIndex = 2
+                let dist = abs(Double(index - centerIndex)) / 2.0
+                let minH: CGFloat = isActive ? 8 : 3
+                let maxH: CGFloat = 44
+                let height = minH + CGFloat(audioLevel * (1.0 - dist * 0.5) * Double(maxH - minH))
+                let animatedHeight = isActive ? height * (0.85 + CGFloat.random(in: 0...0.3)) : height
+
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [secondaryColor, color],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
+                    .frame(width: 5, height: animatedHeight)
+                    .shadow(color: color.opacity(0.55), radius: 4)
+                    .animation(.easeInOut(duration: 0.12).repeatForever(autoreverses: true), value: isActive)
             }
         }
-        .frame(height: 96)
-        .padding(.horizontal, 30)
-    }
-
-    private func waveformBar(index: Int) -> some View {
-        let barCount = 34
-        let center = Double(barCount) / 2.0
-        let dist = abs(Double(index) - center) / center
-        let baseHeight = 8.0 + (1.0 - dist) * 20.0 // Vary height based on position
-        
-        return Rectangle()
-            .fill(LinearGradient(
-                colors: [preset.secondary, preset.primary],
-                startPoint: .top,
-                endPoint: .bottom
-            ))
-            .shadow(color: preset.primary.opacity(0.55), radius: 4)
-            .frame(width: 5, height: CGFloat(baseHeight))
-            .animation(.easeInOut(duration: 0.09), value: voiceConversation.audioLevel)
     }
 }
 
