@@ -581,6 +581,16 @@ final class AppStore: ObservableObject {
                 self.messages = history.map { ChatDisplayMessage(from: $0) }
                 await refreshSessions()
 
+                // Voice mode (and any other caller that needs a concrete return
+                // value) relies on assistantMessage being set. If the server ended
+                // the stream with run.completed but never emitted an explicit
+                // assistant.completed event, fall back to the newest assistant
+                // message that appeared in the reloaded history.
+                if assistantMessage == nil {
+                    assistantMessage = self.messages.last(where: \.isAssistant)
+                    print("AppStore: fell back to reloaded assistant message: \(String(describing: assistantMessage?.content.prefix(60)))")
+                }
+
                 // Empty-stream guard: if no terminal completion event arrived
                 // (assistant.completed / run.completed) AND the reloaded server
                 // history has no new assistant message for this turn, the
