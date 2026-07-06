@@ -100,7 +100,7 @@ final class VoiceConversationManager: ObservableObject {
 
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
-    private var silenceTimeout: TimeInterval = 1.5  // seconds of silence before finalizing
+    private let silenceTimeout: TimeInterval = 1.5
     private var lastTranscriptionTime: Date = .distantPast
     private var lastTranscribedText: String = ""
 
@@ -108,9 +108,10 @@ final class VoiceConversationManager: ObservableObject {
     private var isFinalizing = false
     private var pendingConversationStartID: UUID?
 
-    // Safety net: if thinking lasts too long, cancel and resume listening
+    // Safety net: if thinking lasts too long, cancel and resume listening.
+    // Uses 90 seconds so slow models / long tool runs aren't prematurely killed.
     private var thinkingSafetyTimer: Timer?
-    private let thinkingSafetyTimeout: TimeInterval = 30
+    private let thinkingSafetyTimeout: TimeInterval = 90
 
     init() {
         delegateBridge.manager = self
@@ -145,7 +146,7 @@ final class VoiceConversationManager: ObservableObject {
         // Observe audio session interruptions
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(handleAudioSessionInterruption(_:)),
+            selector: #selector(handleAudioSessionInterruption),
             name: AVAudioSession.interruptionNotification,
             object: nil
         )
