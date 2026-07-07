@@ -331,12 +331,19 @@ struct ChatView: View {
             // Hard timeout: if store.sendMessage doesn't return in 60 seconds,
             // bail out and surface an error so the UI doesn't freeze.
             let timeoutTask = Task {
-                try? await Task.sleep(nanoseconds: 60_000_000_000) // 60s
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000) // 60s
+                } catch {
+                    // Task was cancelled — response came back in time. Do nothing.
+                    return
+                }
+                // Double-check: response may have arrived between the sleep
+                // ending and us getting here.
+                guard !Task.isCancelled else { return }
                 FileLogger.shared.log("ChatView: voice timeout fired (60s)")
                 await MainActor.run {
-                    if self.voiceConversation.isThinking {
-                        self.voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
-                    }
+                    guard self.voiceConversation.isThinking else { return }
+                    self.voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
                 }
             }
 
