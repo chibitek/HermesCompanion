@@ -324,7 +324,6 @@ struct ChatView: View {
     @MainActor
     private func handleVoiceTranscription(_ transcription: String) {
         FileLogger.shared.log("ChatView: handleVoiceTranscription called: \(transcription)")
-        print("ChatView: handleVoiceTranscription called: \(transcription)")
         let priorErrorID = store.error?.id
         voiceConversation.isThinking = true
 
@@ -333,7 +332,6 @@ struct ChatView: View {
             // bail out and surface an error so the UI doesn't freeze.
             let timeoutTask = Task {
                 try? await Task.sleep(nanoseconds: 60_000_000_000) // 60s
-                // If we get here, the sendMessage task hasn't completed.
                 FileLogger.shared.log("ChatView: voice timeout fired (60s)")
                 await MainActor.run {
                     if self.voiceConversation.isThinking {
@@ -342,8 +340,36 @@ struct ChatView: View {
                 }
             }
 
+            // Monitor streaming text and start speaking as soon as we have
+            // a complete first sentence. This cuts perceived latency dramatically
+            // — the user hears the response start while the rest is still streaming.
+            let monitorTask = Task { @MainActor in
+                var lastSpokenText = ""
+                var hasStartedSpeaking = false
+                while !Task.isCancelled && self.voiceConversation.isThinking {
+                    let current = self.store.streamingText
+                    if !current.isEmpty && !hasStartedSpeaking {
+                        // Check for a complete sentence (ends with ., !, or ?)
+                        if current.contains(".") || current.contains("!") || current.contains("?") {
+                            // Find the end of the first sentence
+                            if let endIdx = current.firstIndex(where: { ".!?".contains($0) }) {
+                                let firstSentence = String(current[...endIdx])
+                                if firstSentence.split(separator: " ").count >= 2 {
+                                    lastSpokenText = firstSentence
+                                    hasStartedSpeaking = true
+                                    FileLogger.shared.log("ChatView: starting early TTS with first sentence: \(firstSentence.prefix(80))")
+                                    self.voiceConversation.startEarlySpeaking(text: firstSentence)
+                                }
+                            }
+                        }
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms poll
+                }
+            }
+
             let responseMessage = await store.sendMessage(transcription)
             timeoutTask.cancel()
+            monitorTask.cancel()
             FileLogger.shared.log("ChatView: store.sendMessage returned \(String(describing: responseMessage?.content.prefix(80)))")
 
             guard let responseMessage = responseMessage else {
