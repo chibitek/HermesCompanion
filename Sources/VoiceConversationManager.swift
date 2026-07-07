@@ -283,14 +283,23 @@ final class VoiceConversationManager: ObservableObject {
 
     func completeRemoteTurn(response: String?) {
         FileLogger.shared.log("completeRemoteTurn called with response: \(String(describing: response?.prefix(120)))")
-        print("completeRemoteTurn called with response: \(String(describing: response))")
         isThinking = false
         isFinalizing = false
         invalidateThinkingSafetyTimer()
-        let rawResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         
-        // Filter out gateway latency warnings and other non-conversational artifacts
-        // that the Hermes gateway may inject into the response.
+        // If we already started speaking via startEarlySpeaking, just update
+        // the displayed text with the full response. Don't restart TTS.
+        if isSpeaking {
+            FileLogger.shared.log("completeRemoteTurn: already speaking from early TTS, updating text only")
+            let rawResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let cleanResponse = filterGatewayArtifacts(rawResponse)
+            if !cleanResponse.isEmpty {
+                spokenResponse = cleanResponse
+            }
+            return
+        }
+        
+        let rawResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let cleanResponse = filterGatewayArtifacts(rawResponse)
         
         if cleanResponse.isEmpty {
