@@ -78,14 +78,6 @@ Server connection, provider and model selection, capabilities toggles, skills br
 <img src="screenshots/settings.png" width="280" alt="Settings screen showing capabilities, tools, voice, and version 1.8.24" />
 </p>
 
-### Server Configuration
-
-Manage multiple Hermes gateways. Add, edit, and switch between servers — each with its own provider, model, sessions, and preferences.
-
-<p align="center">
-<img src="screenshots/settings-server.png" width="280" alt="Settings showing server config with Hermes on Max and provider/model selection" />
-</p>
-
 ### Model Selector
 
 Switch between any model your Hermes gateway supports. 300+ models from Nous, OpenRouter, Ollama, Huggingface, Sakana, and more. Models sync automatically from your server.
