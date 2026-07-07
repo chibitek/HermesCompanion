@@ -114,18 +114,12 @@ struct ConnectionSetupView: View {
     
     private var brandHeader: some View {
         VStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(LinearGradient(colors: [appearance.accent, appearance.accentSecondary],
-                                         startPoint: .topLeading,
-                                         endPoint: .bottomTrailing))
-                    .frame(width: 64, height: 64)
-                    .shadow(color: appearance.accent.opacity(0.45), radius: 18, x: 0, y: 6)
-                
-                Text("H")
-                    .font(.system(size: 28, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.039, green: 0.055, blue: 0.086))
-            }
+            Image("Logo")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: appearance.accent.opacity(0.35), radius: 18, x: 0, y: 6)
             
             VStack(spacing: 4) {
                 Text("Hermes Companion")
