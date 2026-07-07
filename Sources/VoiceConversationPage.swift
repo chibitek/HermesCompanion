@@ -684,41 +684,45 @@ struct MatrixRainView: View {
     let secondaryColor: Color
     let intensity: Double  // 0.0 to 1.0, controls speed and brightness
 
-    private let columns = 18
-    private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんぁぃぅぇぉゃゅょっアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンｱｲｳｴｵｶｷｸｹｺ0123456789@#$%&*<>")
+    private let columns = 40
+    private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんぁぃぅぇぉゃゅょっアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンｱｲｳｴｵｶｷｸｹｺ0123456789@#$%&*<>ABCDEFGHIJKLMNOPQRSTUVWXYZ+=-/\\|")
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // ~25fps, lighter than .animation
+        TimelineView(.periodic(from: .now, by: 0.033)) { timeline in  // ~30fps for smoother rain
             Canvas { context, size in
                 let columnWidth = size.width / CGFloat(columns)
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                let speed = 50.0 + intensity * 150.0  // pixels per second
-                let charSize: CGFloat = 14
+                let speed = 80.0 + intensity * 200.0  // pixels per second
+                let charSize: CGFloat = 13
 
                 for col in 0..<columns {
                     let xPos = CGFloat(col) * columnWidth
                     let seed = Double(col) * 7.3
-                    let offset = (t * speed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
-                    let trailLength = Int(6 + Int(intensity * 6))
+                    // Each column moves at a slightly different speed for organic feel
+                    let colSpeed = speed * (0.6 + Double(abs(sin(seed)) * 0.8))
+                    let offset = (t * colSpeed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 300)
+                    let trailLength = Int(14 + Int(intensity * 14))
                     let start = Int(offset / charSize)
 
                     for i in 0..<trailLength {
                         let y = CGFloat(start - i) * charSize
                         guard y >= -charSize && y <= size.height else { continue }
 
-                        let charIdx = abs(Int((t * 3 + seed + Double(i) * 1.7))) % charset.count
+                        let charIdx = abs(Int((t * 4 + seed + Double(i) * 1.7))) % charset.count
                         let char = charset[charIdx]
 
                         let fade = 1.0 - Double(i) / Double(trailLength)
-                        let brightness = fade * (0.3 + intensity * 0.7)
+                        let brightness = fade * (0.4 + intensity * 0.6)
 
                         let opacity: Double
-                        if i == 0 { opacity = brightness }
+                        if i == 0 { opacity = min(brightness * 1.5, 1.0) }
                         else if i < 3 { opacity = brightness }
-                        else { opacity = brightness * 0.6 }
+                        else if i < 6 { opacity = brightness * 0.8 }
+                        else { opacity = brightness * 0.5 }
 
                         let charColor: Color
                         if i == 0 { charColor = Color.white.opacity(opacity) }
+                        else if i < 2 { charColor = color.opacity(min(opacity * 1.3, 1.0)) }
                         else { charColor = color.opacity(opacity) }
 
                         let pos = CGPoint(x: xPos + columnWidth / 2, y: y + charSize / 2)
