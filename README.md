@@ -17,6 +17,8 @@ Your Hermes agent, in your pocket. Stream responses in real time. Talk out loud 
 
 **Self-hosted. Your agent, your machine, your rules.** You run the Hermes Agent gateway on your own hardware — a Mac, a Linux box, a $5 VPS, or serverless infrastructure. Hermes Companion connects to it over an encrypted Tailscale tunnel. No cloud dependency. No middleman. Your data stays on your machines.
 
+**Multiple servers. One app.** Connect to as many Hermes gateways as you want — your personal agent at home, your work agent at the office, a shared team server, a dedicated coding agent on a GPU box. Switch between them in Settings with a single tap. Each server keeps its own sessions, models, skills, and preferences.
+
 Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://github.com/NousResearch/hermes-agent) platform by [Nous Research](https://nousresearch.com).
 
 </div>
@@ -106,6 +108,7 @@ Six built-in themes. Each one transforms the entire app — chat bubbles, input 
 | **Provider-agnostic** | Connect to any Hermes gateway. Switch providers and models on the fly. 300+ models from Nous, OpenRouter, Ollama, Huggingface, and more. |
 | **Tool approvals** | Approve or deny tool executions before they run. See exactly what your agent is about to do. |
 | **Skills browser** | Search and browse all skills available on your Hermes server. 238+ skills at your fingertips. |
+| **Multiple servers** | Connect to unlimited Hermes gateways. Personal, work, team, or dedicated GPU agents — switch with one tap. Each server keeps its own sessions, models, skills, and preferences. |
 | **Auto-login** | Keychain credential storage with auto-connect on launch and background/foreground reconnection with Tailscale awareness. |
 | **Splash screen** | Logo fade-in on launch with smooth transition to chat or login. |
 | **Input bar** | Claude-style model picker pill, photo/file attachments, voice-to-text mic, waveform button for Hermes Talk, and configurable enter-key-sends. |
@@ -116,20 +119,24 @@ Six built-in themes. Each one transforms the entire app — chat bubbles, input 
 
 ```
 ┌─────────────────┐                        ┌─────────────────────────┐
-│  iPhone         │                        │  Your Machine            │
+│  iPhone         │                        │  Your Machines           │
 │                 │   Tailscale WireGuard  │                          │
-│  Hermes         │◄──────encrypted────────►│  Hermes Agent Gateway    │
-│  Companion      │      tunnel             │  (Mac / Linux / VPS)     │
-│                 │                        │                          │
-│  - Chat UI      │   http://100.x.x.x:8642│  - LLM (any provider)    │
-│  - Voice mode   │◄──────────────────────►│  - Tool execution        │
-│  - Tool approve │                        │  - Skills (238+)         │
-│  - Sessions     │                        │  - Memory                │
-│  - 6 themes     │                        │  - Cron jobs             │
-└─────────────────┘                        └─────────────────────────┘
+│  Hermes         │◄──────encrypted────────►│  Server A: Personal      │
+│  Companion      │      tunnel             │  - Hermes Agent Gateway  │
+│                 │                        │  - LLM, Tools, Memory    │
+│  - Chat UI      │   http://100.x.x.x:8642│                          │
+│  - Voice mode   │◄──────────────────────►│  Server B: Work          │
+│  - Tool approve │   http://100.y.y.y:8642│  - Hermes Agent Gateway  │
+│  - Sessions     │◄──────────────────────►│  - Different models      │
+│  - 6 themes     │                        │  - Team shared sessions  │
+│  - Multi-server │   http://100.z.z.z:8642│                          │
+│  switcher       │◄──────────────────────►│  Server C: GPU Box       │
+└─────────────────┘                        │  - Hermes Agent Gateway  │
+                                           │  - Coding-focused agent  │
+                                           └─────────────────────────┘
 ```
 
-**You own both ends.** The iPhone app is a thin client — it streams responses, displays tool events, and sends your messages. The Hermes Agent gateway on your machine does all the work: calling LLMs, running tools, managing memory, scheduling cron jobs. The connection between them is an encrypted Tailscale tunnel. No data passes through any third-party cloud.
+**You own both ends.** The iPhone app is a thin client — it streams responses, displays tool events, and sends your messages. The Hermes Agent gateway on your machine does all the work: calling LLMs, running tools, managing memory, scheduling cron jobs. The connection between them is an encrypted Tailscale tunnel. No data passes through any third-party cloud. Connect to one server or ten — switch between them instantly in Settings.
 
 ---
 
@@ -220,7 +227,7 @@ No. Voice transcription runs on-device via Apple's SFSpeechRecognizer. The trans
 
 **Can I use multiple Hermes servers?**
 
-Yes. The app supports multiple server connections. Add as many as you want and switch between them in Settings.
+Yes. This is a core feature, not an afterthought. Connect to as many Hermes gateways as you want — a personal agent at home, a work agent at the office, a shared team server, or a dedicated coding agent on a GPU box. Each server is saved independently with its own URL, API key, label, sessions, models, skills, and preferences. Switch between them from Settings with a single tap. No re-login, no reconfiguration.
 
 **Is this an official Nous Research product?**
 
