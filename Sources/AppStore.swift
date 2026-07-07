@@ -129,12 +129,14 @@ final class AppStore: ObservableObject {
             await refreshSessions()
             self.isLoadingConnection = false
         } catch let e as APIError {
-            self.error = AppError(message: e.errorDescription ?? "Connection failed")
-            self.connectionConfig = nil
+            // Don't clear connectionConfig — keep the saved connection so
+            // the user stays in the chat view with an error message, and
+            // reconnectIfNeeded can retry automatically (Tailscale may need
+            // a moment to reconnect after a cold start).
+            self.error = AppError(message: e.errorDescription ?? "Connection failed. Reconnecting...")
             self.isLoadingConnection = false
         } catch {
-            self.error = AppError(message: "Connection failed: \(error.localizedDescription)")
-            self.connectionConfig = nil
+            self.error = AppError(message: "Connection failed. Reconnecting...")
             self.isLoadingConnection = false
         }
     }
