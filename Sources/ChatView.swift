@@ -326,19 +326,28 @@ struct ChatView: View {
         FileLogger.shared.log("ChatView: handleVoiceTranscription called: \(transcription)")
         print("ChatView: handleVoiceTranscription called: \(transcription)")
         let priorErrorID = store.error?.id
+        voiceConversation.isThinking = true
+
         Task {
-            FileLogger.shared.log("ChatView: setting isThinking true")
-            print("ChatView: setting isThinking true")
-            voiceConversation.isThinking = true
-            FileLogger.shared.log("ChatView: calling store.sendMessage...")
-            print("ChatView: calling store.sendMessage...")
+            // Hard timeout: if store.sendMessage doesn't return in 60 seconds,
+            // bail out and surface an error so the UI doesn't freeze.
+            let timeoutTask = Task {
+                try? await Task.sleep(nanoseconds: 60_000_000_000) // 60s
+                // If we get here, the sendMessage task hasn't completed.
+                FileLogger.shared.log("ChatView: voice timeout fired (60s)")
+                await MainActor.run {
+                    if self.voiceConversation.isThinking {
+                        self.voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
+                    }
+                }
+            }
+
             let responseMessage = await store.sendMessage(transcription)
+            timeoutTask.cancel()
             FileLogger.shared.log("ChatView: store.sendMessage returned \(String(describing: responseMessage?.content.prefix(80)))")
-            print("ChatView: store.sendMessage returned \(String(describing: responseMessage))")
 
             guard let responseMessage = responseMessage else {
                 FileLogger.shared.log("ChatView: no response message")
-                print("ChatView: no response message")
                 if let error = store.error, error.id != priorErrorID {
                     voiceConversation.failRemoteTurn(message: error.message)
                 } else {
@@ -349,19 +358,15 @@ struct ChatView: View {
 
             let response = responseMessage.content
             FileLogger.shared.log("ChatView: response content: \(response.prefix(120))")
-            print("ChatView: response content: \(response)")
 
             if !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 FileLogger.shared.log("ChatView: calling completeRemoteTurn")
-                print("ChatView: calling completeRemoteTurn")
                 voiceConversation.completeRemoteTurn(response: response)
             } else if let error = store.error, error.id != priorErrorID {
                 FileLogger.shared.log("ChatView: error after empty response: \(error.message)")
-                print("ChatView: error after empty response: \(error.message)")
                 voiceConversation.failRemoteTurn(message: error.message)
             } else {
                 FileLogger.shared.log("ChatView: empty response")
-                print("ChatView: empty response")
                 voiceConversation.failRemoteTurn(message: "Hermes returned an empty response.")
             }
         }
