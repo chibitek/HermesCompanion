@@ -69,9 +69,9 @@ struct VoiceConversationPage: View {
 
     // Rain intensity changes with conversation state
     private var rainIntensity: Double {
+        if voiceConversation.isThinking { return 0.15 }      // Very slow — free up CPU for network
         if voiceConversation.isListening { return 1.0 }      // Fast rain
-        if voiceConversation.isSpeaking { return 0.7 }       // Medium, glowing
-        if voiceConversation.isThinking { return 0.3 }       // Slow
+        if voiceConversation.isSpeaking { return 0.5 }       // Medium, glowing
         return 0.5                                            // Idle
     }
 

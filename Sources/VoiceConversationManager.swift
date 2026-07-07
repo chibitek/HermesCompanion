@@ -274,15 +274,34 @@ final class VoiceConversationManager: ObservableObject {
         isThinking = false
         isFinalizing = false
         invalidateThinkingSafetyTimer()
-        let cleanResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        
+        // Filter out gateway latency warnings and other non-conversational artifacts
+        // that the Hermes gateway may inject into the response.
+        let cleanResponse = filterGatewayArtifacts(rawResponse)
+        
         if cleanResponse.isEmpty {
-            print("Response is empty, failing turn")
+            print("Response is empty after filtering, failing turn")
             failRemoteTurn(message: "Hermes did not return a voice response.")
             return
         }
         voiceError = nil
         stopListening()
         speakResponse(cleanResponse)
+    }
+    
+    /// Remove gateway-injected latency warnings, status messages, and other
+    /// non-conversational text that shouldn't be spoken aloud.
+    private func filterGatewayArtifacts(_ text: String) -> String {
+        var cleaned = text
+        // Remove lines containing latency warnings (e.g. "Hermes 9000+ milliseconds")
+        cleaned = cleaned.components(separatedBy: "\n").filter { line in
+            let lower = line.lowercased()
+            let isLatencyWarning = lower.contains("millisecond") || lower.contains("latency") || lower.contains("response time")
+            let isGatewayStatus = lower.contains("warning:") && (lower.contains("ms") || lower.contains("second"))
+            return !isLatencyWarning && !isGatewayStatus
+        }.joined(separator: "\n")
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Finish a remote Hermes turn when the network request fails or returns no
