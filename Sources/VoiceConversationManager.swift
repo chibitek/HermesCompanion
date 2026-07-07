@@ -1026,9 +1026,9 @@ private final class SpeechDelegateBridge: NSObject, AVSpeechSynthesizerDelegate 
             guard let manager = manager else { return }
             manager.isSpeaking = false
             // Resume listening after the response is spoken.
-            // Add a small delay to let the audio session settle.
+            // Short delay to let the audio session switch from playback to recording.
             if manager.isConversing {
-                try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s — let the audio session settle before restarting the engine
+                try? await Task.sleep(nanoseconds: 200_000_000)  // 0.2s
                 manager.startListening()
             }
         }
