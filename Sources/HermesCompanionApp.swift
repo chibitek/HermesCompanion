@@ -53,44 +53,111 @@ struct HermesCompanionApp: App {
     }
 }
 
-/// Routes between setup and main chat based on connection state.
+/// Routes between splash, setup, and main chat based on connection state.
 struct RootView: View {
     @ObservedObject var store: AppStore
     @EnvironmentObject var appearance: AppearanceSettings
+    @State private var showSplash = true
 
     var body: some View {
-        if store.isLoadingConnection {
-            // Auto-login in progress — show a clean loading screen
-            VStack(spacing: 16) {
-                ProgressView()
-                    .scaleEffect(1.2)
-                Text("Connecting to Hermes...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        ZStack {
+            if showSplash {
+                SplashView()
+                    .transition(.opacity)
+                    .zIndex(1)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.systemBackground))
-            .ignoresSafeArea()
-        } else if store.isConnected {
-            ChatView(store: store)
-                .task {
-                    // Delay to avoid publishing changes during view update
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-                    await MainActor.run {
-                        if store.activeSession == nil {
-                            Task {
-                                if store.sessions.isEmpty {
-                                    await store.refreshSessions()
-                                }
-                                if !store.sessions.isEmpty {
-                                    await store.selectSession(store.sessions[0])
+
+            if store.isLoadingConnection {
+                // Auto-login in progress — show a clean loading screen
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Connecting to Hermes...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground))
+                .ignoresSafeArea()
+            } else if store.isConnected {
+                ChatView(store: store)
+                    .task {
+                        // Delay to avoid publishing changes during view update
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+                        await MainActor.run {
+                            if store.activeSession == nil {
+                                Task {
+                                    if store.sessions.isEmpty {
+                                        await store.refreshSessions()
+                                    }
+                                    if !store.sessions.isEmpty {
+                                        await store.selectSession(store.sessions[0])
+                                    }
                                 }
                             }
                         }
                     }
+            } else {
+                ConnectionSetupView(store: store)
+            }
+        }
+        .onAppear {
+            // Fade out the splash after 1.8 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                withAnimation(.easeOut(duration: 0.6)) {
+                    showSplash = false
                 }
-        } else {
-            ConnectionSetupView(store: store)
+            }
+        }
+    }
+}
+
+/// Full-screen logo splash shown on app launch. Fades in over 0.4s,
+/// holds for ~1.2s, then RootView fades it out over 0.6s.
+struct SplashView: View {
+    @State private var logoOpacity: Double = 0
+    @State private var logoScale: Double = 0.92
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                if let logo = UIImage(named: "logo") {
+                    Image(uiImage: logo)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 200, height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 44))
+                        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
+                } else {
+                    // Fallback: use the app icon from the asset catalog
+                    Image("AppIcon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 200, height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 44))
+                        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
+                }
+
+                Text("Hermes Companion")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+
+                Text("by Chibitek Labs")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .opacity(logoOpacity)
+            .scaleEffect(logoScale)
+        }
+        .onAppear {
+            withAnimation(.easeIn(duration: 0.4)) {
+                logoOpacity = 1
+                logoScale = 1.0
+            }
         }
     }
 }

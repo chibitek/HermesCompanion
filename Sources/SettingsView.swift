@@ -295,7 +295,7 @@ struct SettingsView: View {
                     .pickerStyle(.menu)
                     .tint(theme.textPrimary)
                     .onChange(of: selectedModel) { _, newValue in
-                        store.preferredModel = newValue
+                        store.selectPreferredModel(newValue)
                     }
                 }
             }

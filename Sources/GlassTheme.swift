@@ -624,6 +624,8 @@ struct GlassInputBar: View {
                         .confirmationDialog("Select Model", isPresented: $showModelPicker, titleVisibility: .visible) {
                             ForEach(availableModels, id: \.self) { model in
                                 Button(model) {
+                                    let generator = UIImpactFeedbackGenerator(style: .light)
+                                    generator.impactOccurred()
                                     onSelectModel?(model)
                                 }
                             }
