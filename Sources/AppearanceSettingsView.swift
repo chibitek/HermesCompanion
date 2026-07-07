@@ -8,19 +8,23 @@ struct AppearanceSettingsView: View {
         ScrollView {
             VStack(spacing: appearance.activeTheme.spacingM) {
 
-                // MARK: - Theme Picker
+                // MARK: - Theme Picker (Grid)
 
-                glassCard {
-                    VStack(alignment: .leading, spacing: appearance.activeTheme.spacingM) {
-                        Label("Theme", systemImage: "paintbrush.fill")
-                            .font(.headline)
+                VStack(alignment: .leading, spacing: appearance.activeTheme.spacingS) {
+                    Label("Theme", systemImage: "paintbrush.fill")
+                        .font(.headline)
+                        .padding(.horizontal, 4)
 
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12),
+                    ], spacing: 12) {
                         ForEach(ThemeRegistry.allThemes, id: \.id) { theme in
-                            themeRow(theme)
+                            themeCard(theme)
                         }
                     }
-                    .padding(appearance.activeTheme.spacingL)
                 }
+                .padding(appearance.activeTheme.spacingL)
 
                 // MARK: - Live Preview
 
@@ -219,72 +223,104 @@ struct AppearanceSettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: theme.radiusXL, style: .continuous))
     }
 
-    private func themeRow(_ theme: any HermesTheme) -> some View {
+    // MARK: - Theme Card (Grid)
+
+    private func themeCard(_ theme: any HermesTheme) -> some View {
         let isSelected = appearance.activeThemeId == theme.id
 
         return Button {
-            appearance.activeThemeId = theme.id
+            withAnimation(.spring(duration: 0.3)) {
+                appearance.activeThemeId = theme.id
+            }
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
         } label: {
-            VStack(alignment: .leading, spacing: appearance.activeTheme.spacingS) {
-                HStack(alignment: .center, spacing: appearance.activeTheme.spacingM) {
-                    themeSwatches(theme)
+            VStack(spacing: 0) {
+                // Visual preview area — shows the theme's actual colors
+                ZStack {
+                    // Theme background
+                    theme.bgBase
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(theme.displayName)
-                            .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
-                            .lineLimit(1)
-                        Text(theme.subtitle)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Mini chat preview using theme colors
+                    VStack(spacing: 6) {
+                        // User bubble (right-aligned)
+                        HStack {
+                            Spacer()
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(theme.userBubbleBackground)
+                                .frame(width: 60, height: 14)
+                        }
+                        .padding(.horizontal, 8)
 
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(appearance.accent)
-                            .font(.title3)
-                            .frame(width: 28, height: 28)
-                    } else {
-                        Color.clear.frame(width: 28, height: 28)
+                        // Assistant bubble (left-aligned)
+                        HStack {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(theme.assistantBubbleBackground)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(theme.assistantBubbleBorder, lineWidth: theme.assistantBubbleBorderWidth)
+                                )
+                                .frame(width: 80, height: 14)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 8)
+
+                        // Accent dot row
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(theme.accent)
+                                .frame(width: 8, height: 8)
+                            Circle()
+                                .fill(theme.accentSecondary)
+                                .frame(width: 8, height: 8)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 4)
                     }
+                    .padding(.top, 8)
+                }
+                .frame(height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                // Theme name + description
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(theme.displayName)
+                        .font(.system(size: 14, weight: isSelected ? .bold : .semibold))
+                        .foregroundStyle(isSelected ? theme.accent : theme.textPrimary)
+                        .lineLimit(1)
+
+                    Text(theme.subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(theme.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(theme.bgSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? theme.accent.opacity(0.6) : theme.cardBorder, lineWidth: isSelected ? 2 : 1)
+            )
+            .overlay(alignment: .topTrailing) {
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(theme.accent)
+                        .font(.system(size: 22))
+                        .background(Circle().fill(theme.bgBase).frame(width: 24, height: 24))
+                        .padding(6)
                 }
             }
-            .padding(appearance.activeTheme.spacingM)
-            .if(appearance.activeTheme.usesGlass) { view in
-                view.glassEffect(isSelected ? .regular.tint(appearance.accent.opacity(0.12)) : .regular)
-            }
-            .if(!appearance.activeTheme.usesGlass) { view in
-                view.background(isSelected ? appearance.accent.opacity(0.08) : Color.clear)
-                view.overlay(
-                    RoundedRectangle(cornerRadius: appearance.activeTheme.radiusL, style: .continuous)
-                        .stroke(isSelected ? appearance.accent.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
-            }
-            .clipShape(RoundedRectangle(cornerRadius: appearance.activeTheme.radiusL, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: isSelected ? theme.accent.opacity(0.15) : .clear, radius: 8, y: 4)
         }
         .buttonStyle(.plain)
-    }
-
-    private func themeSwatches(_ theme: any HermesTheme) -> some View {
-        HStack(spacing: -8) {
-            Circle()
-                .fill(theme.accent)
-                .frame(width: 28, height: 28)
-                .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
-            Circle()
-                .fill(theme.accentSecondary)
-                .frame(width: 28, height: 28)
-                .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
-            if !theme.usesGlass {
-                Circle()
-                    .fill(Color.black)
-                    .frame(width: 28, height: 28)
-                    .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
-            }
-        }
-        .frame(width: theme.usesGlass ? 48 : 68, alignment: .leading)
     }
 
     private func accentSwatch(_ name: String, color: Color) -> some View {
