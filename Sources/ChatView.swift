@@ -210,20 +210,25 @@ struct ChatView: View {
             }
             .onAppear {
                 // Scroll to the most recent message when the view first appears.
-                DispatchQueue.main.async {
+                // Use a delay because messages load asynchronously after session selection.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     withAnimation(.none) {
                         proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
                     }
                 }
             }
-            .onChange(of: store.messages.count) { _, _ in
+            .onChange(of: store.messages.count) { oldCount, newCount in
+                // Scroll to bottom whenever messages change.
+                // When oldCount is 0 and newCount > 0, messages just loaded from a session.
+                // When newCount > oldCount, a new message arrived.
                 withAnimation(.smooth) {
                     proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
                 }
             }
             .onChange(of: store.activeSession?.id) { _, _ in
-                // When switching sessions, jump to the bottom of the new conversation.
-                DispatchQueue.main.async {
+                // When switching sessions, messages get cleared then reloaded async.
+                // Scroll to bottom after a short delay to let messages populate.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     withAnimation(.none) {
                         proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
                     }
