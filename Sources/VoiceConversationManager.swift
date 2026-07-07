@@ -100,7 +100,7 @@ final class VoiceConversationManager: ObservableObject {
 
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
-    private let silenceTimeout: TimeInterval = 1.5
+    private let silenceTimeout: TimeInterval = 0.8  // Faster finalization after user stops
     private var lastTranscriptionTime: Date = .distantPast
     private var lastTranscribedText: String = ""
 
@@ -266,6 +266,19 @@ final class VoiceConversationManager: ObservableObject {
         voiceError = nil
         onTranscriptionComplete = nil
         onLocalResponse = nil
+    }
+
+    /// Start speaking the first sentence of a response while the rest is still
+    /// streaming from the server. This cuts perceived latency — the user hears
+    /// the response start while the model is still generating.
+    func startEarlySpeaking(text: String) {
+        FileLogger.shared.log("VoiceManager: startEarlySpeaking with: \(text.prefix(80))")
+        isThinking = false
+        isFinalizing = false
+        invalidateThinkingSafetyTimer()
+        voiceError = nil
+        spokenResponse = text
+        speakResponse(text)
     }
 
     func completeRemoteTurn(response: String?) {
@@ -572,8 +585,24 @@ final class VoiceConversationManager: ObservableObject {
     @MainActor
     func finalizeTranscription(_ text: String) {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        print("VoiceManager: finalizeTranscription called with '\(finalText)'")
-        guard !finalText.isEmpty, !isFinalizing else {
+        FileLogger.shared.log("VoiceManager: finalizeTranscription called with '\(finalText)'")
+        
+        // Filter out ambient noise: don't send very short transcriptions
+        // (single chars, "uh", "um", etc.) to Hermes.
+        guard finalText.count >= 3 else {
+            FileLogger.shared.log("VoiceManager: transcribed text too short (\(finalText.count) chars), ignoring")
+            stopListening()
+            // Resume listening immediately
+            if isConversing {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    self?.startListening()
+                }
+            }
+            return
+        }
+        
+        guard !isFinalizing else {
             // Empty transcription -- just stop listening.
             // Don't auto-restart to avoid loops. User can tap mic to resume.
             print("VoiceManager: empty or already finalizing")
@@ -696,7 +725,7 @@ final class VoiceConversationManager: ObservableObject {
         stopSpeaking()
         // Small delay to let audio session switch from playback to recording
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 200_000_000)  // 0.2s
+            try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s (was 0.2s)
             self?.startListening()
         }
     }

@@ -461,7 +461,7 @@ final class AppStore: ObservableObject {
     // MARK: - Chat (streaming)
 
     @discardableResult
-    func sendMessage(_ text: String, images: [Data] = [], attachments: [AttachmentData] = []) async -> ChatDisplayMessage? {
+    func sendMessage(_ text: String, images: [Data] = [], attachments: [AttachmentData] = [], skipPostReload: Bool = false) async -> ChatDisplayMessage? {
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -577,9 +577,15 @@ final class AppStore: ObservableObject {
                         }
                     }
                 }
-                let history = try await client.getMessages(sessionId: session.id)
-                self.messages = history.map { ChatDisplayMessage(from: $0) }
-                await refreshSessions()
+                // Voice mode skips the post-stream reload (getMessages + refreshSessions)
+                // to reduce response latency. The streamed text is already captured in
+                // assistantMessage, so the reload is redundant for voice — it just adds
+                // 200-500ms of network round-trips before the user hears the response.
+                if !skipPostReload {
+                    let history = try await client.getMessages(sessionId: session.id)
+                    self.messages = history.map { ChatDisplayMessage(from: $0) }
+                    await refreshSessions()
+                }
 
                 // Voice mode (and any other caller that needs a concrete return
                 // value) relies on assistantMessage being set. If the server ended
