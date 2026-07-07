@@ -141,6 +141,7 @@ Six built-in themes. Each one transforms the entire app — chat bubbles, input 
 - iOS 26.0+ device or simulator
 - Xcode 26+ with iOS 26 SDK
 - [Tailscale](https://tailscale.com) installed on both your iPhone and the machine running your Hermes gateway
+- An API key from any LLM provider (Nous Portal, OpenRouter, OpenAI, Anthropic, or your own local model via Ollama)
 
 ### Why Tailscale?
 
@@ -149,7 +150,7 @@ Your Hermes gateway runs on a private network — your Mac, a home server, or a 
 No port forwarding. No DDNS. No exposing your machine to the internet. Tailscale handles it.
 
 1. Install [Tailscale](https://apps.apple.com/app/tailscale/id1470492403) from the App Store on your iPhone.
-2. Install Tailscale on the machine running your Hermes gateway.
+2. Install Tailscale on the machine running your Hermes gateway (`curl -fsSL https://tailscale.com/install.sh | sh` on Linux/macOS).
 3. Sign in to both with the same account.
 4. Your gateway is now reachable at your machine's Tailscale IP (e.g., `http://100.x.x.x:8642`).
 
@@ -183,6 +184,51 @@ xcrun xcodebuild -project HermesCompanion.xcodeproj -scheme HermesCompanion \
 6. Start chatting. Tap the waveform icon for Hermes Talk.
 
 📖 **[Hermes Agent documentation](https://hermes-agent.nousresearch.com/docs/)**
+
+---
+
+## Privacy and Security
+
+Hermes Companion is self-hosted and privacy-first:
+
+- **No cloud dependency.** The app connects directly to your Hermes gateway over an encrypted Tailscale WireGuard tunnel. No data passes through any third-party server.
+- **Credentials in Keychain.** Your gateway URL and API key are stored in the iOS Keychain — not in plaintext, not in UserDefaults, not synced to iCloud.
+- **On-device voice transcription.** Speech-to-text runs locally via Apple's SFSpeechRecognizer. Your voice audio never leaves the phone until you choose to send the transcription.
+- **No analytics.** No telemetry, no tracking, no crash reporting to third parties. The app does not phone home.
+- **Tool approvals.** Every tool execution requires your explicit approval before it runs. You see exactly what your agent is about to do.
+- **Open source.** The entire app is MIT-licensed and auditable. No hidden binaries, no proprietary SDKs.
+
+---
+
+## FAQ
+
+**Do I need a Hermes Agent gateway to use this app?**
+
+Yes. Hermes Companion is a client — it connects to a [Hermes Agent](https://github.com/NousResearch/hermes-agent) gateway that you run on your own machine. The gateway handles LLM calls, tool execution, memory, and session management.
+
+**Can I use this without Tailscale?**
+
+Technically yes — if your gateway is on a public IP or you use port forwarding. But that's insecure and not recommended. Tailscale gives you encrypted, zero-config networking for free. Install it, sign in, and you're done.
+
+**Which models are supported?**
+
+Any model your Hermes gateway supports. That includes Nous Portal (300+ models), OpenRouter, OpenAI, Anthropic, Google, local models via Ollama, and any OpenAI-compatible endpoint. Switch models mid-conversation with a single tap.
+
+**Does voice mode send my audio to a server?**
+
+No. Voice transcription runs on-device via Apple's SFSpeechRecognizer. The transcribed text is sent to your Hermes gateway only after you speak it — the same as if you had typed it.
+
+**Can I use multiple Hermes servers?**
+
+Yes. The app supports multiple server connections. Add as many as you want and switch between them in Settings.
+
+**Is this an official Nous Research product?**
+
+No. Hermes Companion is built by [Chibitek Labs](https://chibitek.com) as a third-party iOS client for the Hermes Agent platform. Hermes Agent is built by [Nous Research](https://nousresearch.com).
+
+**What's the difference between the app and the terminal?**
+
+Nothing, functionally. The app is a different front-end for the same Hermes Agent gateway. Conversations, sessions, memory, and skills are shared across all surfaces — the iOS app, the terminal TUI, Telegram, Discord, and Slack. Pick up a conversation on your phone that you started on your Mac.
 
 ---
 
@@ -222,6 +268,34 @@ Typography: Hanken Grotesk (SF Pro fallback), JetBrains Mono (SF Mono fallback).
 - Screen stays awake during voice conversations
 - Accessibility labels and reduce-motion support
 - Logo splash screen on launch
+
+---
+
+## Contributing
+
+Hermes Companion is open source and contributions are welcome.
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes (`git commit -m "Add my feature"`)
+4. Push to your fork (`git push origin feature/my-feature`)
+5. Open a Pull Request
+
+For design contributions, see the [design handoff documents](#design) for the design system, tokens, and specs.
+
+---
+
+## Roadmap
+
+- [ ] TestFlight distribution
+- [ ] Push notifications for tool approval requests
+- [ ] Widget for active session status
+- [ ] Siri Shortcuts integration
+- [ ] Apple Watch companion app
+- [ ] iPad layout with split-view sessions and chat
+- [ ] Offline message queue for unreliable connections
+- [ ] E2EE session notes export
+- [ ] Custom voice training for TTS
 
 ---
 
