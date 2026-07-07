@@ -684,7 +684,7 @@ struct MatrixRainView: View {
     let secondaryColor: Color
     let intensity: Double  // 0.0 to 1.0, controls speed and brightness
 
-    private let columns = 30
+    private let columns = 24
     private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789@#$%&*<>ABCDEF+=-/")
 
     // Precompute resolved colors to avoid per-frame Color.opacity() calls
