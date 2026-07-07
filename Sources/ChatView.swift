@@ -374,7 +374,8 @@ struct ChatView: View {
                 }
             }
 
-            let responseMessage = await store.sendMessage(transcription)
+            let voiceMessage = "[voice] \(transcription)"
+            let responseMessage = await store.sendMessage(voiceMessage, skipPostReload: true)
             timeoutTask.cancel()
             monitorTask.cancel()
             FileLogger.shared.log("ChatView: store.sendMessage returned \(String(describing: responseMessage?.content.prefix(80)))")
