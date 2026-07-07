@@ -407,6 +407,12 @@ final class VoiceConversationManager: ObservableObject {
         if #available(iOS 16, *) {
             recognitionRequest.addsPunctuation = true
         }
+        // Force server-based recognition to free up the CPU for the Matrix rain
+        // animation. On-device recognition runs a neural net on the CPU/GPU
+        // which competes with the Canvas rendering and causes UI freezes.
+        // Server recognition sends audio to Apple's servers, leaving the
+        // device CPU free for the visualizer.
+        recognitionRequest.requiresOnDeviceRecognition = false
 
         // Recognition task with final result detection
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in

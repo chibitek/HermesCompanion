@@ -178,6 +178,12 @@ struct SettingsView: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer()
+                            Button("Edit") {
+                                editServer(config)
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(theme.accent)
+                            .buttonStyle(.plain)
                         }
 
                         Button(role: .destructive) {
