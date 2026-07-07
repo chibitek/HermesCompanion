@@ -124,22 +124,13 @@ struct SplashView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 24) {
-                if let logo = UIImage(named: "logo") {
-                    Image(uiImage: logo)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 200, height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 44))
-                        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
-                } else {
-                    // Fallback: use the app icon from the asset catalog
-                    Image("AppIcon")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 200, height: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 44))
-                        .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
-                }
+                // Use "Logo" (capital L) to match the imageset name in the asset catalog
+                Image("Logo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 200, height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 44))
+                    .shadow(color: .black.opacity(0.3), radius: 20, y: 10)
 
                 Text("Hermes Companion")
                     .font(.title2)
