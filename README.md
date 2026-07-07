@@ -48,24 +48,34 @@ The standout feature. Tap the waveform icon and your phone becomes a full-screen
 Real-time streaming chat with full tool execution visibility. Watch your agent think, call tools, and stream responses. Approve commands before they run. Send photos and files. All in real time.
 
 
-### Sessions
+### Multimodal Attachments
 
-Full conversation history with session types (cron, TUI, API), message counts, and durations. Search, rename, fork, and switch between sessions. Foreground sync pulls in replies from other Hermes surfaces (macOS, Telegram, Discord) automatically.
+Send photos and files directly in chat. Tap the + button to attach from your Photo Library or Files app. Images are automatically converted to JPEG for LLM vision API compatibility.
+
+
+### Hermes Talk
+
+The standout feature. Tap the waveform icon and your phone becomes a full-screen voice conversation terminal with Matrix digital rain, CRT effects, and a center-orb visualizer.
 
 
 ### Settings
 
-Server connection, provider and model selection, skills browser, toolsets, voice configuration, appearance, and version info. All in clean glass-card sections.
+Server connection, provider and model selection, capabilities toggles, skills browser, toolsets, voice configuration, appearance, and version info. All in clean glass-card sections.
 
 
-### Provider and Model Selector
+### Server Configuration
 
-Switch between any provider your Hermes gateway supports — Nous, OpenRouter, Ollama, Huggingface, OpenAI, and more. Models sync automatically from your server. Pick from 300+ models with a single tap.
+Manage multiple Hermes gateways. Add, edit, and switch between servers — each with its own provider, model, sessions, and preferences.
+
+
+### Model Selector
+
+Switch between any model your Hermes gateway supports. 300+ models from Nous, OpenRouter, Ollama, Huggingface, Sakana, and more. Models sync automatically from your server.
 
 
 ### Themes
 
-Six built-in themes. Each one transforms the entire app — chat bubbles, input bar, settings, and voice page.
+Six built-in themes in a visual grid picker. Each one transforms the entire app — chat bubbles, input bar, settings, and voice page.
 
 | Theme | Style |
 | --- | --- |
