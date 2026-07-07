@@ -21,6 +21,7 @@ final class AppStore: ObservableObject {
     @Published var isLoading = false
     @Published var isLoadingConnection = false
     @Published var pendingApproval: PendingApproval?
+    @Published var serverHealthStatus: [String: ServerHealthState] = [:]
 
     // MARK: - Multi-connection
 
@@ -94,6 +95,55 @@ final class AppStore: ObservableObject {
         }
     }
 
+    // MARK: - Server Health Check
+
+    /// Ping all saved servers concurrently and update serverHealthStatus.
+    /// Used by the splash/server-picker screen to show which servers are
+    /// reachable before the user taps one.
+    func checkAllServerHealth() async {
+        let configs = savedConnections
+        guard !configs.isEmpty else { return }
+
+        // Mark all as checking
+        await MainActor.run {
+            for config in configs {
+                serverHealthStatus[config.baseURL] = ServerHealthState(
+                    id: config.baseURL,
+                    label: config.label,
+                    baseURL: config.baseURL,
+                    status: .checking
+                )
+            }
+        }
+
+        // Ping each server concurrently
+        await withTaskGroup(of: (String, ServerHealthState.HealthStatus, Int?, String?).self) { group in
+            for config in configs {
+                group.addTask {
+                    let client = HermesAPIClient(config: config)
+                    let start = Date()
+                    do {
+                        let health = try await client.checkHealth()
+                        let latency = Int(Date().timeIntervalSince(start) * 1000)
+                        return (config.baseURL, health.status == "ok" ? .online : .offline, latency, health.version)
+                    } catch {
+                        return (config.baseURL, .offline, nil, nil)
+                    }
+                }
+            }
+            for await (baseURL, status, latency, version) in group {
+                await MainActor.run {
+                    var state = serverHealthStatus[baseURL] ?? ServerHealthState(
+                        id: baseURL, label: baseURL, baseURL: baseURL)
+                    state.status = status
+                    state.latencyMs = latency
+                    state.version = version
+                    serverHealthStatus[baseURL] = state
+                }
+            }
+        }
+    }
+
     // MARK: - Connection
 
     var isConnected: Bool { connectionConfig != nil && !isLoadingConnection }
@@ -117,7 +167,18 @@ final class AppStore: ObservableObject {
         isLoadingConnection = true
         let client = HermesAPIClient(config: config)
         do {
-            let health = try await client.checkHealth()
+            // Health check with a 10-second timeout so we don't hang forever
+            // when Tailscale is down or the server is unreachable.
+            let health = try await withThrowingTaskGroup(of: HealthResponse.self) { group in
+                group.addTask { try await client.checkHealth() }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 10_000_000_000)
+                    throw URLError(.timedOut)
+                }
+                let result = try await group.next() ?? HealthResponse(status: "timeout", platform: nil, version: nil)
+                group.cancelAll()
+                return result
+            }
             guard health.status == "ok" else {
                 self.error = AppError(message: "Server returned status: \(health.status)")
                 self.isLoadingConnection = false
@@ -129,14 +190,10 @@ final class AppStore: ObservableObject {
             await refreshSessions()
             self.isLoadingConnection = false
         } catch let e as APIError {
-            // Don't clear connectionConfig — keep the saved connection so
-            // the user stays in the chat view with an error message, and
-            // reconnectIfNeeded can retry automatically (Tailscale may need
-            // a moment to reconnect after a cold start).
-            self.error = AppError(message: e.errorDescription ?? "Connection failed. Reconnecting...")
+            self.error = AppError(message: e.errorDescription ?? "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
         } catch {
-            self.error = AppError(message: "Connection failed. Reconnecting...")
+            self.error = AppError(message: "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
         }
     }
@@ -943,4 +1000,19 @@ struct PendingApproval: Identifiable, Sendable {
 struct AppError: Identifiable {
     let id = UUID()
     let message: String
+}
+
+// MARK: - Server Health State
+
+struct ServerHealthState: Identifiable {
+    let id: String  // baseURL
+    let label: String
+    let baseURL: String
+    var status: HealthStatus = .unknown
+    var latencyMs: Int? = nil
+    var version: String? = nil
+
+    enum HealthStatus {
+        case online, offline, unknown, checking
+    }
 }
