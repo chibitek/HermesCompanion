@@ -63,11 +63,6 @@ The standout feature. Tap the waveform icon and your phone becomes a full-screen
 Server connection, provider and model selection, capabilities toggles, skills browser, toolsets, voice configuration, appearance, and version info. All in clean glass-card sections.
 
 
-### Server Configuration
-
-Manage multiple Hermes gateways. Add, edit, and switch between servers — each with its own provider, model, sessions, and preferences.
-
-
 ### Model Selector
 
 Switch between any model your Hermes gateway supports. 300+ models from Nous, OpenRouter, Ollama, Huggingface, Sakana, and more. Models sync automatically from your server.
