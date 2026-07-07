@@ -69,9 +69,9 @@ struct VoiceConversationPage: View {
 
     // Rain intensity changes with conversation state
     private var rainIntensity: Double {
-        if voiceConversation.isThinking { return 0.15 }      // Very slow — free up CPU for network
         if voiceConversation.isListening { return 1.0 }      // Fast rain
-        if voiceConversation.isSpeaking { return 0.5 }       // Medium, glowing
+        if voiceConversation.isSpeaking { return 0.7 }       // Medium, glowing
+        if voiceConversation.isThinking { return 0.5 }       // Steady rain — keep the visual alive
         return 0.5                                            // Idle
     }
 
@@ -684,52 +684,52 @@ struct MatrixRainView: View {
     let secondaryColor: Color
     let intensity: Double  // 0.0 to 1.0, controls speed and brightness
 
-    private let columns = 40
-    private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんぁぃぅぇぉゃゅょっアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲンｱｲｳｴｵｶｷｸｹｺ0123456789@#$%&*<>ABCDEFGHIJKLMNOPQRSTUVWXYZ+=-/\\|")
+    private let columns = 30
+    private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789@#$%&*<>ABCDEF+=-/")
+
+    // Precompute resolved colors to avoid per-frame Color.opacity() calls
+    private var leadColor: Color { Color.white.opacity(min(0.9 * intensity + 0.3, 1.0)) }
+    private var brightColor: Color { color.opacity(min(0.85 * intensity + 0.2, 1.0)) }
+    private var midColor: Color { color.opacity(0.6 * intensity + 0.1) }
+    private var dimColor: Color { color.opacity(0.35 * intensity + 0.05) }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.033)) { timeline in  // ~30fps for smoother rain
+        TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // 25fps — sustainable
             Canvas { context, size in
                 let columnWidth = size.width / CGFloat(columns)
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                let speed = 80.0 + intensity * 200.0  // pixels per second
-                let charSize: CGFloat = 13
+                let speed = 60.0 + intensity * 120.0
+                let charSize: CGFloat = 14
 
                 for col in 0..<columns {
                     let xPos = CGFloat(col) * columnWidth
                     let seed = Double(col) * 7.3
-                    // Each column moves at a slightly different speed for organic feel
-                    let colSpeed = speed * (0.6 + Double(abs(sin(seed)) * 0.8))
-                    let offset = (t * colSpeed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 300)
-                    let trailLength = Int(14 + Int(intensity * 14))
+                    let colSpeed = speed * (0.7 + abs(sin(seed)) * 0.6)
+                    let offset = (t * colSpeed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
+                    let trailLength = 10
                     let start = Int(offset / charSize)
 
-                    for i in 0..<trailLength {
+                    var i = 0
+                    while i < trailLength {
                         let y = CGFloat(start - i) * charSize
-                        guard y >= -charSize && y <= size.height else { continue }
+                        guard y >= -charSize && y <= size.height else { i += 1; continue }
 
-                        let charIdx = abs(Int((t * 4 + seed + Double(i) * 1.7))) % charset.count
+                        let charIdx = abs(Int((t * 3 + seed + Double(i) * 1.7))) % charset.count
                         let char = charset[charIdx]
-
-                        let fade = 1.0 - Double(i) / Double(trailLength)
-                        let brightness = fade * (0.4 + intensity * 0.6)
-
-                        let opacity: Double
-                        if i == 0 { opacity = min(brightness * 1.5, 1.0) }
-                        else if i < 3 { opacity = brightness }
-                        else if i < 6 { opacity = brightness * 0.8 }
-                        else { opacity = brightness * 0.5 }
-
-                        let charColor: Color
-                        if i == 0 { charColor = Color.white.opacity(opacity) }
-                        else if i < 2 { charColor = color.opacity(min(opacity * 1.3, 1.0)) }
-                        else { charColor = color.opacity(opacity) }
-
                         let pos = CGPoint(x: xPos + columnWidth / 2, y: y + charSize / 2)
-                        let text = Text(String(char))
+
+                        // Pick precomputed color — no per-frame opacity math
+                        let drawColor: Color
+                        if i == 0 { drawColor = leadColor }
+                        else if i < 2 { drawColor = brightColor }
+                        else if i < 5 { drawColor = midColor }
+                        else { drawColor = dimColor }
+
+                        context.draw(Text(String(char))
                             .font(.system(size: charSize, weight: .medium, design: .monospaced))
-                            .foregroundColor(charColor)
-                        context.draw(text, at: pos)
+                            .foregroundColor(drawColor), at: pos)
+                        
+                        i += 1
                     }
                 }
             }
