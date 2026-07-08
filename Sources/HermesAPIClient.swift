@@ -32,8 +32,12 @@ final class HermesAPIClient: Sendable {
 
     private func makeURL(path: String) throws -> URL {
         let cleanPath = path.hasPrefix("/") ? path : "/\(path)"
-        guard let url = URL(string: baseURL + cleanPath) else {
-            throw APIError.invalidURL(baseURL + cleanPath)
+        // URL-encode each path segment to handle special characters in IDs
+        let encodedPath = cleanPath.split(separator: "/", omittingEmptySubsequences: false)
+            .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
+            .joined(separator: "/")
+        guard let url = URL(string: baseURL + encodedPath) else {
+            throw APIError.invalidURL(baseURL + encodedPath)
         }
         return url
     }

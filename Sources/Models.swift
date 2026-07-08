@@ -250,20 +250,6 @@ struct Usage: Codable {
 
 // MARK: - SSE Events (streaming)
 
-enum SSEEvent: String, Codable {
-    case runStarted = "run.started"
-    case messageStarted = "message.started"
-    case assistantDelta = "assistant.delta"
-    case assistantCompleted = "assistant.completed"
-    case toolProgress = "tool.progress"
-    case toolStarted = "tool.started"
-    case toolCompleted = "tool.completed"
-    case toolFailed = "tool.failed"
-    case runCompleted = "run.completed"
-    case error = "error"
-    case done = "done"
-}
-
 struct SSEEventPayload: Codable, Sendable {
     var event: String
     let sessionId: String?
@@ -434,41 +420,7 @@ struct RunResponse: Codable {
     }
 }
 
-struct RunStatus: Codable {
-    let runId: String
-    let status: String
-    let sessionId: String?
-    let createdAt: Double?
-    let lastEvent: String?
-    let model: String?
-
-    enum CodingKeys: String, CodingKey {
-        case runId = "run_id"
-        case status
-        case sessionId = "session_id"
-        case createdAt = "created_at"
-        case lastEvent = "last_event"
-        case model
-    }
-}
-
 // MARK: - Approval
-
-struct ApprovalRequest: Codable {
-    let event: String
-    let runId: String?
-    let command: String?
-    let tool: String?
-    let choices: [String]?
-
-    enum CodingKeys: String, CodingKey {
-        case event
-        case runId = "run_id"
-        case command
-        case tool
-        case choices
-    }
-}
 
 struct ApprovalResponse: Codable {
     let choice: String  // "once", "session", "always", "deny"
@@ -680,10 +632,6 @@ struct UpdateCronJobRequest: Codable {
     let skills: [String]?
     let `repeat`: Int?
     let enabled: Bool?
-}
-
-struct CronDeleteResponse: Codable {
-    let ok: Bool
 }
 
 // MARK: - Run Status (enriched)

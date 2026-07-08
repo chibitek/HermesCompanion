@@ -437,22 +437,6 @@ struct ChatView: View {
         attachments.remove(at: index)
     }
 
-    private func detectImageMimeType(_ data: Data) -> String {
-        guard data.count >= 2 else { return "image/jpeg" }
-        let bytes = [UInt8](data.prefix(12))
-        if bytes[0] == 0xFF && bytes[1] == 0xD8 { return "image/jpeg" }
-        if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 {
-            return "image/png"
-        }
-        if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 { return "image/gif" }
-        if data.count >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 {
-            if bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 {
-                return "image/webp"
-            }
-        }
-        return "image/jpeg"
-    }
-
     /// Convert image data to JPEG, resizing if needed to keep payload reasonable.
     /// Handles HEIC, PNG, GIF, etc. Returns nil if data cannot be decoded.
     private func convertToJPEG(_ data: Data, quality: CGFloat = 0.8, maxDimension: CGFloat = 1568) -> Data? {

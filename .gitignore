@@ -29,5 +29,9 @@ build/
 DerivedData/.env
 .env
 
-# TLS certificates — never commit
+# TLS certificates and keys — never commit
 certs/
+*.pem
+*.key
+*.p12
+*.mobileprovision

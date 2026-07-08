@@ -166,16 +166,15 @@ final class VoiceConversationManager: ObservableObject {
             conversationMode = .remote
         } else {
             // Check if we have network connectivity for premium mode
-            Task {
+            Task { @MainActor in
                 let isConnected = await hasNetworkConnectivity()
-                DispatchQueue.main.async {
-                    if isConnected {
-                        // We could default to premium mode if network is available
-                        // But for now, we'll stick with remote as the default
-                        self.conversationMode = .remote
-                    } else {
-                        self.conversationMode = .remote
-                    }
+                // Already on MainActor — no dispatch needed
+                if isConnected {
+                    // We could default to premium mode if network is available
+                    // But for now, we'll stick with remote as the default
+                    self.conversationMode = .remote
+                } else {
+                    self.conversationMode = .remote
                 }
             }
         }
@@ -930,14 +929,12 @@ final class VoiceConversationManager: ObservableObject {
         }
         // If switching to premium mode, ensure we have network connectivity
         if conversationMode == .premium {
-            Task {
+            Task { @MainActor in
                 let isConnected = await hasNetworkConnectivity()
                 if !isConnected {
                     // Fallback to remote mode if no network connectivity
-                    DispatchQueue.main.async {
-                        self.conversationMode = .remote
-                        self.voiceError = "No internet connection. Switched to remote mode."
-                    }
+                    self.conversationMode = .remote
+                    self.voiceError = "No internet connection. Switched to remote mode."
                 }
             }
         }
