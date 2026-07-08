@@ -28,3 +28,6 @@ HermesCompanion.xcodeproj
 build/
 DerivedData/.env
 .env
+
+# TLS certificates — never commit
+certs/
