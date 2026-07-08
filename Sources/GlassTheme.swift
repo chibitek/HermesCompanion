@@ -1122,38 +1122,6 @@ struct AttachmentData: Identifiable, Equatable {
     }
 }
 
-// MARK: - Glass Connection Card (theme-aware)
-
-struct GlassConnectionCard: View {
-    let health: HealthResponse
-    let config: ConnectionConfig
-    @EnvironmentObject private var appearance: AppearanceSettings
-
-    private var theme: any HermesTheme { appearance.activeTheme }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacingS) {
-            HStack {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Text("Connected")
-                    .font(.headline)
-            }
-            Text("\(config.label) — Hermes v\(health.version ?? "unknown")")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding(theme.spacingL)
-        .if(theme.usesGlass) { view in
-            view.glassEffect(.regular.tint(.green.opacity(0.08)))
-        }
-        .if(!theme.usesGlass) { view in
-            view.background(Color(.tertiarySystemFill))
-        }
-        .clipShape(RoundedRectangle(cornerRadius: theme.bubbleRadius, style: .continuous))
-    }
-}
-
 // MARK: - View Modifier Extension
 
 extension View {
