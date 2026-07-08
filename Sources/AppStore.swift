@@ -863,6 +863,8 @@ final class AppStore: ObservableObject {
     /// dropped while in the background. Preserves the active session and
     /// messages so the user doesn't lose context.
     private var isReconnecting = false
+    private var reconnectRetryCount = 0
+    private let maxReconnectRetries = 10
 
     func reconnectIfNeeded() async {
         guard connectionConfig != nil, !isReconnecting else { return }
@@ -878,8 +880,8 @@ final class AppStore: ObservableObject {
                 self.error = AppError(message: "Server unhealthy: \(health.status)")
                 return
             }
-            // Connection is alive. Refresh sessions silently in case
-            // anything changed while we were in the background.
+            // Connection is alive. Reset retry count and refresh sessions.
+            reconnectRetryCount = 0
             await refreshCapabilities()
             await refreshSessions()
             // Also reload the active session's messages so replies that
@@ -908,15 +910,19 @@ final class AppStore: ObservableObject {
                     await selectSession(active)
                 }
             } catch {
-                // Server is unreachable. Don't clear connectionConfig -- just show
+                // Server is unreachable. Don't clear connectionConfig — just show
                 // an error and keep the saved config so we can retry automatically.
-                // Clearing it sends the user back to the setup screen, which is
-                // frustrating during quick app switches where Tailscale needs a
-                // moment to reconnect.
                 self.error = AppError(message: "Lost connection to Hermes. Will retry.")
-                // Schedule a retry in 3 seconds
+                // Exponential backoff: 3s, 6s, 12s, 24s, 30s, 30s, ... max 10 retries
+                reconnectRetryCount += 1
+                guard reconnectRetryCount <= maxReconnectRetries else {
+                    self.error = AppError(message: "Could not reconnect to Hermes after \(maxReconnectRetries) attempts. Please check your connection.")
+                    reconnectRetryCount = 0
+                    return
+                }
+                let delay = min(3.0 * pow(2.0, Double(reconnectRetryCount - 1)), 30.0)
                 Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                     await MainActor.run {
                         if self.connectionConfig != nil {
                             Task { await self.reconnectIfNeeded() }
