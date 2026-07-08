@@ -336,10 +336,11 @@ final class VoiceConversationManager: ObservableObject {
         invalidateThinkingSafetyTimer()
         voiceError = message
 
-        // Safety net: always speak the error so the user isn't left staring at the screen.
+        // Only speak the error if the voice conversation is still active.
+        // If the user closed the voice page, don't speak into an empty room.
+        guard isConversing else { return }
         speakResponse(message)
 
-        guard isConversing else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard let self,
@@ -626,13 +627,14 @@ final class VoiceConversationManager: ObservableObject {
         switch conversationMode {
         case .local:
             isThinking = true
-            invalidateThinkingSafetyTimer()
+            scheduleThinkingSafetyTimer()
             Task {
                 let response = await localLLM.generateResponse(to: finalText)
                 await MainActor.run {
                     isThinking = false
                     isFinalizing = false
                 }
+                invalidateThinkingSafetyTimer()
                 if isConversing {
                     speakResponse(response)
                     onLocalResponse?(response)
@@ -642,8 +644,8 @@ final class VoiceConversationManager: ObservableObject {
         case .remote:
             FileLogger.shared.log("VoiceManager: remote mode finalize for '\(finalText)'")
             isThinking = true
+            scheduleThinkingSafetyTimer()
             FileLogger.shared.log("VoiceManager: remote mode, calling onTranscriptionComplete with '\(finalText)'")
-            print("VoiceManager: remote mode, calling onTranscriptionComplete with '\(finalText)'")
             onTranscriptionComplete?(finalText)
             // For remote mode, isFinalizing will be reset when speakResponse is called
 
@@ -651,8 +653,8 @@ final class VoiceConversationManager: ObservableObject {
             FileLogger.shared.log("VoiceManager: premium mode finalize for '\(finalText)'")
             // For premium mode, we still send to Hermes but speak with premium TTS
             isThinking = true
+            scheduleThinkingSafetyTimer()
             FileLogger.shared.log("VoiceManager: premium mode, calling onTranscriptionComplete with '\(finalText)'")
-            print("VoiceManager: premium mode, calling onTranscriptionComplete with '\(finalText)'")
             onTranscriptionComplete?(finalText)
             // For premium mode, isFinalizing will be reset when speakResponse is called
             // by the caller after receiving the API response.
