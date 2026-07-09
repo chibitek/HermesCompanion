@@ -785,55 +785,49 @@ final class AppStore: ObservableObject {
             }
         case "tool.progress":
             // Suppress _thinking reasoning deltas — internal monologue, not user-facing
-            let toolName = event.toolName ?? ""
-            if toolName == "_thinking" || toolName == "thinking" { break }
-            let detail = event.preview ?? event.delta ?? ""
-            if !detail.isEmpty {
-                // Update last progress chip for same tool instead of flooding
-                if let lastIdx = toolEvents.lastIndex(where: { $0.toolName == toolName && $0.type == .progress }) {
-                    toolEvents[lastIdx].detail = detail
-                } else {
-                    toolEvents.append(ToolEvent(
-                        id: UUID().uuidString,
-                        type: .progress,
-                        toolName: toolName,
-                        detail: detail
-                    ))
-                }
+            let progToolName = event.toolName ?? ""
+            if progToolName == "_thinking" || progToolName == "thinking" { break }
+            let progDetail = event.preview ?? event.delta ?? ""
+            if !progDetail.isEmpty {
+                toolEvents.append(ToolEvent(
+                    id: UUID().uuidString,
+                    type: .progress,
+                    toolName: progToolName,
+                    detail: progDetail
+                ))
             }
 
         case "tool.started":
-            let toolName = event.toolName ?? "unknown"
-            if toolName == "_thinking" || toolName == "thinking" { break }
+            let startToolName = event.toolName ?? "unknown"
+            if startToolName == "_thinking" || startToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
                 id: UUID().uuidString,
                 type: .started,
-                toolName: toolName,
+                toolName: startToolName,
                 detail: event.preview ?? ""
             ))
 
         case "tool.completed":
-            let toolName = event.toolName ?? "unknown"
-            if toolName == "_thinking" || toolName == "thinking" { break }
+            let compToolName = event.toolName ?? "unknown"
+            if compToolName == "_thinking" || compToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
                 id: UUID().uuidString,
                 type: .completed,
-                toolName: toolName,
+                toolName: compToolName,
                 detail: event.preview ?? ""
             ))
 
         case "tool.failed":
-            let toolName = event.toolName ?? "unknown"
-            if toolName == "_thinking" || toolName == "thinking" { break }
+            let failToolName = event.toolName ?? "unknown"
+            if failToolName == "_thinking" || failToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
                 id: UUID().uuidString,
                 type: .failed,
-                toolName: toolName,
+                toolName: failToolName,
                 detail: event.preview ?? "Tool failed"
             ))
 
-        case "assistant.completed":
-            let finalContent = Self.stripRawArtifacts(event.content ?? streamingText)
+        tifacts(event.content ?? streamingText)
 
             if !finalContent.isEmpty {
                 let message = ChatDisplayMessage(
