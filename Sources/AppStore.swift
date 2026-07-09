@@ -346,6 +346,13 @@ final class AppStore: ObservableObject {
         if favoriteModels.count > 10 {
             favoriteModels = Array(favoriteModels.prefix(10))
         }
+        // Switch the gateway's active model so the next message uses it.
+        // The gateway ignores per-request model fields (upstream issue #16216),
+        // so we call a companion server on port 8643 that runs
+        // `hermes config set` to change the gateway's default model+provider.
+        Task {
+            await apiClient?.switchGatewayModel(model)
+        }
     }
 
     private func providerForModel(_ model: String) -> String? {
@@ -700,6 +707,23 @@ final class AppStore: ObservableObject {
                 } else if !skipPostReload {
                     // We have a streamed message — just refresh session counts
                     // without replacing the chat messages.
+                    await refreshSessions()
+                }
+
+                // Voice mode fallback: when skipPostReload is true (voice mode)
+                // but we got no assistant message and no completion event, do a
+                // server reload as a last resort. The SSE stream may have closed
+                // early without delivering the response text, but the server
+                // might still have the assistant message in history. Without this
+                // fallback, voice mode would fail with "No response received"
+                // whenever the stream ends without a terminal event, even though
+                // the server successfully processed the message.
+                if skipPostReload && assistantMessage == nil && !receivedCompletion {
+                    FileLogger.shared.log("AppStore: voice mode fallback — no assistant message and no completion event, reloading from server")
+                    let history = try await client.getMessages(sessionId: session.id)
+                    self.messages = history
+                        .filter { $0.isUser || $0.isAssistant }
+                        .map { ChatDisplayMessage(from: $0) }
                     await refreshSessions()
                 }
 
