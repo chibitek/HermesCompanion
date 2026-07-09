@@ -205,7 +205,7 @@ struct ChatView: View {
                         emptyState
                     }
 
-                    ForEach(store.messages) { msg in
+                    ForEach(store.messages.filter { $0.shouldDisplay }) { msg in
                         GlassBubble(
                             content: msg.content,
                             isUser: msg.isUser,
@@ -360,43 +360,46 @@ struct ChatView: View {
         voiceConversation.isThinking = true
 
         Task {
-            // Hard timeout: if store.sendMessage doesn't return in 60 seconds,
+            // Hard timeout: if store.sendMessage doesn't return in 30 seconds,
             // bail out and surface an error so the UI doesn't freeze.
             // Uses a flag instead of Task cancellation because iOS's Task.sleep
             // doesn't reliably throw on cancellation in all cases.
             let voiceTimeoutID = UUID()
-            VoiceTimeoutManager.shared.startTimeout(id: voiceTimeoutID, seconds: 60) {
+            VoiceTimeoutManager.shared.startTimeout(id: voiceTimeoutID, seconds: 30) {
                 Task { @MainActor in
                     guard self.voiceConversation.isThinking else { return }
-                    FileLogger.shared.log("ChatView: voice timeout fired (60s)")
+                    FileLogger.shared.log("ChatView: voice timeout fired (30s)")
                     self.voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
                 }
             }
 
             // Monitor streaming text and start speaking as soon as we have
-            // a complete first sentence. This cuts perceived latency dramatically
+            // enough text for natural speech. This cuts perceived latency dramatically
             // — the user hears the response start while the rest is still streaming.
             let monitorTask = Task { @MainActor in
-                var lastSpokenText = ""
                 var hasStartedSpeaking = false
                 while !Task.isCancelled && self.voiceConversation.isThinking {
                     let current = self.store.streamingText
                     if !current.isEmpty && !hasStartedSpeaking {
-                        // Check for a complete sentence (ends with ., !, or ?)
-                        if current.contains(".") || current.contains("!") || current.contains("?") {
-                            // Find the end of the first sentence
+                        let wordCount = current.split(separator: " ").count
+                        let hasSentenceEnd = current.contains(".") || current.contains("!") || current.contains("?")
+
+                        if hasSentenceEnd {
                             if let endIdx = current.firstIndex(where: { ".!?".contains($0) }) {
                                 let firstSentence = String(current[...endIdx])
                                 if firstSentence.split(separator: " ").count >= 2 {
-                                    lastSpokenText = firstSentence
                                     hasStartedSpeaking = true
                                     FileLogger.shared.log("ChatView: starting early TTS with first sentence: \(firstSentence.prefix(80))")
                                     self.voiceConversation.startEarlySpeaking(text: firstSentence)
                                 }
                             }
+                        } else if wordCount >= 3 {
+                            hasStartedSpeaking = true
+                            FileLogger.shared.log("ChatView: starting early TTS with \(wordCount) words: \(current.prefix(80))")
+                            self.voiceConversation.startEarlySpeaking(text: current)
                         }
                     }
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms poll
+                    try? await Task.sleep(nanoseconds: 20_000_000) // 20ms poll — faster response
                 }
             }
 

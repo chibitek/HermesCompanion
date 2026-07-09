@@ -67,7 +67,9 @@ final class VoiceTranscriber: ObservableObject {
         // Configure audio session for recording
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try? audioSession.setPreferredSampleRate(44_100)
+            try? audioSession.setPreferredInputNumberOfChannels(1)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             isRecording = false
@@ -81,6 +83,11 @@ final class VoiceTranscriber: ObservableObject {
         if #available(iOS 16, *) {
             recognitionRequest.addsPunctuation = true
         }
+        // Prefer on-device recognition when available for lower latency
+        if #available(iOS 13, *) {
+            recognitionRequest.requiresOnDeviceRecognition = false
+        }
+        recognitionRequest.taskHint = .dictation
 
         // Start recognition task
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
