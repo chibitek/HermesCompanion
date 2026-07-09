@@ -10,6 +10,28 @@ final class HermesAPIClient: Sendable {
     private let session: URLSession
     private let config: ConnectionConfig
 
+    /// PUT /model on the model-switch helper (port 8643 on same host).
+    /// The gateway ignores the per-request model field, so we switch the
+    /// gateway's default model via a small companion server that calls
+    /// `hermes config set model.provider` and `model.default`.
+    /// This is a workaround until upstream issue #16216 is merged.
+    func switchGatewayModel(_ modelId: String) async {
+        var host = config.normalizedBaseURL
+        if host.hasPrefix("http://") { host = String(host.dropFirst(7)) }
+        if host.hasPrefix("https://") { host = String(host.dropFirst(8)) }
+        // Strip any port suffix
+        if let colon = host.firstIndex(of: ":") {
+            host = String(host[..<colon])
+        }
+        guard let url = URL(string: "http://\(host):8643/model") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": modelId])
+        req.timeoutInterval = 5
+        _ = try? await session.data(for: req)
+    }
+
     init(config: ConnectionConfig) {
         self.config = config
         let cfg = URLSessionConfiguration.default
