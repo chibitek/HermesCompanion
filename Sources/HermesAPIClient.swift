@@ -19,7 +19,13 @@ final class HermesAPIClient: Sendable {
         cfg.timeoutIntervalForRequest = 600
         cfg.timeoutIntervalForResource = 1_800
         cfg.waitsForConnectivity = true
-        cfg.networkServiceType = .default
+        cfg.networkServiceType = .background
+        // Allow the session to continue in the background when the app
+        // is suspended (e.g., user switched to another app mid-response).
+        // Combined with UIBackgroundModes: audio, this keeps the SSE
+        // stream alive and TTS playing.
+        cfg.allowsConstrainedNetworkAccess = true
+        cfg.allowsExpensiveNetworkAccess = true
         self.session = URLSession(configuration: cfg)
     }
 
@@ -259,14 +265,21 @@ final class HermesAPIClient: Sendable {
                     var payload = try? JSONDecoder().decode(SSEEventPayload.self, from: data)
                     if payload == nil {
                         // Fallback for done/error frames whose data isn't full JSON.
-                        payload = SSEEventPayload(
-                            event: eventBuffer,
-                            sessionId: nil, runId: nil, message_id: nil,
-                            delta: nil, content: nil, toolName: nil,
-                            preview: nil, args: nil,
-                            completed: nil, partial: nil, interrupted: nil,
-                            usage: nil, message: dataBuffer
-                        )
+                        // Only pass the raw buffer as message for error/done events.
+                        // For any other event type, do NOT create a fallback payload
+                        // with raw data — that would leak raw JSON into the chat UI.
+                        if eventBuffer == "error" || eventBuffer == "done" || eventBuffer.isEmpty {
+                            payload = SSEEventPayload(
+                                event: eventBuffer,
+                                sessionId: nil, runId: nil, message_id: nil,
+                                delta: nil, content: nil, toolName: nil,
+                                preview: nil, args: nil,
+                                completed: nil, partial: nil, interrupted: nil,
+                                usage: nil, message: dataBuffer
+                            )
+                        } else {
+                            return
+                        }
                     } else {
                         // The event type comes from the SSE `event:` line, not the JSON.
                         payload!.event = eventBuffer
