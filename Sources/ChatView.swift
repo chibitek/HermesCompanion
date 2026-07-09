@@ -156,6 +156,9 @@ struct ChatView: View {
         .onAppear {
             voiceConversation.isHermesConnected = store.isConnected
             voiceConversation.refreshDefaultMode()
+            voiceConversation.onStopBackgroundAudio = { [weak store] in
+                store?.stopSilentAudioForVoice()
+            }
         }
         .onChange(of: store.isConnected) { _, connected in
             voiceConversation.isHermesConnected = connected
@@ -360,15 +363,15 @@ struct ChatView: View {
         voiceConversation.isThinking = true
 
         Task {
-            // Hard timeout: if store.sendMessage doesn't return in 30 seconds,
+            // Hard timeout: if store.sendMessage doesn't return in 20 seconds,
             // bail out and surface an error so the UI doesn't freeze.
             // Uses a flag instead of Task cancellation because iOS's Task.sleep
             // doesn't reliably throw on cancellation in all cases.
             let voiceTimeoutID = UUID()
-            VoiceTimeoutManager.shared.startTimeout(id: voiceTimeoutID, seconds: 30) {
+            VoiceTimeoutManager.shared.startTimeout(id: voiceTimeoutID, seconds: 20) {
                 Task { @MainActor in
                     guard self.voiceConversation.isThinking else { return }
-                    FileLogger.shared.log("ChatView: voice timeout fired (30s)")
+                    FileLogger.shared.log("ChatView: voice timeout fired (20s)")
                     self.voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
                 }
             }
