@@ -827,7 +827,8 @@ final class AppStore: ObservableObject {
                 detail: event.preview ?? "Tool failed"
             ))
 
-        tifacts(event.content ?? streamingText)
+        case "assistant.completed":
+            let finalContent = Self.stripRawArtifacts(event.content ?? streamingText)
 
             if !finalContent.isEmpty {
                 let message = ChatDisplayMessage(
@@ -1129,6 +1130,15 @@ final class AppStore: ObservableObject {
         // audio when not streaming. VoiceConversationManager manages its own
         // audio session lifecycle.
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    /// Public method to stop silent background audio before voice mode starts.
+    /// Called from ChatView/VoiceView before starting a voice conversation
+    /// to prevent audio session category conflicts (.playback vs .playAndRecord).
+    func stopSilentAudioForVoice() {
+        if isBackgroundAudioActive {
+            stopSilentAudio()
+        }
     }
 
     func endBackgroundTask() {

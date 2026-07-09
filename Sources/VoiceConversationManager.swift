@@ -92,6 +92,8 @@ final class VoiceConversationManager: ObservableObject {
     // Conversation flow
     private var onTranscriptionComplete: ((String) -> Void)?
     private var onLocalResponse: ((String) -> Void)?
+    // Called before starting voice mode to stop background audio
+    var onStopBackgroundAudio: (() -> Void)?
 
     // Barge-in: mic level monitoring during TTS playback
     private var bargeInCheckTimer: Timer?
@@ -100,7 +102,7 @@ final class VoiceConversationManager: ObservableObject {
 
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
-    private let silenceTimeout: TimeInterval = 0.6  // Faster finalization after user stops
+    private let silenceTimeout: TimeInterval = 0.5  // Faster finalization — 0.6 was too slow
     private var lastTranscriptionTime: Date = .distantPast
     private var lastTranscribedText: String = ""
 
@@ -109,9 +111,9 @@ final class VoiceConversationManager: ObservableObject {
     private var pendingConversationStartID: UUID?
 
     // Safety net: if thinking lasts too long, cancel and resume listening.
-    // Reduced from 90s to 30s — 90s feels like the app died.
+    // 20s — long enough for tool calls, short enough to not feel dead.
     private var thinkingSafetyTimer: Timer?
-    private let thinkingSafetyTimeout: TimeInterval = 30  // Match ChatView timeout
+    private let thinkingSafetyTimeout: TimeInterval = 20
 
     init() {
         delegateBridge.manager = self
@@ -418,6 +420,11 @@ final class VoiceConversationManager: ObservableObject {
         }
         isStoppingListening = false
         voiceError = nil
+
+        // Stop the background silent audio player before starting voice mode.
+        // The silent player uses .playback category; switching to .playAndRecord
+        // while it's running can crash the audio engine.
+        onStopBackgroundAudio?()
 
         // CRITICAL: Stop the engine and remove any existing tap BEFORE setting
         // up a new tap. AVAudioEngine throws an Objective-C exception
@@ -799,13 +806,8 @@ final class VoiceConversationManager: ObservableObject {
     func speakResponse(_ text: String) {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty, isConversing else { 
-            print("Not speaking response - empty text or not conversing")
             return 
         }
-
-        print("SpeakResponse called with text: \(cleanText)")
-        print("Conversation mode: \(conversationMode)")
-        print("Is conversing: \(isConversing)")
 
         // Sync voice settings from UserDefaults
         voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
@@ -866,8 +868,8 @@ final class VoiceConversationManager: ObservableObject {
         utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
                             min(AVSpeechUtteranceMaximumSpeechRate, voiceSpeed))
         utterance.pitchMultiplier = voicePitch
-        utterance.preUtteranceDelay = 0  // Was 0.1 — eliminate dead air before speech
-                utterance.postUtteranceDelay = 0.05  // Was 0.3 — minimal gap after speech
+        utterance.preUtteranceDelay = 0  // No dead air before speech
+        utterance.postUtteranceDelay = 0.05  // Minimal gap after speech
 
         synthesizer.speak(utterance)
 
@@ -912,14 +914,6 @@ final class VoiceConversationManager: ObservableObject {
                 utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
             }
         }
-
-        // Add debug logging
-        print("Speaking text with premium TTS: \(text)")
-        print("Premium voice service: \(premiumVoiceService)")
-        print("Premium voice name: \(premiumVoiceName)")
-        print("Premium voice: \(String(describing: utterance.voice))")
-        print("Rate: \(utterance.rate)")
-        print("Pitch: \(utterance.pitchMultiplier)")
 
         synthesizer.speak(utterance)
 
