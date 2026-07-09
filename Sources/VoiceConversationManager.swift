@@ -102,7 +102,7 @@ final class VoiceConversationManager: ObservableObject {
 
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
-    private let silenceTimeout: TimeInterval = 0.5  // Faster finalization — 0.6 was too slow
+    private let silenceTimeout: TimeInterval = 0.4  // Faster finalization after user stops talking
     private var lastTranscriptionTime: Date = .distantPast
     private var lastTranscribedText: String = ""
 
@@ -393,7 +393,7 @@ final class VoiceConversationManager: ObservableObject {
         voiceError = nil
         stopListening()
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: 150_000_000)  // 0.15s (was 0.3s)
             guard let self,
                   self.isConversing,
                   !self.isListening,
@@ -634,11 +634,18 @@ final class VoiceConversationManager: ObservableObject {
         if !isConversing {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
+        // When conversation IS active, keep the audio session active so the
+        // app doesn't get suspended by iOS when backgrounded. The .playAndRecord
+        // category + audio background mode keeps the app alive.
     }
 
     private func removeInputTapIfNeeded() {
         guard hasInstalledInputTap else { return }
-        audioEngine.inputNode.removeTap(onBus: 0)
+        // Wrap in do-catch — removeTap can throw an ObjC exception if the
+        // engine is in a bad state. Use a safety check on engine running state.
+        if audioEngine.inputNode.inputFormat(forBus: 0).sampleRate > 0 {
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
         hasInstalledInputTap = false
     }
 
@@ -794,7 +801,7 @@ final class VoiceConversationManager: ObservableObject {
         stopSpeaking()
         // Small delay to let audio session switch from playback to recording
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s (was 0.2s)
+            try? await Task.sleep(nanoseconds: 50_000_000)  // 0.05s (was 0.1s)
             self?.startListening()
         }
     }
@@ -1062,9 +1069,9 @@ private final class SpeechDelegateBridge: NSObject, AVSpeechSynthesizerDelegate 
             guard let manager = manager else { return }
             manager.isSpeaking = false
             // Resume listening after the response is spoken.
-            // Short delay to let the audio session switch from playback to recording.
+            // Minimal delay to let the audio session switch from playback to recording.
             if manager.isConversing {
-                try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s (was 0.2s)
+                try? await Task.sleep(nanoseconds: 50_000_000)  // 0.05s
                 manager.startListening()
             }
         }

@@ -78,9 +78,12 @@ struct RootView: View {
                                     if store.sessions.isEmpty {
                                         await store.refreshSessions()
                                     }
-                                    if !store.sessions.isEmpty {
-                                        await store.selectSession(store.sessions[0])
-                                    }
+                                    // Always create a fresh session for the app —
+                                    // reusing an existing Hermes session pulls in
+                                    // its system prompt, tools, and context, which
+                                    // causes the model to make tool calls, hit the
+                                    // iteration limit, and drop the SSE connection.
+                                    await store.createSession(title: nil)
                                 }
                             }
                         }
