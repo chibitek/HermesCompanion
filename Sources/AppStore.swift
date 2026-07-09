@@ -343,8 +343,8 @@ final class AppStore: ObservableObject {
         // Track as favorite (move to front, dedupe, cap at 5)
         favoriteModels.removeAll { $0 == model }
         favoriteModels.insert(model, at: 0)
-        if favoriteModels.count > 5 {
-            favoriteModels = Array(favoriteModels.prefix(5))
+        if favoriteModels.count > 10 {
+            favoriteModels = Array(favoriteModels.prefix(10))
         }
     }
 
@@ -637,23 +637,11 @@ final class AppStore: ObservableObject {
                     }
 
                     if !streamingText.isEmpty {
-                        // Apply the same JSON/thinking filter used in
-                        // assistant.completed — the leftover streaming text
-                        // was never finalized, so it may contain raw fragments.
-                        var leftover = streamingText
-                        let trimmedLeftover = leftover.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if trimmedLeftover.hasPrefix("{") || trimmedLeftover.hasPrefix("[") {
-                            if let data = trimmedLeftover.data(using: .utf8),
-                               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                                if let text = json["content"] as? String ?? json["text"] as? String {
-                                    leftover = text
-                                } else {
-                                    leftover = ""
-                                }
-                            } else {
-                                leftover = ""
-                            }
-                        }
+                        // The stream ended without a terminal event (assistant.completed
+                        // or run.completed). Apply the full artifact stripper — the
+                        // leftover may contain thinking tags, JSON fragments, or
+                        // tool-call artifacts that should never appear in the chat UI.
+                        let leftover = Self.stripRawArtifacts(streamingText)
                         if !leftover.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let message = ChatDisplayMessage(
                                 id: UUID().uuidString,
