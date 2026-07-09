@@ -181,19 +181,78 @@ struct CreateSessionRequest: Codable {
 struct SessionMessage: Codable, Identifiable, Hashable {
     let id: Int
     let role: String
-    let content: String
+    let content: String?
     let timestamp: Double?
+    let toolCalls: [ToolCall]?
+    let toolCallId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, role, content, timestamp
+        case toolCalls = "tool_calls"
+        case toolCallId = "tool_call_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(Int.self, forKey: .id)
+        self.role = try c.decodeIfPresent(String.self, forKey: .role) ?? ""
+        // Content can be null for tool-call assistant messages
+        self.content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
+        self.timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
+        self.toolCalls = try c.decodeIfPresent([ToolCall].self, forKey: .toolCalls)
+        self.toolCallId = try c.decodeIfPresent(String.self, forKey: .toolCallId)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(role, forKey: .role)
+        try c.encodeIfPresent(content, forKey: .content)
+        try c.encodeIfPresent(timestamp, forKey: .timestamp)
+        try c.encodeIfPresent(toolCalls, forKey: .toolCalls)
+        try c.encodeIfPresent(toolCallId, forKey: .toolCallId)
+    }
 
     var idString: String { String(id) }
     var isUser: Bool { role == "user" }
     var isAssistant: Bool { role == "assistant" }
     var isSystem: Bool { role == "system" }
     var isTool: Bool { role == "tool" }
+    /// True for assistant messages that are tool-call wrappers (no visible text).
+    var isToolCall: Bool { isAssistant && (toolCalls?.isEmpty == false) }
+    /// True for messages that should be hidden from the chat UI.
+    var shouldHide: Bool {
+        if isTool || isSystem { return true }
+        if isToolCall { return true }
+        // Hide assistant messages with null/empty content (tool-call intermediates)
+        if isAssistant && (content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+            return true
+        }
+        // Hide assistant messages whose content is raw JSON (tool-call artifacts)
+        if isAssistant, let c = content {
+            let trimmed = c.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("{\"") || trimmed.hasPrefix("[{") || trimmed.hasPrefix("{\"role\"") {
+                return true
+            }
+        }
+        return false
+    }
 
     var date: Date? {
         guard let ts = timestamp else { return nil }
         return Date(timeIntervalSince1970: ts)
     }
+}
+
+struct ToolCall: Codable, Hashable {
+    let id: String?
+    let type: String?
+    let function: ToolCallFunction?
+}
+
+struct ToolCallFunction: Codable, Hashable {
+    let name: String?
+    let arguments: String?
 }
 
 struct SessionMessagesResponse: Codable {

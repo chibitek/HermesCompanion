@@ -22,22 +22,20 @@ struct HermesCompanionApp: App {
                     }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
-                    switch newPhase {
-                    case .active:
-                        // App returned to foreground. Reconnect if needed.
-                        Task { await store.reconnectIfNeeded() }
-                    case .background:
-                        // App went to background. Start a brief background task
-                        // to keep the connection alive during quick app switches.
-                        store.beginBackgroundKeepAlive()
-                    case .inactive:
-                        break
-                    @unknown default:
-                        break
+                                    switch newPhase {
+                                    case .active:
+                                        store.handleForegroundReturn()
+                                        Task { await store.reconnectIfNeeded() }
+                                    case .background:
+                                        store.beginBackgroundKeepAlive()
+                                    case .inactive:
+                                        break
+                                    @unknown default:
+                                        break
+                                    }
+                                }
+                        }
                     }
-                }
-        }
-    }
 
     /// Force dark mode for themes that are inherently dark (Matrix, Cyberpunk).
     /// For the default Hermes theme, respect the user's color scheme picker.
