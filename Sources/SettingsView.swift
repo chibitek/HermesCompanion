@@ -62,7 +62,13 @@ struct SettingsView: View {
                     await store.refreshToolsets()
                     primePickers()
                     await loadModels(forProvider: selectedProvider)
-                    primePickers()
+                    // Re-prime only if the model list didn't contain the saved
+                    // preference (loadModels may have selected a fallback).
+                    if !store.preferredModel.isEmpty,
+                       selectedModel != store.preferredModel,
+                       models(for: selectedProvider).contains(where: { $0.id == store.preferredModel }) {
+                        selectedModel = store.preferredModel
+                    }
                 }
             }
             .onChange(of: store.connectionConfig?.baseURL) { _, _ in
@@ -606,16 +612,19 @@ struct SettingsView: View {
     private func selectCurrentModel(forProvider provider: String, preferExistingSelection: Bool) {
         let providerModels = models(for: provider)
 
+        // Always respect the store's saved preference first, even when
+        // preferExistingSelection is false (e.g. provider changed but the
+        // saved model is still valid for the new provider).
+        if !store.preferredModel.isEmpty,
+           providerModels.contains(where: { $0.id == store.preferredModel }) {
+            selectedModel = store.preferredModel
+            return
+        }
+
         if preferExistingSelection,
            !selectedModel.isEmpty,
            providerModels.contains(where: { $0.id == selectedModel }) {
             store.preferredModel = selectedModel
-            return
-        }
-
-        if !store.preferredModel.isEmpty,
-           providerModels.contains(where: { $0.id == store.preferredModel }) {
-            selectedModel = store.preferredModel
             return
         }
 
