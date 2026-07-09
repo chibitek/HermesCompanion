@@ -41,6 +41,12 @@ final class AppStore: ObservableObject {
         didSet { savePreference(preferredModel, key: Self.modelKey) }
     }
 
+    /// Recently used models (favorites), persisted per-connection.
+    /// Shown in the compact model picker in the chat bar.
+    @Published var favoriteModels: [String] = [] {
+        didSet { savePreference(favoriteModels.joined(separator: "\n"), key: Self.favModelsKey) }
+    }
+
     /// Persisted reasoning effort: "", "low", "medium", "high".
     /// Note: the gateway chat endpoint doesn't honor a per-message reasoning_effort
     /// override today — this is a local preference only, surfaced in the UI and
@@ -52,6 +58,7 @@ final class AppStore: ObservableObject {
     private static let providerKey = "preferred_provider"
     private static let modelKey = "preferred_model"
     private static let thinkingKey = "preferred_thinking"
+    private static let favModelsKey = "favorite_models"
 
     var effectiveCurrentProvider: String {
         nonEmpty(preferredProvider)
@@ -319,6 +326,12 @@ final class AppStore: ObservableObject {
         if let provider = providerForModel(model) {
             preferredProvider = provider
         }
+        // Track as favorite (move to front, dedupe, cap at 5)
+        favoriteModels.removeAll { $0 == model }
+        favoriteModels.insert(model, at: 0)
+        if favoriteModels.count > 5 {
+            favoriteModels = Array(favoriteModels.prefix(5))
+        }
     }
 
     private func providerForModel(_ model: String) -> String? {
@@ -345,6 +358,8 @@ final class AppStore: ObservableObject {
         preferredProvider = savedPreference(Self.providerKey, for: config)
         preferredModel = savedPreference(Self.modelKey, for: config)
         preferredThinking = savedPreference(Self.thinkingKey, for: config)
+        let savedFavs = savedPreference(Self.favModelsKey, for: config)
+        favoriteModels = savedFavs.split(separator: "\n").map(String.init)
     }
 
     private func savedPreference(_ key: String, for config: ConnectionConfig?) -> String {

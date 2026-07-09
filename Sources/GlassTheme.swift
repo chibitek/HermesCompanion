@@ -398,6 +398,7 @@ struct GlassInputBar: View {
     let onRemoveAttachment: (Int) -> Void
     var currentModel: String = ""
     var availableModels: [String] = []
+    var favoriteModels: [String] = []
     var onSelectModel: ((String) -> Void)? = nil
 
     // Voice conversation callback - called when a transcription is ready in live modes (remote mode)
@@ -416,7 +417,6 @@ struct GlassInputBar: View {
     @State private var showAttachmentMenu = false
     @State private var voiceMode: VoiceInputMode = .voiceToText
     @State private var showVoiceHint = true
-    @State private var showModelPicker = false
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -605,32 +605,55 @@ struct GlassInputBar: View {
                     }
 
                     if !currentModel.isEmpty {
-                        Button {
-                            showModelPicker = true
+                        Menu {
+                            // Show favorites first
+                            let favs = favoriteModels.filter { availableModels.contains($0) || $0 == currentModel }
+                            if !favs.isEmpty {
+                                ForEach(favs, id: \.self) { model in
+                                    Button {
+                                        let generator = UIImpactFeedbackGenerator(style: .light)
+                                        generator.impactOccurred()
+                                        onSelectModel?(model)
+                                    } label: {
+                                        if model == currentModel {
+                                            Label(shortModelName(model), systemImage: "checkmark")
+                                        } else {
+                                            Text(shortModelName(model))
+                                        }
+                                    }
+                                }
+                                Divider()
+                            }
+                            // "All models" submenu
+                            Menu("All Models") {
+                                ForEach(availableModels, id: \.self) { model in
+                                    Button {
+                                        let generator = UIImpactFeedbackGenerator(style: .light)
+                                        generator.impactOccurred()
+                                        onSelectModel?(model)
+                                    } label: {
+                                        if model == currentModel {
+                                            Label(model, systemImage: "checkmark")
+                                        } else {
+                                            Text(model)
+                                        }
+                                    }
+                                }
+                            }
                         } label: {
                             Text(shortModelName(currentModel))
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                                 .foregroundStyle(theme.textPrimary)
                                 .minimumScaleFactor(0.85)
-                                .frame(width: 112, height: 44)
-                                .padding(.horizontal, 10)
+                                .frame(height: 28)
+                                .padding(.horizontal, 8)
                                 .background(modelPillBackground)
                                 .clipShape(Capsule())
                         }
                         .layoutPriority(1)
                         .buttonStyle(.plain)
-                        .confirmationDialog("Select Model", isPresented: $showModelPicker, titleVisibility: .visible) {
-                            ForEach(availableModels, id: \.self) { model in
-                                Button(model) {
-                                    let generator = UIImpactFeedbackGenerator(style: .light)
-                                    generator.impactOccurred()
-                                    onSelectModel?(model)
-                                }
-                            }
-                            Button("Cancel", role: .cancel) {}
-                        }
                     }
 
                     Spacer(minLength: 0)
