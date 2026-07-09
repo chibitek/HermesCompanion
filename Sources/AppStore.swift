@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AVFoundation
 
 /// Manages app state: connection config, active session, chat messages, streaming state.
 @MainActor
@@ -13,7 +14,13 @@ final class AppStore: ObservableObject {
     @Published var messages: [ChatDisplayMessage] = []
     @Published var isStreaming = false
     @Published var streamingText = ""
+    /// Clean text for display only — excludes agent reasoning/tool analysis
+    /// that streams before the final response. Prevents raw data leak in UI.
+    @Published var displayStreamingText = ""
     @Published var toolEvents: [ToolEvent] = []
+    /// True while the agent is running tools (reasoning/analysis phase).
+    /// When true, streamingText contains intermediate work, not user-facing text.
+    @Published var isAgentWorking = false
     @Published var skills: [Skill] = []
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
@@ -430,7 +437,9 @@ final class AppStore: ObservableObject {
         self.streamingText = ""
         do {
             let history = try await client.getMessages(sessionId: session.id)
-            self.messages = history.map { ChatDisplayMessage(from: $0) }
+            self.messages = history
+                .filter { $0.isUser || $0.isAssistant }
+                .map { ChatDisplayMessage(from: $0) }
         } catch {
             self.error = AppError(message: "Failed to load messages: \(error.localizedDescription)")
         }
@@ -450,7 +459,9 @@ final class AppStore: ObservableObject {
             // Re-check: the user may have switched sessions or started a
             // stream while the request was in flight.
             guard activeSession?.id == session.id, !isStreaming else { return }
-            self.messages = history.map { ChatDisplayMessage(from: $0) }
+            self.messages = history
+                .filter { $0.isUser || $0.isAssistant }
+                .map { ChatDisplayMessage(from: $0) }
         } catch {
             // Silent — background refresh should not surface errors.
         }
@@ -596,6 +607,11 @@ final class AppStore: ObservableObject {
         toolEvents = []
         pendingApproval = nil
 
+        // Start background task to keep the network stream alive if the user
+        // switches to another app mid-response. iOS gives ~30s for non-audio
+        // tasks, which is enough for most chat responses.
+        beginBackgroundKeepAlive()
+
         // Cancel any existing stream task before starting a new one
         streamTask?.cancel()
 
@@ -621,15 +637,35 @@ final class AppStore: ObservableObject {
                     }
 
                     if !streamingText.isEmpty {
-                        let message = ChatDisplayMessage(
-                            id: UUID().uuidString,
-                            role: "assistant",
-                            content: streamingText,
-                            timestamp: Date()
-                        )
-                        messages.append(message)
-                        assistantMessage = message
+                        // Apply the same JSON/thinking filter used in
+                        // assistant.completed — the leftover streaming text
+                        // was never finalized, so it may contain raw fragments.
+                        var leftover = streamingText
+                        let trimmedLeftover = leftover.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmedLeftover.hasPrefix("{") || trimmedLeftover.hasPrefix("[") {
+                            if let data = trimmedLeftover.data(using: .utf8),
+                               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                                if let text = json["content"] as? String ?? json["text"] as? String {
+                                    leftover = text
+                                } else {
+                                    leftover = ""
+                                }
+                            } else {
+                                leftover = ""
+                            }
+                        }
+                        if !leftover.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            let message = ChatDisplayMessage(
+                                id: UUID().uuidString,
+                                role: "assistant",
+                                content: leftover,
+                                timestamp: Date()
+                            )
+                            messages.append(message)
+                            assistantMessage = message
+                        }
                         streamingText = ""
+                        receivedCompletion = true
                     }
                 } else {
                     // File and image attachments still use the JSON endpoint because
@@ -662,9 +698,20 @@ final class AppStore: ObservableObject {
                 // to reduce response latency. The streamed text is already captured in
                 // assistantMessage, so the reload is redundant for voice — it just adds
                 // 200-500ms of network round-trips before the user hears the response.
-                if !skipPostReload {
+                if !skipPostReload && assistantMessage == nil {
+                    // Only reload from server if streaming didn't produce a message.
+                    // When we already have the streamed text, reloading replaces it
+                    // with server history that may have empty assistant messages or
+                    // different content — causing the displayed text to vanish or
+                    // show raw data.
                     let history = try await client.getMessages(sessionId: session.id)
-                    self.messages = history.map { ChatDisplayMessage(from: $0) }
+                    self.messages = history
+                        .filter { $0.isUser || $0.isAssistant }
+                        .map { ChatDisplayMessage(from: $0) }
+                    await refreshSessions()
+                } else if !skipPostReload {
+                    // We have a streamed message — just refresh session counts
+                    // without replacing the chat messages.
                     await refreshSessions()
                 }
 
@@ -703,6 +750,7 @@ final class AppStore: ObservableObject {
             }
             self.streamingText = ""
             self.isStreaming = false
+            self.endBackgroundTask()
         }
         streamTask = task
         await task.value
@@ -712,16 +760,6 @@ final class AppStore: ObservableObject {
     func stopStreaming() {
         streamTask?.cancel()
         isStreaming = false
-        if !streamingText.isEmpty {
-            // Save partial response
-            messages.append(ChatDisplayMessage(
-                id: UUID().uuidString,
-                role: "assistant",
-                content: streamingText + " [interrupted]",
-                timestamp: Date()
-            ))
-            streamingText = ""
-        }
     }
 
     // MARK: - SSE Event Handler
@@ -729,53 +767,68 @@ final class AppStore: ObservableObject {
     private func handleSSEEvent(_ event: SSEEventPayload) async -> ChatDisplayMessage? {
         switch event.event {
         case "run.started", "message.started":
-            // Streaming begins
             break
 
         case "assistant.delta":
-            if let delta = event.delta {
-                streamingText += delta
+            // The gateway reuses assistant.delta for thinking/reasoning text
+            // by setting tool_name to "_thinking" or other tool names. That
+            // internal reasoning must NOT be appended to streamingText or
+            // it leaks raw JSON and agent thoughts into the chat UI.
+            if let tname = event.toolName, !tname.isEmpty {
+                break
             }
-
+            if let delta = event.delta {
+                let cleaned = Self.stripRawArtifacts(delta)
+                if !cleaned.isEmpty {
+                    streamingText += cleaned
+                }
+            }
         case "tool.progress":
-            // Server sends "delta" for reasoning.available events, "preview" for others
-            let detail = event.preview ?? event.delta ?? ""
-            if !detail.isEmpty {
+            // Suppress _thinking reasoning deltas — internal monologue, not user-facing
+            let progToolName = event.toolName ?? ""
+            if progToolName == "_thinking" || progToolName == "thinking" { break }
+            let progDetail = event.preview ?? event.delta ?? ""
+            if !progDetail.isEmpty {
                 toolEvents.append(ToolEvent(
                     id: UUID().uuidString,
                     type: .progress,
-                    toolName: event.toolName ?? "thinking",
-                    detail: detail
+                    toolName: progToolName,
+                    detail: progDetail
                 ))
             }
 
         case "tool.started":
+            let startToolName = event.toolName ?? "unknown"
+            if startToolName == "_thinking" || startToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
                 id: UUID().uuidString,
                 type: .started,
-                toolName: event.toolName ?? "unknown",
+                toolName: startToolName,
                 detail: event.preview ?? ""
             ))
 
         case "tool.completed":
+            let compToolName = event.toolName ?? "unknown"
+            if compToolName == "_thinking" || compToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
                 id: UUID().uuidString,
                 type: .completed,
-                toolName: event.toolName ?? "unknown",
+                toolName: compToolName,
                 detail: event.preview ?? ""
             ))
 
         case "tool.failed":
+            let failToolName = event.toolName ?? "unknown"
+            if failToolName == "_thinking" || failToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
                 id: UUID().uuidString,
                 type: .failed,
-                toolName: event.toolName ?? "unknown",
+                toolName: failToolName,
                 detail: event.preview ?? "Tool failed"
             ))
 
-        case "assistant.completed":
-            // Finalize the streamed text into a message
-            let finalContent = event.content ?? streamingText
+        tifacts(event.content ?? streamingText)
+
             if !finalContent.isEmpty {
                 let message = ChatDisplayMessage(
                     id: event.message_id ?? UUID().uuidString,
@@ -790,24 +843,64 @@ final class AppStore: ObservableObject {
             streamingText = ""
 
         case "run.completed":
-            // Stream is done
             streamingText = ""
-            // Refresh sessions list to update message counts
             await refreshSessions()
 
         case "error":
             if let msg = event.message {
-                self.error = AppError(message: msg)
+                let trimmed = msg.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+                    if let data = trimmed.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let errorMsg = json["message"] as? String ?? json["error"] as? String {
+                        self.error = AppError(message: errorMsg)
+                    }
+                } else if !trimmed.isEmpty {
+                    self.error = AppError(message: msg)
+                }
             }
 
         case "done":
-            // End of stream
             break
 
         default:
-            break
+            FileLogger.shared.log("AppStore: unhandled SSE event: \(event.event)")
         }
         return nil
+    }
+
+    // MARK: - Raw Artifact Stripping
+
+    /// Strip raw JSON, thinking tags, and tool-call artifacts from text that
+    /// should only contain human-readable assistant text.
+    static func stripRawArtifacts(_ text: String) -> String {
+        var cleaned = text
+
+        // Strip reasoning/thinking blocks
+        if cleaned.contains("<think") {
+            while let startTag = cleaned.range(of: "<think"),
+                  let endTag = cleaned.range(of: "</think", range: startTag.upperBound..<cleaned.endIndex) {
+                cleaned.removeSubrange(startTag.lowerBound..<endTag.upperBound)
+            }
+            cleaned = cleaned.replacingOccurrences(of: "<think", with: "")
+        }
+
+        // Strip standalone JSON objects/arrays that aren't human text
+        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+            if let data = trimmed.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Try to extract human-readable text from common JSON shapes
+                if let text = json["content"] as? String ?? json["text"] as? String ?? json["message"] as? String {
+                    cleaned = text
+                } else {
+                    // It's JSON but has no readable text field -- discard it
+                    cleaned = ""
+                }
+            }
+        }
+
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Approval
@@ -956,22 +1049,109 @@ final class AppStore: ObservableObject {
     }
 
     private var backgroundTaskId: UIBackgroundTaskIdentifier?
+    private var silentPlayer: AVAudioPlayer?
+    private var isBackgroundAudioActive = false
 
     /// Begins a short background task to keep the network connection alive
     /// during quick app switches (e.g., checking a message in another app).
     /// iOS will eventually kill the task, but this buys ~30 seconds.
+    /// Additionally, activates a silent audio loop to leverage the `audio`
+    /// background mode, which keeps the app alive indefinitely as long as
+    /// the audio session is active.
     func beginBackgroundKeepAlive() {
         endBackgroundTask()
         backgroundTaskId = UIApplication.shared.beginBackgroundTask(expirationHandler: { [weak self] in
             self?.endBackgroundTask()
         })
+
+        // Start a silent audio loop to keep the audio session active in the
+        // background. This leverages the `audio` UIBackgroundModes entry to
+        // prevent iOS from suspending the app during SSE streaming or TTS
+        // playback when the user switches to another app.
+        startSilentAudioForBackground()
+    }
+    
+    /// Starts a looping silent audio player to keep the audio session active
+    /// in the background. This leverages the `audio` UIBackgroundModes entry
+    /// to prevent iOS from suspending the app during SSE streaming.
+    private func startSilentAudioForBackground() {
+        guard !isBackgroundAudioActive else { return }
+        
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            
+            // Generate a 0.5-second silent WAV file in memory
+            let sampleRate = 44100.0
+            let numSamples = Int(sampleRate * 0.5)
+            var wavData = Data()
+            // WAV header
+            let header: [UInt8] = [
+                0x52, 0x49, 0x46, 0x46, // "RIFF"
+                0x24, 0x00, 0x00, 0x00, // chunk size (36 + data size)
+                0x57, 0x41, 0x56, 0x45, // "WAVE"
+                0x66, 0x6D, 0x74, 0x20, // "fmt "
+                0x10, 0x00, 0x00, 0x00, // subchunk size (16)
+                0x01, 0x00,             // audio format (1 = PCM)
+                0x01, 0x00,             // num channels (1)
+                0x44, 0xAC, 0x00, 0x00, // sample rate (44100)
+                0x44, 0xAC, 0x00, 0x00, // byte rate (44100)
+                0x01, 0x00,             // block align (1)
+                0x08, 0x00,             // bits per sample (8)
+                0x64, 0x61, 0x74, 0x61, // "data"
+            ]
+            wavData.append(contentsOf: header)
+            // data size
+            let dataSize = numSamples
+            let dataSizeBytes = withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Data($0) }
+            wavData.append(dataSizeBytes)
+            // Silent audio data (all zeros = silence for 8-bit PCM)
+            wavData.append(contentsOf: [UInt8](repeating: 128, count: dataSize)) // 128 = silence for unsigned 8-bit
+            
+            silentPlayer = try AVAudioPlayer(data: wavData)
+            silentPlayer?.numberOfLoops = -1 // infinite loop
+            silentPlayer?.volume = 0
+            silentPlayer?.play()
+            isBackgroundAudioActive = true
+        } catch {
+            // Non-fatal — the background task still runs without it,
+            // but iOS may suspend audio sooner.
+        }
+    }
+    
+    /// Stops the silent audio player and deactivates the background audio session.
+    private func stopSilentAudio() {
+        silentPlayer?.stop()
+        silentPlayer = nil
+        isBackgroundAudioActive = false
+        // Deactivate the session — safe to do here since we only stop silent
+        // audio when not streaming. VoiceConversationManager manages its own
+        // audio session lifecycle.
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    private func endBackgroundTask() {
+    func endBackgroundTask() {
+        // Don't stop silent audio while streaming — the background audio
+        // session is what keeps the SSE stream alive when the app is
+        // backgrounded. Only stop it when truly idle.
+        if !isStreaming {
+            stopSilentAudio()
+        }
         if let taskId = backgroundTaskId {
             UIApplication.shared.endBackgroundTask(taskId)
             backgroundTaskId = nil
         }
+    }
+    
+    /// Called when the app returns to the foreground. Ends the background task
+    /// but keeps streaming alive — the SSE stream works fine in the foreground
+    /// without the silent audio workaround.
+    func handleForegroundReturn() {
+        if !isStreaming {
+            stopSilentAudio()
+        }
+        endBackgroundTask()
     }
 }
 
@@ -997,11 +1177,31 @@ struct ChatDisplayMessage: Identifiable, Equatable {
 
     init(from msg: SessionMessage) {
         self.id = msg.idString
-        self.role = msg.role
-        self.content = msg.content
+        if msg.shouldHide {
+            self.role = "hidden"
+        } else {
+            self.role = msg.role
+        }
+        self.content = msg.content ?? ""
         self.images = []
         self.timestamp = msg.date ?? Date()
     }
+
+    /// Whether this message should be shown as a chat bubble.
+    /// Tool and system messages contain raw output (JSON, file contents,
+    /// command results) and should never appear in the chat UI.
+    var shouldDisplay: Bool {
+        isUser || isAssistant
+    }
+
+    /// Whether this message should be hidden from the chat view.
+    /// Tool, system, and hidden messages contain raw data that must
+    /// never appear as a chat bubble.
+    var isHidden: Bool {
+        role == "hidden" || role == "tool" || role == "system"
+    }
+    var isSystem: Bool { role == "system" }
+    var isTool: Bool { role == "tool" }
 }
 
 struct ToolEvent: Identifiable, Equatable {

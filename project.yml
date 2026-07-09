@@ -41,12 +41,16 @@ targets:
           # The app connects to user-configured servers over HTTP (Tailscale).
           # Use NSAllowsArbitraryLoads until we enforce HTTPS on the gateway.
           NSAllowsArbitraryLoads: true
+        UIBackgroundModes:
+          - audio
+          - fetch
+          - processing
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion
         MARKETING_VERSION: "1.8.24"
-        CURRENT_PROJECT_VERSION: 64
-        DEVELOPMENT_TEAM: ""
+        CURRENT_PROJECT_VERSION: 66
+        DEVELOPMENT_TEAM: "DF9FB764AR"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"

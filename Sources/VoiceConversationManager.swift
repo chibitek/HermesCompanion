@@ -100,7 +100,7 @@ final class VoiceConversationManager: ObservableObject {
 
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
-    private let silenceTimeout: TimeInterval = 0.8  // Faster finalization after user stops
+    private let silenceTimeout: TimeInterval = 0.6  // Faster finalization after user stops
     private var lastTranscriptionTime: Date = .distantPast
     private var lastTranscribedText: String = ""
 
@@ -109,9 +109,9 @@ final class VoiceConversationManager: ObservableObject {
     private var pendingConversationStartID: UUID?
 
     // Safety net: if thinking lasts too long, cancel and resume listening.
-    // Uses 90 seconds so slow models / long tool runs aren't prematurely killed.
+    // Reduced from 90s to 30s — 90s feels like the app died.
     private var thinkingSafetyTimer: Timer?
-    private let thinkingSafetyTimeout: TimeInterval = 90
+    private let thinkingSafetyTimeout: TimeInterval = 30  // Match ChatView timeout
 
     init() {
         delegateBridge.manager = self
@@ -187,11 +187,23 @@ final class VoiceConversationManager: ObservableObject {
 
         switch type {
         case .began:
-            stopListening()
-            stopSpeaking()
+            // If we're in a voice conversation, don't fully stop — just pause.
+            // The audio background mode keeps the session alive.
+            if isConversing {
+                stopListening()
+            } else {
+                stopListening()
+                stopSpeaking()
+            }
         case .ended:
-            // Don't auto-resume; let the user tap to continue
-            break
+            // Auto-resume if still in conversation mode
+            if isConversing {
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s for session to settle
+                    self.startListening()
+                }
+            }
         @unknown default:
             break
         }
@@ -265,6 +277,8 @@ final class VoiceConversationManager: ObservableObject {
         voiceError = nil
         onTranscriptionComplete = nil
         onLocalResponse = nil
+        // Deactivate audio session now that conversation is fully over
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     /// Start speaking the first sentence of a response while the rest is still
@@ -276,6 +290,16 @@ final class VoiceConversationManager: ObservableObject {
         isFinalizing = false
         invalidateThinkingSafetyTimer()
         voiceError = nil
+        // Stop any active listening/recording before TTS to prevent
+        // audio engine conflicts that crash the app.
+        if isListening {
+            stopListening(resetFinalizing: true)
+        }
+        // Ensure audio engine is fully stopped
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            removeInputTapIfNeeded()
+        }
         spokenResponse = text
         speakResponse(text)
     }
@@ -307,7 +331,11 @@ final class VoiceConversationManager: ObservableObject {
             return
         }
         voiceError = nil
-        stopListening()
+        // Guard against double-stop crash: only stop listening if currently active.
+        // startEarlySpeaking may have already torn down the audio engine.
+        if isListening {
+            stopListening()
+        }
         speakResponse(cleanResponse)
     }
     
@@ -440,6 +468,17 @@ final class VoiceConversationManager: ObservableObject {
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
+                
+                // Guard against callbacks after stopListening — the recognition
+                // request may be nil if we already cancelled. This prevents the
+                // crash that happens when the callback fires during the
+                // listen->think transition.
+                guard self.recognitionRequest != nil || self.isListening else {
+                    if self.isStoppingListening {
+                        self.isStoppingListening = false
+                    }
+                    return
+                }
 
                 if let error {
                     if self.isStoppingListening || self.isBenignRecognitionCancellation(error) {
@@ -568,18 +607,26 @@ final class VoiceConversationManager: ObservableObject {
             isFinalizing = false
         }
 
+        // CRITICAL: Remove the tap FIRST, before stopping the engine or
+        // finalizing the recognition request. This prevents the tap callback
+        // from firing after endAudio() and crashing.
+        removeInputTapIfNeeded()
+
         if audioEngine.isRunning {
             audioEngine.stop()
         }
-        removeInputTapIfNeeded()
 
-        recognitionRequest?.endAudio()
-        recognitionRequest = nil
+        // Cancel the recognition task BEFORE endAudio to stop callbacks.
+        // Then endAudio and nil out the request.
         isStoppingListening = recognitionTask != nil
         recognitionTask?.cancel()
         recognitionTask = nil
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
 
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if !isConversing {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func removeInputTapIfNeeded() {
@@ -595,6 +642,12 @@ final class VoiceConversationManager: ObservableObject {
     func finalizeTranscription(_ text: String) {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         FileLogger.shared.log("VoiceManager: finalizeTranscription called with '\(finalText)'")
+        
+        // Guard: if conversation ended while timer was pending, bail out
+        guard isConversing else {
+            FileLogger.shared.log("VoiceManager: finalizeTranscription skipped — not conversing")
+            return
+        }
         
         // Filter out ambient noise: don't send very short transcriptions
         // (single chars, "uh", "um", etc.) to Hermes.
@@ -627,16 +680,15 @@ final class VoiceConversationManager: ObservableObject {
         case .local:
             isThinking = true
             scheduleThinkingSafetyTimer()
-            Task {
-                let response = await localLLM.generateResponse(to: finalText)
-                await MainActor.run {
-                    isThinking = false
-                    isFinalizing = false
-                }
-                invalidateThinkingSafetyTimer()
-                if isConversing {
-                    speakResponse(response)
-                    onLocalResponse?(response)
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let response = await self.localLLM.generateResponse(to: finalText)
+                self.isThinking = false
+                self.isFinalizing = false
+                self.invalidateThinkingSafetyTimer()
+                if self.isConversing {
+                    self.speakResponse(response)
+                    self.onLocalResponse?(response)
                 }
             }
 
@@ -814,15 +866,8 @@ final class VoiceConversationManager: ObservableObject {
         utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
                             min(AVSpeechUtteranceMaximumSpeechRate, voiceSpeed))
         utterance.pitchMultiplier = voicePitch
-        utterance.preUtteranceDelay = 0.1
-        utterance.postUtteranceDelay = 0.3
-
-        // Add debug logging
-        print("Speaking text: \(text)")
-        print("Voice identifier: \(voiceIdentifier)")
-        print("Voice: \(String(describing: utterance.voice))")
-        print("Rate: \(utterance.rate)")
-        print("Pitch: \(utterance.pitchMultiplier)")
+        utterance.preUtteranceDelay = 0  // Was 0.1 — eliminate dead air before speech
+                utterance.postUtteranceDelay = 0.05  // Was 0.3 — minimal gap after speech
 
         synthesizer.speak(utterance)
 
@@ -852,10 +897,8 @@ final class VoiceConversationManager: ObservableObject {
         utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
                             min(AVSpeechUtteranceMaximumSpeechRate, mappedSpeed))
         utterance.pitchMultiplier = Float(premiumVoicePitch)
-        utterance.preUtteranceDelay = 0.1
-        utterance.postUtteranceDelay = 0.3
-
-        // Try to find a premium-quality voice if available
+        utterance.preUtteranceDelay = 0
+        utterance.postUtteranceDelay = 0
         if let voice = findPremiumQualityVoice() {
             utterance.voice = voice
         } else {
@@ -1027,7 +1070,7 @@ private final class SpeechDelegateBridge: NSObject, AVSpeechSynthesizerDelegate 
             // Resume listening after the response is spoken.
             // Short delay to let the audio session switch from playback to recording.
             if manager.isConversing {
-                try? await Task.sleep(nanoseconds: 200_000_000)  // 0.2s
+                try? await Task.sleep(nanoseconds: 100_000_000)  // 0.1s (was 0.2s)
                 manager.startListening()
             }
         }
