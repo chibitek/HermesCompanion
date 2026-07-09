@@ -293,15 +293,11 @@ struct SettingsView: View {
                         .font(.subheadline)
                         .foregroundStyle(theme.textSecondary)
                 } else {
+                    // Active model picker
                     Picker("Active Model", selection: $selectedModel) {
-                        if availableModels.isEmpty {
-                            Text("No models available")
-                                .tag("")
-                        } else {
-                            ForEach(availableModels) { model in
-                                Text(displayName(for: model))
-                                    .tag(model.id)
-                            }
+                        ForEach(availableModels) { model in
+                            Text(displayName(for: model))
+                                .tag(model.id)
                         }
                     }
                     .pickerStyle(.menu)
@@ -309,7 +305,55 @@ struct SettingsView: View {
                     .onChange(of: selectedModel) { _, newValue in
                         store.selectPreferredModel(newValue)
                     }
+
+                    // Favorites section
+                    Divider()
+                    HStack {
+                        Text("Favorites")
+                            .font(.subheadline)
+                            .foregroundStyle(theme.textSecondary)
+                        Spacer()
+                        Text("\(store.favoriteModels.count) selected")
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
+                    }
+
+                    // List models with star toggle
+                    ForEach(models(for: selectedProvider)) { model in
+                        HStack {
+                            Image(systemName: store.favoriteModels.contains(model.id) ? "star.fill" : "star")
+                                .foregroundStyle(store.favoriteModels.contains(model.id) ? .yellow : theme.textMuted)
+                                .onTapGesture {
+                                    toggleFavorite(model.id)
+                                }
+                            Text(displayName(for: model))
+                                .font(.subheadline)
+                                .foregroundStyle(theme.textPrimary)
+                            Spacer()
+                            if model.id == selectedModel {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(theme.accent)
+                                    .font(.caption)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedModel = model.id
+                            store.selectPreferredModel(model.id)
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    private func toggleFavorite(_ modelId: String) {
+        if store.favoriteModels.contains(modelId) {
+            store.favoriteModels.removeAll { $0 == modelId }
+        } else {
+            store.favoriteModels.append(modelId)
+            if store.favoriteModels.count > 10 {
+                store.favoriteModels = Array(store.favoriteModels.prefix(10))
             }
         }
     }

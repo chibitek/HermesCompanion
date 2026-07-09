@@ -606,36 +606,50 @@ struct GlassInputBar: View {
 
                     if !currentModel.isEmpty {
                         Menu {
-                            // Show favorites first
+                            // Group favorites by provider
                             let favs = favoriteModels.filter { availableModels.contains($0) || $0 == currentModel }
+                            let favProviders = Array(Set(favs.compactMap { providerOf($0) })).sorted()
+
                             if !favs.isEmpty {
-                                ForEach(favs, id: \.self) { model in
-                                    Button {
-                                        let generator = UIImpactFeedbackGenerator(style: .light)
-                                        generator.impactOccurred()
-                                        onSelectModel?(model)
-                                    } label: {
-                                        if model == currentModel {
-                                            Label(shortModelName(model), systemImage: "checkmark")
-                                        } else {
-                                            Text(shortModelName(model))
+                                ForEach(favProviders, id: \.self) { prov in
+                                    Menu(prov) {
+                                        let provFavs = favs.filter { providerOf($0) == prov }
+                                        ForEach(provFavs, id: \.self) { model in
+                                            Button {
+                                                let generator = UIImpactFeedbackGenerator(style: .light)
+                                                generator.impactOccurred()
+                                                onSelectModel?(model)
+                                            } label: {
+                                                if model == currentModel {
+                                                    Label(shortModelName(model), systemImage: "checkmark")
+                                                } else {
+                                                    Text(shortModelName(model))
+                                                }
+                                            }
                                         }
                                     }
                                 }
                                 Divider()
                             }
-                            // "All models" submenu
+
+                            // "All Models" submenu grouped by provider
+                            let allProviders = Array(Set(availableModels.compactMap { providerOf($0) })).sorted()
                             Menu("All Models") {
-                                ForEach(availableModels, id: \.self) { model in
-                                    Button {
-                                        let generator = UIImpactFeedbackGenerator(style: .light)
-                                        generator.impactOccurred()
-                                        onSelectModel?(model)
-                                    } label: {
-                                        if model == currentModel {
-                                            Label(model, systemImage: "checkmark")
-                                        } else {
-                                            Text(model)
+                                ForEach(allProviders, id: \.self) { prov in
+                                    Menu(prov) {
+                                        let provModels = availableModels.filter { providerOf($0) == prov }
+                                        ForEach(provModels, id: \.self) { model in
+                                            Button {
+                                                let generator = UIImpactFeedbackGenerator(style: .light)
+                                                generator.impactOccurred()
+                                                onSelectModel?(model)
+                                            } label: {
+                                                if model == currentModel {
+                                                    Label(shortModelName(model), systemImage: "checkmark")
+                                                } else {
+                                                    Text(shortModelName(model))
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -779,6 +793,11 @@ struct GlassInputBar: View {
             return model.split(separator: "/").last.map { String($0) } ?? model
         }
         return model
+    }
+
+    private func providerOf(_ model: String) -> String? {
+        guard let slash = model.firstIndex(of: "/"), slash > model.startIndex else { return nil }
+        return String(model[..<slash])
     }
 
     // MARK: - Mic Button (tap = voice-to-text, long-press = 2-way conversation)
