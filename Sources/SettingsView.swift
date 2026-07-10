@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var selectedModel: String = ""
     @State private var selectedThinking: String = ""
     @State private var selectedServerURL: String = ""
+    @State private var modelSearch: String = ""
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -293,10 +294,10 @@ struct SettingsView: View {
                         .font(.subheadline)
                         .foregroundStyle(theme.textSecondary)
                 } else {
-                    // Active model picker
+                    // Active model picker — full catalog (not provider-filtered)
                     Picker("Active Model", selection: $selectedModel) {
                         ForEach(availableModels) { model in
-                            Text(displayName(for: model))
+                            Text(pickerLabel(for: model))
                                 .tag(model.id)
                         }
                     }
@@ -306,40 +307,85 @@ struct SettingsView: View {
                         store.selectPreferredModel(newValue)
                     }
 
-                    // Favorites section
+                    // ---- Favorites (curated, shown in chat model pill) ----
                     Divider()
                     HStack {
                         Text("Favorites")
-                            .font(.subheadline)
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(theme.textSecondary)
                         Spacer()
-                        Text("\(store.favoriteModels.count) selected")
+                        Text("\(store.favoriteModels.count)/10")
                             .font(.caption)
                             .foregroundStyle(theme.textMuted)
                     }
 
-                    // List models with star toggle
-                    ForEach(models(for: selectedProvider)) { model in
-                        HStack {
-                            Image(systemName: store.favoriteModels.contains(model.id) ? "star.fill" : "star")
-                                .foregroundStyle(store.favoriteModels.contains(model.id) ? .yellow : theme.textMuted)
-                                .onTapGesture {
-                                    toggleFavorite(model.id)
-                                }
-                            Text(displayName(for: model))
-                                .font(.subheadline)
-                                .foregroundStyle(theme.textPrimary)
-                            Spacer()
-                            if model.id == selectedModel {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(theme.accent)
-                                    .font(.caption)
-                            }
+                    Text("Stars pin models into the chat bar picker. Tap the star, not the row name, to toggle.")
+                        .font(.caption)
+                        .foregroundStyle(theme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if favoriteModelRows.isEmpty {
+                        Text("No favorites yet. Search below and tap a star.")
+                            .font(.subheadline)
+                            .foregroundStyle(theme.textMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
+                    } else {
+                        ForEach(favoriteModelRows) { model in
+                            favoriteRow(model, starred: true)
                         }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedModel = model.id
-                            store.selectPreferredModel(model.id)
+                    }
+
+                    // ---- Browse & star any model ----
+                    Divider()
+                    HStack {
+                        Text("All Models")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(theme.textSecondary)
+                        Spacer()
+                        Text("\(filteredAllModels.count)")
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
+                    }
+
+                    HStack(spacing: theme.spacingS) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(theme.textMuted)
+                            .font(.system(size: 13, weight: .medium))
+                        TextField("Search models...", text: $modelSearch)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .foregroundStyle(theme.textPrimary)
+                        if !modelSearch.isEmpty {
+                            Button {
+                                modelSearch = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(theme.textMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(theme.textMuted.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    if filteredAllModels.isEmpty {
+                        Text(modelSearch.isEmpty
+                              ? "No models loaded."
+                              : "No models match \"\(modelSearch)\".")
+                            .font(.subheadline)
+                            .foregroundStyle(theme.textMuted)
+                            .padding(.vertical, 4)
+                    } else {
+                        // Cap the inline list so Settings stays scrollable; search narrows further.
+                        ForEach(Array(filteredAllModels.prefix(40))) { model in
+                            favoriteRow(model, starred: store.favoriteModels.contains(model.id))
+                        }
+                        if filteredAllModels.count > 40 {
+                            Text("Showing 40 of \(filteredAllModels.count). Type more to narrow.")
+                                .font(.caption)
+                                .foregroundStyle(theme.textMuted)
                         }
                     }
                 }
@@ -347,15 +393,106 @@ struct SettingsView: View {
         }
     }
 
-    private func toggleFavorite(_ modelId: String) {
-        if store.favoriteModels.contains(modelId) {
-            store.favoriteModels.removeAll { $0 == modelId }
+    /// Favorites that still resolve (plus dangling ids the gateway no longer lists).
+    private var favoriteModelRows: [ModelInfo] {
+        store.favoriteModels.map { id in
+            if let known = availableModels.first(where: { $0.id == id }) {
+                return known
+            }
+            let owner = providerFromModelID(id)
+            return ModelInfo(id: id, ownedBy: owner)
+        }
+    }
+
+    /// Full catalog, filtered by search text (id + ownedBy). Not limited by
+    /// the Provider picker -- that filter was making favorites look empty when
+    /// Hermes provider slugs (nous) don't match model owned_by (openrouter).
+    private var filteredAllModels: [ModelInfo] {
+        let q = modelSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let base: [ModelInfo]
+        if q.isEmpty {
+            base = availableModels
         } else {
-            store.favoriteModels.append(modelId)
-            if store.favoriteModels.count > 10 {
-                store.favoriteModels = Array(store.favoriteModels.prefix(10))
+            base = availableModels.filter { model in
+                model.id.lowercased().contains(q)
+                    || (model.ownedBy?.lowercased().contains(q) ?? false)
+                    || displayName(for: model).lowercased().contains(q)
             }
         }
+        // Favorites first, then the rest alphabetically by display name
+        let favSet = Set(store.favoriteModels)
+        return base.sorted { a, b in
+            let af = favSet.contains(a.id)
+            let bf = favSet.contains(b.id)
+            if af != bf { return af && !bf }
+            return displayName(for: a).localizedCaseInsensitiveCompare(displayName(for: b)) == .orderedAscending
+        }
+    }
+
+    @ViewBuilder
+    private func favoriteRow(_ model: ModelInfo, starred: Bool) -> some View {
+        HStack(spacing: theme.spacingS) {
+            // Dedicated button so star taps never fight the row select gesture.
+            Button {
+                _ = store.toggleFavorite(model.id)
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+            } label: {
+                Image(systemName: starred ? "star.fill" : "star")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(starred ? .yellow : theme.textMuted)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(starred ? "Remove from favorites" : "Add to favorites")
+
+            Button {
+                selectedModel = model.id
+                store.selectPreferredModel(model.id)
+            } label: {
+                HStack(spacing: theme.spacingS) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName(for: model))
+                            .font(.subheadline)
+                            .foregroundStyle(theme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(modelSubtitle(model))
+                            .font(.caption2)
+                            .foregroundStyle(theme.textMuted)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if model.id == selectedModel || model.id == store.preferredModel {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(theme.accent)
+                            .font(.caption.weight(.semibold))
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func modelSubtitle(_ model: ModelInfo) -> String {
+        if let owner = model.ownedBy, !owner.isEmpty {
+            return displayName(for: owner)
+        }
+        if let prefix = providerFromModelID(model.id) {
+            return displayName(for: prefix)
+        }
+        return model.id
+    }
+
+    private func pickerLabel(for model: ModelInfo) -> String {
+        let name = displayName(for: model)
+        if let owner = model.ownedBy, !owner.isEmpty {
+            return "\(name) · \(displayName(for: owner))"
+        }
+        return name
     }
 
     // MARK: - Reasoning card
