@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AVFoundation
+import UserNotifications
 
 /// Manages app state: connection config, active session, chat messages, streaming state.
 @MainActor
@@ -644,6 +645,21 @@ final class AppStore: ObservableObject {
         // tasks, which is enough for most chat responses.
         beginBackgroundKeepAlive()
 
+        // Stream watchdog: if no SSE events arrive for 90s, abort.
+        // This catches cases where iOS suspends the app and the SSE
+        // stream dies silently, leaving the user stuck on "thinking".
+        let watchdog = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 90_000_000_000) // 90s
+            guard let self = self else { return }
+            if self.isStreaming {
+                self.streamTask?.cancel()
+                self.isStreaming = false
+                self.streamingText = ""
+                self.endBackgroundTask()
+                self.error = AppError(message: "Response timed out. The server may be busy — please try again.")
+            }
+        }
+
         // Cancel any existing stream task before starting a new one
         streamTask?.cancel()
 
@@ -788,6 +804,16 @@ final class AppStore: ObservableObject {
             self.streamingText = ""
             self.isStreaming = false
             self.endBackgroundTask()
+            watchdog.cancel()
+            
+            // If the app is in the background, notify the user that the
+            // response has arrived. The silent audio + background task
+            // keeps the stream alive, but the user may have switched away.
+            // This gives them a tap-to-return notification.
+            if let assistantMessage,
+               UIApplication.shared.applicationState != .active {
+                sendBackgroundNotification(text: assistantMessage.content)
+            }
         }
         streamTask = task
         await task.value
@@ -1199,6 +1225,25 @@ final class AppStore: ObservableObject {
             stopSilentAudio()
         }
         endBackgroundTask()
+    }
+    
+    /// Send a local notification when a chat response arrives while the app
+    /// is in the background. Lets the user know their message got a reply
+    /// even if they switched to another app.
+    private func sendBackgroundNotification(text: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Hermes"
+        let preview = text.prefix(100)
+        content.body = String(preview)
+        content.sound = nil  // silent — the app's TTS handles audio
+        content.categoryIdentifier = "chat_response"
+        
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 }
 
