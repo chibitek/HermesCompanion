@@ -493,19 +493,21 @@ struct ModelInfo: Codable, Identifiable, Hashable {
     let object: String
     let created: Int?
     let ownedBy: String?
+    let provider: String?
     let root: String?
     let parent: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, object, created, root, parent
+        case id, object, created, provider, root, parent
         case ownedBy = "owned_by"
     }
 
-    init(id: String, object: String = "model", created: Int? = nil, ownedBy: String? = nil, root: String? = nil, parent: String? = nil) {
+    init(id: String, object: String = "model", created: Int? = nil, ownedBy: String? = nil, provider: String? = nil, root: String? = nil, parent: String? = nil) {
         self.id = id
         self.object = object
         self.created = created
         self.ownedBy = ownedBy
+        self.provider = provider
         self.root = root
         self.parent = parent
     }
@@ -514,6 +516,18 @@ struct ModelInfo: Codable, Identifiable, Hashable {
 struct ModelsResponse: Codable {
     let object: String
     let data: [ModelInfo]
+    let providers: [ProviderInfo]?
+}
+
+struct ProviderInfo: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let modelCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case modelCount = "model_count"
+    }
 }
 
 // MARK: - Toolsets (/v1/toolsets)

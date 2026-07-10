@@ -335,9 +335,9 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func selectPreferredModel(_ model: String) {
+    func selectPreferredModel(_ model: String, provider: String? = nil) {
         preferredModel = model
-        if let provider = providerForModel(model) {
+        if let provider = nonEmpty(provider) ?? providerForModel(model) {
             preferredProvider = provider
         }
         // Promote to favorite (most-recent first, cap at 10). Selecting always
@@ -347,8 +347,9 @@ final class AppStore: ObservableObject {
         // The gateway ignores per-request model fields (upstream issue #16216),
         // so we call a companion server on port 8643 that runs
         // `hermes config set` to change the gateway's default model+provider.
+        let selectedProvider = preferredProvider
         Task {
-            await apiClient?.switchGatewayModel(model)
+            await apiClient?.switchGatewayModel(model, provider: selectedProvider)
         }
     }
 
