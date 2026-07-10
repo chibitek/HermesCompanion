@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct HermesCompanionApp: App {
@@ -20,6 +21,9 @@ struct HermesCompanionApp: App {
                     if store.connectionConfig != nil && store.capabilities == nil {
                         await store.autoConnect()
                     }
+                    // Request notification permission so we can alert the
+                    // user when a chat response arrives while backgrounded.
+                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                                     switch newPhase {
