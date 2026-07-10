@@ -458,8 +458,11 @@ final class HermesAPIClient: Sendable {
     // MARK: - Models
 
     /// GET /v1/models — list available models and route aliases.
-    func getModels() async throws -> [ModelInfo] {
-        var req = URLRequest(url: try makeURL(path: "/v1/models"))
+    /// Pass refresh=true only for a user-triggered refresh; this asks the
+    /// gateway to bypass its provider model cache.
+    func getModels(refresh: Bool = false) async throws -> [ModelInfo] {
+        let path = refresh ? "/v1/models?refresh=1" : "/v1/models"
+        var req = URLRequest(url: try makeURL(path: path))
         req.httpMethod = "GET"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
