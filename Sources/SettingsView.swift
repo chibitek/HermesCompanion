@@ -22,6 +22,8 @@ struct SettingsView: View {
     @State private var selectedThinking: String = ""
     @State private var selectedServerURL: String = ""
     @State private var modelSearch: String = ""
+    @State private var modelRefreshMessage: String?
+    @State private var modelRefreshFailed = false
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -221,12 +223,12 @@ struct SettingsView: View {
         "nous", "openrouter", "ollama-local", "opencode", "opencode-zen", "custom"
     ]
 
-    /// Available providers = known list ∪ anything reported by the gateway
-    /// (so a new provider slug added server-side shows up automatically).
+    /// Available inference providers. Model authors from `owned_by` are not
+    /// providers (e.g. Anthropic and Google models can both route through
+    /// OpenRouter), so they must not become entries in this picker.
     private var availableProviders: [String] {
-        let fromModels = Set(availableModels.compactMap { $0.ownedBy })
         let reportedProvider = store.capabilities?.currentProvider ?? store.effectiveCurrentProvider
-        var combined = Self.knownProviders + Array(fromModels.subtracting(Self.knownProviders)).sorted()
+        var combined = Self.knownProviders
         if !reportedProvider.isEmpty && !combined.contains(reportedProvider) {
             combined.append(reportedProvider)
         }
@@ -279,7 +281,27 @@ struct SettingsView: View {
     private var modelCard: some View {
         glassCard {
             VStack(alignment: .leading, spacing: 0) {
-                cardHeader("Model", icon: "cpu")
+                HStack(spacing: theme.spacingS) {
+                    cardHeader("Model", icon: "cpu")
+                    Spacer()
+                    Button {
+                        Task { await refreshAllModels() }
+                    } label: {
+                        Label("Refresh All", systemImage: "arrow.clockwise")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLoadingModels)
+                    .accessibilityLabel("Refresh all models")
+                }
+
+                if let message = modelRefreshMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(modelRefreshFailed ? theme.danger : theme.textMuted)
+                        .padding(.top, theme.spacingS)
+                }
 
                 if isLoadingModels {
                     ProgressView()
@@ -376,14 +398,19 @@ struct SettingsView: View {
         }
     }
 
-    /// Favorites that still resolve (plus dangling ids the gateway no longer lists).
+    /// Favorites that resolve for the selected inference provider, plus
+    /// dangling ids the gateway no longer reports.
     private var favoriteModelRows: [ModelInfo] {
-        store.favoriteModels.map { id in
+        store.favoriteModels.compactMap { id in
+            let model: ModelInfo
             if let known = availableModels.first(where: { $0.id == id }) {
-                return known
+                model = known
+            } else {
+                model = ModelInfo(id: id, ownedBy: providerFromModelID(id))
             }
-            let owner = providerFromModelID(id)
-            return ModelInfo(id: id, ownedBy: owner)
+            return selectedProvider.isEmpty || modelBelongsToProvider(model, provider: selectedProvider)
+                ? model
+                : nil
         }
     }
 
@@ -392,11 +419,12 @@ struct SettingsView: View {
     /// Hermes provider slugs (nous) don't match model owned_by (openrouter).
     private var filteredAllModels: [ModelInfo] {
         let q = modelSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let providerModels = models(for: selectedProvider)
         let base: [ModelInfo]
         if q.isEmpty {
-            base = availableModels
+            base = providerModels
         } else {
-            base = availableModels.filter { model in
+            base = providerModels.filter { model in
                 model.id.lowercased().contains(q)
                     || (model.ownedBy?.lowercased().contains(q) ?? false)
                     || displayName(for: model).lowercased().contains(q)
@@ -454,55 +482,60 @@ struct SettingsView: View {
         .padding(.vertical, 4)
     }
     
-    /// Active/selected row helper (matches favoriteRow but shows checkmark instead of star)
+    /// Model row with separate selection and favorite controls so tapping the
+    /// star never changes the active model.
     private func modelRow(_ model: ModelInfo, starred: Bool, active: Bool, theme: any HermesTheme) -> some View {
-        HStack(spacing: theme.spacingM) {
-            // Model icon placeholder
-            Image(systemName: modelHasImages(model) ? "photo" : "cpu.fill")
-                .font(.title3)
-                .foregroundStyle(active ? theme.accent : (starred ? theme.accent : theme.textSecondary))
-                .frame(width: 36)
-            
-            // Title + subtitle
-            VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(for: model))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(active ? theme.accent : theme.textPrimary)
-                    .lineLimit(1)
-                Text(modelSubtitle(model))
-                    .font(.caption)
-                    .foregroundStyle(theme.textMuted)
-                    .lineLimit(1)
-            }
-            .padding(.leading, 4)
-            
-            Spacer(minLength: 0)
-            
-            // Active indicator or star
-            if active {
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(theme.accent)
-                    .frame(width: 36)
-            } else {
-                Button {
-                    _ = store.toggleFavorite(model.id)
-                    let generator = UIImpactFeedbackGenerator(style: .light)
-                    generator.impactOccurred()
-                } label: {
-                    Image(systemName: starred ? "star.fill" : "star")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(starred ? .yellow : theme.textMuted)
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
+        HStack(spacing: theme.spacingS) {
+            Button {
+                selectedModel = model.id
+                store.selectPreferredModel(model.id)
+            } label: {
+                HStack(spacing: theme.spacingM) {
+                    Image(systemName: modelHasImages(model) ? "photo" : "cpu.fill")
+                        .font(.title3)
+                        .foregroundStyle(active ? theme.accent : (starred ? theme.accent : theme.textSecondary))
+                        .frame(width: 36)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName(for: model))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(active ? theme.accent : theme.textPrimary)
+                            .lineLimit(1)
+                        Text(modelSubtitle(model))
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if active {
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(theme.accent)
+                            .frame(width: 24)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(starred ? "Remove from favorites" : "Add to favorites")
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Button {
+                _ = store.toggleFavorite(model.id)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } label: {
+                Image(systemName: starred ? "star.fill" : "star")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(starred ? .yellow : theme.textMuted)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(starred ? "Remove from favorites" : "Add to favorites")
         }
         .padding(.vertical, 4)
         .background(active ? theme.bgSurfaceAlt.opacity(0.5) : .clear)
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .padding(.horizontal, theme.spacingM)
     }
     
@@ -752,20 +785,58 @@ struct SettingsView: View {
     // MARK: - Model Loading
 
     private func loadModels(forProvider provider: String? = nil, preferExistingSelection: Bool = true) async {
-        guard let client = store.apiClient else { return }
+        await loadModels(
+            forProvider: provider,
+            preferExistingSelection: preferExistingSelection,
+            forceRefresh: false
+        )
+    }
+
+    private func refreshAllModels() async {
+        let previousCount = availableModels.count
+        modelRefreshMessage = "Refreshing all provider catalogs..."
+        modelRefreshFailed = false
+        await loadModels(
+            forProvider: selectedProvider,
+            preferExistingSelection: true,
+            forceRefresh: true
+        )
+        guard !modelRefreshFailed else { return }
+        let added = max(0, availableModels.count - previousCount)
+        modelRefreshMessage = added > 0
+            ? "Loaded \(availableModels.count) models (\(added) new)."
+            : "Model catalog is current (\(availableModels.count) models)."
+    }
+
+    private func loadModels(
+        forProvider provider: String?,
+        preferExistingSelection: Bool,
+        forceRefresh: Bool
+    ) async {
+        guard let client = store.apiClient else {
+            modelRefreshFailed = forceRefresh
+            if forceRefresh { modelRefreshMessage = "Connect to a server before refreshing." }
+            return
+        }
         let targetProvider = provider ?? selectedProvider
         isLoadingModels = true
         defer { isLoadingModels = false }
 
         do {
-            availableModels = try await client.getModels()
+            availableModels = try await client.getModels(refresh: forceRefresh)
+            store.availableModels = availableModels.map(\.id)
             addCurrentModelIfNeeded()
             selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
+            modelRefreshFailed = false
         } catch {
-            availableModels = []
-            addCurrentModelIfNeeded()
-            selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
-            // Silently fail — models list is optional
+            if forceRefresh {
+                modelRefreshFailed = true
+                modelRefreshMessage = "Refresh failed: \(error.localizedDescription)"
+            } else {
+                availableModels = []
+                addCurrentModelIfNeeded()
+                selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
+            }
         }
     }
 
@@ -818,12 +889,42 @@ struct SettingsView: View {
     private func models(for provider: String) -> [ModelInfo] {
         if provider.isEmpty { return availableModels }
         return availableModels.filter { model in
-            if let owner = model.ownedBy, owner == provider {
-                return true
-            }
-            return providerFromModelID(model.id) == provider
+            modelBelongsToProvider(model, provider: provider)
         }
     }
+
+    /// Provider is the configured inference service, not the model author.
+    /// OpenRouter IDs are normally `author/model`, while `/v1/models` may
+    /// report `owned_by` as the author. Treat every routed author ID as an
+    /// OpenRouter model so selecting OpenRouter shows the complete catalog.
+    private func modelBelongsToProvider(_ model: ModelInfo, provider: String) -> Bool {
+        let id = model.id
+        let prefix = providerFromModelID(id)
+        let owner = model.ownedBy?.lowercased()
+
+        switch provider {
+        case "openrouter":
+            if owner == "openrouter" { return true }
+            guard let prefix else { return false }
+            return !Self.nonOpenRouterModelPrefixes.contains(prefix)
+        case "nous":
+            return owner == "nous" || id.hasPrefix("nous/")
+        case "ollama-local":
+            return owner == "ollama-local" || owner == "ollama" || id.hasPrefix("ollama/")
+        case "opencode":
+            return owner == "opencode" || id.hasPrefix("opencode/")
+        case "opencode-zen":
+            return owner == "opencode-zen" || id.hasPrefix("opencode-zen/")
+        case "custom":
+            return owner == "custom" || id.hasPrefix("custom/")
+        default:
+            return owner == provider || prefix == provider
+        }
+    }
+
+    private static let nonOpenRouterModelPrefixes: Set<String> = [
+        "nous", "ollama", "ollama-local", "opencode", "opencode-zen", "custom"
+    ]
 
     private func selectCurrentModel(forProvider provider: String, preferExistingSelection: Bool) {
         let providerModels = models(for: provider)
