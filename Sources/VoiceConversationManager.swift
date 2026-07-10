@@ -414,6 +414,13 @@ final class VoiceConversationManager: ObservableObject {
         }
         guard !isThinking else { return }
         guard !isListening else { return }  // Prevent double-start
+        // Re-entry guard: if the audio engine is already running with a tap
+        // installed, don't try to start again. This prevents the crash that
+        // happens when startListening is called from multiple async paths
+        // (e.g. TTS didFinish + barge-in) before the first call completes.
+        if audioEngine.isRunning && hasInstalledInputTap {
+            return
+        }
         guard let speechRecognizer, speechRecognizer.isAvailable else {
             voiceError = "Speech recognition is unavailable."
             return
@@ -641,9 +648,10 @@ final class VoiceConversationManager: ObservableObject {
 
     private func removeInputTapIfNeeded() {
         guard hasInstalledInputTap else { return }
-        // Wrap in do-catch — removeTap can throw an ObjC exception if the
-        // engine is in a bad state. Use a safety check on engine running state.
-        if audioEngine.inputNode.inputFormat(forBus: 0).sampleRate > 0 {
+        // CRITICAL: Only remove the tap if the engine is running.
+        // removeTap on a stopped engine throws an uncatchable ObjC
+        // exception that crashes the app.
+        if audioEngine.isRunning {
             audioEngine.inputNode.removeTap(onBus: 0)
         }
         hasInstalledInputTap = false
@@ -816,21 +824,9 @@ final class VoiceConversationManager: ObservableObject {
             return 
         }
 
-        // Sync voice settings from UserDefaults
-        voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
-        voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
-        voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
-        if voiceSpeed == 0 { voiceSpeed = 0.5 }
-        if voicePitch == 0 { voicePitch = 1.0 }
-        
-        // Sync premium voice settings
-        let premiumServiceRaw = UserDefaults.standard.string(forKey: "premium_voice_service") ?? PremiumVoiceService.amazonPolly.rawValue
-        premiumVoiceService = PremiumVoiceService(rawValue: premiumServiceRaw) ?? .amazonPolly
-        premiumVoiceName = UserDefaults.standard.string(forKey: "premium_voice_name") ?? "Joanna"
-        premiumVoiceSpeed = UserDefaults.standard.double(forKey: "premium_voice_speed")
-        if premiumVoiceSpeed == 0 { premiumVoiceSpeed = 1.0 }
-        premiumVoicePitch = UserDefaults.standard.double(forKey: "premium_voice_pitch")
-        if premiumVoicePitch == 0 { premiumVoicePitch = 1.0 }
+        // Voice settings are cached in instance properties and synced
+        // via syncVoiceSettings() when the voice page appears.
+        // Avoid reading UserDefaults on every speak call (synchronous I/O).
 
         isFinalizing = false
         spokenResponse = cleanText
@@ -840,25 +836,20 @@ final class VoiceConversationManager: ObservableObject {
         // Handle different conversation modes
         switch conversationMode {
         case .local, .remote:
-            // Use system TTS for local and remote modes
-            print("Using system TTS")
             speakWithSystemTTS(cleanText)
         case .premium:
-            // Use premium cloud TTS services
-            print("Using premium TTS")
             speakWithPremiumTTS(cleanText)
         }
     }
     
     /// Speak using the system's built-in AVSpeechSynthesizer
     private func speakWithSystemTTS(_ text: String) {
-        // Configure audio session for playback + recording (for barge-in)
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            // Continue anyway -- TTS may still work
+        // Audio session is already configured as .playAndRecord from the
+        // listening phase. Skip redundant reconfiguration to reduce latency.
+        let audioSession = AVAudioSession.sharedInstance()
+        if audioSession.category != .playAndRecord {
+            try? audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         }
 
         let utterance = AVSpeechUtterance(string: text)
@@ -886,16 +877,12 @@ final class VoiceConversationManager: ObservableObject {
     
     /// Speak using premium cloud TTS services (Amazon Polly or Google Cloud TTS)
     private func speakWithPremiumTTS(_ text: String) {
-        // For now, we'll simulate premium TTS by using system TTS with enhanced settings
-        // In a real implementation, this would make API calls to the cloud services
-        
-        // Configure audio session for playback + recording (for barge-in)
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            // Continue anyway -- TTS may still work
+        // Audio session is already configured as .playAndRecord from the
+        // listening phase. Skip redundant reconfiguration to reduce latency.
+        let audioSession = AVAudioSession.sharedInstance()
+        if audioSession.category != .playAndRecord {
+            try? audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         }
 
         let utterance = AVSpeechUtterance(string: text)

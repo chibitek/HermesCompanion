@@ -11,13 +11,14 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var availableModels: [ModelInfo] = []
+    @State private var configuredProviders: [ProviderInfo] = []
     @State private var isLoadingModels = false
     @State private var showingAddServer = false
     @State private var editingServer: ConnectionConfig?
 
     // Local working copies of picker selections, so the pickers don't
     // fight the parent's @Published when the user is mid-edit.
-    @State private var selectedProvider: String = Self.knownProviders.first ?? ""
+    @State private var selectedProvider: String = ""
     @State private var selectedModel: String = ""
     @State private var selectedThinking: String = ""
     @State private var selectedServerURL: String = ""
@@ -80,6 +81,13 @@ struct SettingsView: View {
                     primePickers()
                     await loadModels()
                     primePickers()
+                }
+            }
+            .onChange(of: selectedProvider) { oldValue, newValue in
+                guard oldValue != newValue else { return }
+                store.preferredProvider = newValue
+                Task {
+                    await loadModels(forProvider: newValue, preferExistingSelection: false)
                 }
             }
             .sheet(isPresented: $showingAddServer) {
@@ -216,66 +224,68 @@ struct SettingsView: View {
         editingServer = config
     }
 
-    // MARK: - Provider card
+    // MARK: - Provider and model cards
 
-    /// Slugs we know about, in display order. Matches the macOS Hermes provider list.
-    private static let knownProviders: [String] = [
-        "nous", "openrouter", "ollama-local", "opencode", "opencode-zen", "custom"
-    ]
-
-    /// Available inference providers. Model authors from `owned_by` are not
-    /// providers (e.g. Anthropic and Google models can both route through
-    /// OpenRouter), so they must not become entries in this picker.
     private var availableProviders: [String] {
-        let reportedProvider = store.capabilities?.currentProvider ?? store.effectiveCurrentProvider
-        var combined = Self.knownProviders
-        if !reportedProvider.isEmpty && !combined.contains(reportedProvider) {
-            combined.append(reportedProvider)
+        if !configuredProviders.isEmpty {
+            return configuredProviders.map(\.id)
         }
-        if preferredOrEmpty.isEmpty { return combined }
-        // Always include the currently selected one even if not in either list
-        var withCurrent = combined
-        if !withCurrent.contains(preferredOrEmpty) {
-            withCurrent.append(preferredOrEmpty)
+        // Compatibility with older gateways that omit the top-level provider
+        // inventory. Their model rows may also omit `provider`, especially for
+        // aggregator catalogs such as OpenRouter. In that case the live
+        // capability provider is the inference service for the returned list.
+        var seen = Set<String>()
+        var providers = availableModels.compactMap(\.provider)
+        let current = store.capabilities?.currentProvider ?? store.effectiveCurrentProvider
+        if !current.isEmpty {
+            providers.insert(current, at: 0)
         }
-        return withCurrent
+        // Legacy API-server builds expose OpenRouter by appending its live
+        // catalog to `/v1/models`, but omit both the top-level provider list
+        // and each row's normalized provider. The synthetic Hermes/profile
+        // row is owned by `hermes`; every additional author-owned row exists
+        // only because OPENROUTER_API_KEY was configured server-side.
+        let hasLegacyOpenRouterCatalog = availableModels.contains { model in
+            model.provider == nil
+                && !(model.ownedBy ?? "").isEmpty
+                && model.ownedBy?.lowercased() != "hermes"
+        }
+        if providers.isEmpty && hasLegacyOpenRouterCatalog {
+            providers.append("openrouter")
+        }
+        return providers.filter { !$0.isEmpty && seen.insert($0).inserted }
     }
-
-    private var preferredOrEmpty: String { selectedProvider }
 
     private var providerCard: some View {
         glassCard {
-            VStack(alignment: .leading, spacing: theme.spacingM) {
+            VStack(alignment: .leading, spacing: 0) {
                 cardHeader("Provider", icon: "server.rack")
+                    .padding(.bottom, theme.spacingS)
 
-                Picker("Provider", selection: $selectedProvider) {
-                    ForEach(availableProviders, id: \.self) { slug in
-                        Text(displayName(for: slug))
-                            .tag(slug)
-                    }
+                NavigationLink {
+                    ProviderSelectionView(
+                        providers: availableProviders,
+                        selectedProvider: $selectedProvider,
+                        modelCount: { models(for: $0).count },
+                        displayName: displayName(for:)
+                    )
+                } label: {
+                    settingsNavigationRow(
+                        title: "Provider",
+                        subtitle: providerSummary,
+                        icon: "server.rack",
+                        value: displayName(for: selectedProvider)
+                    )
                 }
-                .pickerStyle(.menu)
-                .tint(theme.textPrimary)
-                .onChange(of: selectedProvider) { _, newValue in
-                    store.preferredProvider = newValue
-                    Task {
-                        await loadModels(forProvider: newValue, preferExistingSelection: false)
-                    }
-                }
+                .buttonStyle(.plain)
 
-                Text("Synced with macOS Hermes. The list of providers and their available models comes from the connected server.")
+                Text("Choose the inference service first. The model screen then shows every model that service reported.")
                     .font(.caption)
                     .foregroundStyle(theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, theme.spacingS)
             }
         }
-    }
-
-    // MARK: - Model card
-
-    /// Models filtered to the selected provider, or all if no provider is set.
-    private var modelsForSelectedProvider: [ModelInfo] {
-        models(for: selectedProvider)
     }
 
     private var modelCard: some View {
@@ -284,118 +294,104 @@ struct SettingsView: View {
                 HStack(spacing: theme.spacingS) {
                     cardHeader("Model", icon: "cpu")
                     Spacer()
-                    Button {
-                        Task { await refreshAllModels() }
-                    } label: {
-                        Label("Refresh All", systemImage: "arrow.clockwise")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(theme.accent)
+                    if isLoadingModels {
+                        ProgressView()
+                            .controlSize(.small)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isLoadingModels)
-                    .accessibilityLabel("Refresh all models")
                 }
+                .padding(.bottom, theme.spacingS)
 
-                if let message = modelRefreshMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(modelRefreshFailed ? theme.danger : theme.textMuted)
-                        .padding(.top, theme.spacingS)
-                }
-
-                if isLoadingModels {
-                    ProgressView()
-                        .padding(.vertical, theme.spacingM)
-                } else if availableModels.isEmpty {
-                    Text("No models available — connect to a server to load them.")
-                        .font(.subheadline)
-                        .foregroundStyle(theme.textSecondary)
-                        .padding(.vertical, theme.spacingM)
-                } else {
-                    // Search bar
-                    HStack(spacing: theme.spacingS) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(theme.textMuted)
-                            .font(.system(size: 13, weight: .medium))
-                        TextField("Search models...", text: $modelSearch)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .foregroundStyle(theme.textPrimary)
-                        if !modelSearch.isEmpty {
-                            Button {
-                                modelSearch = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(theme.textMuted)
-                            }
-                            .buttonStyle(.plain)
+                NavigationLink {
+                    ModelSelectionView(
+                        provider: selectedProvider,
+                        models: modelsForSelectedProvider,
+                        selectedModel: $selectedModel,
+                        favoriteModels: store.favoriteModels,
+                        isLoading: isLoadingModels,
+                        refreshMessage: modelRefreshMessage,
+                        refreshFailed: modelRefreshFailed,
+                        displayName: displayName(for:),
+                        subtitle: modelSubtitle,
+                        onSelect: { model in
+                            selectedModel = model.id
+                            store.selectPreferredModel(model.id, provider: selectedProvider)
+                        },
+                        onToggleFavorite: { model in
+                            _ = store.toggleFavorite(model.id)
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        },
+                        onRefresh: {
+                            await refreshAllModels()
                         }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(theme.textMuted.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .padding(.top, theme.spacingM)
-                    .padding(.horizontal, theme.spacingM)
-
-                    // Scrollable list of rows (Claude iOS style)
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            // Favorites first
-                            if !favoriteModelRows.isEmpty {
-                                // Section header
-                                HStack {
-                                    Text("Favorites")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(theme.textSecondary)
-                                    Spacer()
-                                    Text("\(store.favoriteModels.count)/10")
-                                        .font(.caption)
-                                        .foregroundStyle(theme.textMuted)
-                                }
-                                .padding(.top, theme.spacingM)
-                                .padding(.horizontal, theme.spacingM)
-
-                                ForEach(favoriteModelRows) { model in
-                                    modelRow(model, starred: true, active: store.preferredModel == model.id, theme: theme)
-                                }
-                            }
-
-                            // All models (filtered by search)
-                            HStack {
-                                Text("All Models")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(theme.textSecondary)
-                                Spacer()
-                                Text("\(filteredAllModels.count)")
-                                    .font(.caption)
-                                    .foregroundStyle(theme.textMuted)
-                            }
-                            .padding(.top, theme.spacingM)
-                            .padding(.horizontal, theme.spacingM)
-
-                                if filteredAllModels.isEmpty {
-                                    Text(modelSearch.isEmpty
-                                          ? "No models loaded."
-                                          : "No models match \(modelSearch).")
-                                        .font(.subheadline)
-                                        .foregroundStyle(theme.textMuted)
-                                        .padding(.vertical, theme.spacingM)
-                                } else {
-                                ForEach(Array(filteredAllModels.prefix(50))) { model in
-                                    modelRow(model, starred: store.favoriteModels.contains(model.id), active: store.preferredModel == model.id, theme: theme)
-                                }
-                                if filteredAllModels.count > 50 {
-                                    Text("Showing 50 of \(filteredAllModels.count). Type more to narrow.")
-                                        .font(.caption)
-                                        .foregroundStyle(theme.textMuted)
-                                        .padding(.vertical, theme.spacingM)
-                                }
-                            }
-                        }
-                    }
+                    )
+                } label: {
+                    settingsNavigationRow(
+                        title: "Active Model",
+                        subtitle: modelSummary,
+                        icon: "cpu",
+                        value: selectedModel.isEmpty ? "Choose" : displayName(for: ModelInfo(id: selectedModel, ownedBy: selectedProvider))
+                    )
                 }
+                .buttonStyle(.plain)
+
+                Text("Refresh fetches the live catalog from your connected Hermes server without discarding the last successful list.")
+                    .font(.caption)
+                    .foregroundStyle(theme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, theme.spacingS)
             }
         }
+    }
+
+    private var modelsForSelectedProvider: [ModelInfo] {
+        models(for: selectedProvider)
+    }
+
+    private var providerSummary: String {
+        let count = modelsForSelectedProvider.count
+        if isLoadingModels { return "Refreshing model catalog..." }
+        return count == 1 ? "1 model available" : "\(count) models available"
+    }
+
+    private var modelSummary: String {
+        if let message = modelRefreshMessage, !message.isEmpty { return message }
+        if selectedModel.isEmpty { return "No model selected" }
+        return selectedModel
+    }
+
+    private func settingsNavigationRow(title: String, subtitle: String, icon: String, value: String) -> some View {
+        HStack(spacing: theme.spacingM) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(theme.accent)
+                .frame(width: 34, height: 34)
+                .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.textPrimary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(theme.textMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: theme.spacingS)
+
+            Text(value)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(theme.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 120, alignment: .trailing)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(theme.textMuted)
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 6)
     }
 
     /// Favorites that resolve for the selected inference provider, plus
@@ -823,19 +819,29 @@ struct SettingsView: View {
         defer { isLoadingModels = false }
 
         do {
-            availableModels = try await client.getModels(refresh: forceRefresh)
+            let catalog = try await client.getModelCatalog(refresh: forceRefresh)
+            availableModels = catalog.data
+            configuredProviders = catalog.providers ?? []
             store.availableModels = availableModels.map(\.id)
             addCurrentModelIfNeeded()
-            selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
+            let resolvedProvider = availableProviders.contains(targetProvider)
+                ? targetProvider
+                : (availableProviders.first ?? "")
+            if selectedProvider != resolvedProvider {
+                selectedProvider = resolvedProvider
+                store.preferredProvider = resolvedProvider
+            }
+            selectCurrentModel(forProvider: resolvedProvider, preferExistingSelection: preferExistingSelection)
             modelRefreshFailed = false
         } catch {
             if forceRefresh {
                 modelRefreshFailed = true
                 modelRefreshMessage = "Refresh failed: \(error.localizedDescription)"
             } else {
-                availableModels = []
-                addCurrentModelIfNeeded()
-                selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
+                if availableModels.isEmpty {
+                    addCurrentModelIfNeeded()
+                    selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
+                }
             }
         }
     }
@@ -856,8 +862,8 @@ struct SettingsView: View {
         }
 
         // Fallback: ensure the picker always has a selection
-        if selectedProvider.isEmpty {
-            selectedProvider = Self.knownProviders.first ?? ""
+        if selectedProvider.isEmpty || (!availableProviders.isEmpty && !availableProviders.contains(selectedProvider)) {
+            selectedProvider = availableProviders.first ?? ""
         }
 
         if !store.preferredModel.isEmpty && models(for: selectedProvider).contains(where: { $0.id == store.preferredModel }) {
@@ -899,16 +905,24 @@ struct SettingsView: View {
     /// OpenRouter model so selecting OpenRouter shows the complete catalog.
     private func modelBelongsToProvider(_ model: ModelInfo, provider: String) -> Bool {
         let id = model.id
-        let prefix = providerFromModelID(id)
+        let prefix = providerFromModelID(id)?.lowercased()
         let owner = model.ownedBy?.lowercased()
+        let reportedProvider = model.provider?.lowercased()
+
+        if let reportedProvider, !reportedProvider.isEmpty {
+            return reportedProvider == provider.lowercased()
+        }
 
         switch provider {
         case "openrouter":
-            if owner == "openrouter" { return true }
-            guard let prefix else { return false }
-            return !Self.nonOpenRouterModelPrefixes.contains(prefix)
+            // Older Hermes gateways expose the full OpenRouter catalog but
+            // identify each row by model author in `owned_by` and omit the
+            // normalized `provider` field. Since capabilities says the active
+            // inference service is OpenRouter, all non-Hermes catalog rows are
+            // routed through OpenRouter regardless of author prefix.
+            return owner != "hermes"
         case "nous":
-            return owner == "nous" || id.hasPrefix("nous/")
+            return owner == "nous" || owner == "hermes" || id.hasPrefix("nous/")
         case "ollama-local":
             return owner == "ollama-local" || owner == "ollama" || id.hasPrefix("ollama/")
         case "opencode":
@@ -921,10 +935,6 @@ struct SettingsView: View {
             return owner == provider || prefix == provider
         }
     }
-
-    private static let nonOpenRouterModelPrefixes: Set<String> = [
-        "nous", "ollama", "ollama-local", "opencode", "opencode-zen", "custom"
-    ]
 
     private func selectCurrentModel(forProvider provider: String, preferExistingSelection: Bool) {
         let providerModels = models(for: provider)
@@ -986,9 +996,24 @@ struct SettingsView: View {
 
     /// Display name for a provider slug. Title-cased unless overridden.
     private func displayName(for slug: String) -> String {
+        if let reportedName = configuredProviders.first(where: { $0.id == slug })?.name,
+           !reportedName.isEmpty {
+            return reportedName
+        }
         switch slug {
         case "ollama-local": return "Ollama (local)"
         case "opencode-zen": return "OpenCode Zen"
+        case "opencode-go": return "OpenCode Go"
+        case "ollama-cloud": return "Ollama Cloud"
+        case "openai-api": return "OpenAI"
+        case "codex-oauth", "openai-codex": return "OpenAI Codex"
+        case "github-copilot", "copilot": return "GitHub Copilot"
+        case "kimi-coding": return "Kimi"
+        case "qwen-oauth": return "Qwen"
+        case "minimax-oauth": return "MiniMax OAuth"
+        case "lmstudio": return "LM Studio"
+        case "zai": return "Z.AI / GLM"
+        case "xai": return "xAI / Grok"
         case "openrouter": return "OpenRouter"
         case "nous": return "Nous"
         case "custom": return "Custom"
@@ -1008,6 +1033,277 @@ struct SettingsView: View {
             return voice.name
         }
         return "System Default"
+    }
+}
+
+// MARK: - Claude-style provider selection
+
+private struct ProviderSelectionView: View {
+    let providers: [String]
+    @Binding var selectedProvider: String
+    let modelCount: (String) -> Int
+    let displayName: (String) -> String
+
+    @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+
+    private var theme: any HermesTheme { appearance.activeTheme }
+    private var filteredProviders: [String] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return providers }
+        return providers.filter { provider in
+            provider.localizedCaseInsensitiveContains(query)
+                || displayName(provider).localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            theme.backgroundView.ignoresSafeArea()
+
+            List {
+                Section {
+                    ForEach(filteredProviders, id: \.self) { provider in
+                        Button {
+                            selectedProvider = provider
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: providerIcon(provider))
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(selectedProvider == provider ? theme.accent : theme.textSecondary)
+                                    .frame(width: 34, height: 34)
+                                    .background(theme.accent.opacity(selectedProvider == provider ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(displayName(provider))
+                                        .font(.body.weight(.medium))
+                                        .foregroundStyle(theme.textPrimary)
+                                    let count = modelCount(provider)
+                                    Text(count == 1 ? "1 model" : "\(count) models")
+                                        .font(.caption)
+                                        .foregroundStyle(theme.textMuted)
+                                }
+
+                                Spacer()
+
+                                if selectedProvider == provider {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(theme.accent)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(AnyView(theme.glassCard(cornerRadius: 0)))
+                    }
+                } header: {
+                    Text("Inference Provider")
+                        .foregroundStyle(theme.textSecondary)
+                } footer: {
+                    Text("Only providers backed by an active subscription, OAuth login, API key, or configured local endpoint are shown.")
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+        }
+        .navigationTitle("Provider")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Search providers")
+    }
+
+    private func providerIcon(_ provider: String) -> String {
+        switch provider {
+        case "ollama-local", "lmstudio": return "desktopcomputer"
+        case "ollama-cloud", "openrouter", "nous": return "cloud"
+        case "anthropic", "openai-api", "gemini", "xai": return "sparkles"
+        case "github-copilot", "copilot", "codex-oauth", "openai-codex", "qwen-oauth", "minimax-oauth": return "person.badge.key"
+        default: return "server.rack"
+        }
+    }
+}
+
+// MARK: - Claude-style model selection
+
+private struct ModelSelectionView: View {
+    let provider: String
+    let models: [ModelInfo]
+    @Binding var selectedModel: String
+    let favoriteModels: [String]
+    let isLoading: Bool
+    let refreshMessage: String?
+    let refreshFailed: Bool
+    let displayName: (ModelInfo) -> String
+    let subtitle: (ModelInfo) -> String
+    let onSelect: (ModelInfo) -> Void
+    let onToggleFavorite: (ModelInfo) -> Void
+    let onRefresh: () async -> Void
+
+    @EnvironmentObject private var appearance: AppearanceSettings
+    @State private var searchText = ""
+
+    private var theme: any HermesTheme { appearance.activeTheme }
+    private var favoriteSet: Set<String> { Set(favoriteModels) }
+    private var filteredModels: [ModelInfo] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let base = query.isEmpty ? models : models.filter { model in
+            model.id.lowercased().contains(query)
+                || displayName(model).lowercased().contains(query)
+                || subtitle(model).lowercased().contains(query)
+        }
+        return base.sorted { left, right in
+            let leftFavorite = favoriteSet.contains(left.id)
+            let rightFavorite = favoriteSet.contains(right.id)
+            if leftFavorite != rightFavorite { return leftFavorite && !rightFavorite }
+            return displayName(left).localizedCaseInsensitiveCompare(displayName(right)) == .orderedAscending
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            theme.backgroundView.ignoresSafeArea()
+
+            List {
+                if isLoading && models.isEmpty {
+                    HStack {
+                        Spacer()
+                        ProgressView("Refreshing models...")
+                            .foregroundStyle(theme.textSecondary)
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                } else if filteredModels.isEmpty {
+                    ContentUnavailableView(
+                        searchText.isEmpty ? "No Models for \(providerDisplayName)" : "No Matching Models",
+                        systemImage: "cpu",
+                        description: Text(searchText.isEmpty
+                                          ? "Tap Refresh to ask the connected Hermes server for this provider's models."
+                                          : "Try another model name.")
+                    )
+                    .foregroundStyle(theme.textSecondary)
+                    .listRowBackground(Color.clear)
+                } else {
+                    Section {
+                        ForEach(filteredModels) { model in
+                            modelRow(model)
+                                .listRowBackground(AnyView(theme.glassCard(cornerRadius: 0)))
+                        }
+                    } header: {
+                        HStack {
+                            Text(providerDisplayName)
+                            Spacer()
+                            Text("\(filteredModels.count)")
+                        }
+                        .foregroundStyle(theme.textSecondary)
+                    }
+                }
+
+                if let refreshMessage, !refreshMessage.isEmpty {
+                    Section {
+                        Text(refreshMessage)
+                            .font(.caption)
+                            .foregroundStyle(refreshFailed ? theme.danger : theme.textMuted)
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+        }
+        .navigationTitle("Models")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Search \(providerDisplayName) models")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await onRefresh() }
+                } label: {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(theme.accent)
+                    }
+                }
+                .disabled(isLoading)
+                .accessibilityLabel("Refresh models")
+            }
+        }
+    }
+
+    private func modelRow(_ model: ModelInfo) -> some View {
+        let isSelected = selectedModel == model.id
+        let isFavorite = favoriteSet.contains(model.id)
+
+        return HStack(spacing: 10) {
+            Button {
+                selectedModel = model.id
+                onSelect(model)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "cpu")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(isSelected ? theme.accent : theme.textSecondary)
+                        .frame(width: 34, height: 34)
+                        .background(theme.accent.opacity(isSelected ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(displayName(model))
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(isSelected ? theme.accent : theme.textPrimary)
+                            .lineLimit(1)
+                        Text(model.id)
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(theme.accent)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                onToggleFavorite(model)
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(isFavorite ? .yellow : theme.textMuted)
+                    .frame(width: 38, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var providerDisplayName: String {
+        switch provider {
+        case "openrouter": return "OpenRouter"
+        case "ollama-local": return "Ollama (local)"
+        case "ollama-cloud": return "Ollama Cloud"
+        case "opencode-zen": return "OpenCode Zen"
+        case "opencode-go": return "OpenCode Go"
+        case "openai-api": return "OpenAI"
+        case "codex-oauth", "openai-codex": return "OpenAI Codex"
+        case "github-copilot", "copilot": return "GitHub Copilot"
+        case "kimi-coding": return "Kimi"
+        case "qwen-oauth": return "Qwen"
+        default: return provider.capitalized
+        }
     }
 }
 

@@ -11,11 +11,10 @@ final class HermesAPIClient: Sendable {
     private let config: ConnectionConfig
 
     /// PUT /model on the model-switch helper (port 8643 on same host).
-    /// The gateway ignores the per-request model field, so we switch the
-    /// gateway's default model via a small companion server that calls
-    /// `hermes config set model.provider` and `model.default`.
-    /// This is a workaround until upstream issue #16216 is merged.
-    func switchGatewayModel(_ modelId: String) async {
+    /// The explicit provider keeps aggregator model IDs (for example
+    /// `anthropic/claude-*` routed by OpenRouter) from being misclassified by
+    /// their author prefix.
+    func switchGatewayModel(_ modelId: String, provider: String? = nil) async {
         var host = config.normalizedBaseURL
         if host.hasPrefix("http://") { host = String(host.dropFirst(7)) }
         if host.hasPrefix("https://") { host = String(host.dropFirst(8)) }
@@ -27,7 +26,11 @@ final class HermesAPIClient: Sendable {
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": modelId])
+        var payload = ["model": modelId]
+        if let provider, !provider.isEmpty {
+            payload["provider"] = provider
+        }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         req.timeoutInterval = 5
         _ = try? await session.data(for: req)
     }
@@ -460,7 +463,7 @@ final class HermesAPIClient: Sendable {
     /// GET /v1/models — list available models and route aliases.
     /// Pass refresh=true only for a user-triggered refresh; this asks the
     /// gateway to bypass its provider model cache.
-    func getModels(refresh: Bool = false) async throws -> [ModelInfo] {
+    func getModelCatalog(refresh: Bool = false) async throws -> ModelsResponse {
         let baseModelsURL = try makeURL(path: "/v1/models")
         guard var components = URLComponents(url: baseModelsURL, resolvingAgainstBaseURL: false) else {
             throw APIError.invalidURL(baseModelsURL.absoluteString)
@@ -476,8 +479,11 @@ final class HermesAPIClient: Sendable {
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await session.data(for: req)
         try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(ModelsResponse.self, from: data)
-        return result.data
+        return try JSONDecoder().decode(ModelsResponse.self, from: data)
+    }
+
+    func getModels(refresh: Bool = false) async throws -> [ModelInfo] {
+        try await getModelCatalog(refresh: refresh).data
     }
 
     // MARK: - Toolsets
