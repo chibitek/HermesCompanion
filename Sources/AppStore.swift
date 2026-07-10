@@ -340,12 +340,9 @@ final class AppStore: ObservableObject {
         if let provider = providerForModel(model) {
             preferredProvider = provider
         }
-        // Track as favorite (move to front, dedupe, cap at 5)
-        favoriteModels.removeAll { $0 == model }
-        favoriteModels.insert(model, at: 0)
-        if favoriteModels.count > 10 {
-            favoriteModels = Array(favoriteModels.prefix(10))
-        }
+        // Promote to favorite (most-recent first, cap at 10). Selecting always
+        // stars so the chat pill menu stays useful even without Settings.
+        addFavorite(model)
         // Switch the gateway's active model so the next message uses it.
         // The gateway ignores per-request model fields (upstream issue #16216),
         // so we call a companion server on port 8643 that runs
@@ -353,6 +350,33 @@ final class AppStore: ObservableObject {
         Task {
             await apiClient?.switchGatewayModel(model)
         }
+    }
+
+    /// Pin a model to the favorites list shown in the chat model pill.
+    /// Caps at 10; moves existing entries to the front.
+    func addFavorite(_ model: String) {
+        guard !model.isEmpty else { return }
+        favoriteModels.removeAll { $0 == model }
+        favoriteModels.insert(model, at: 0)
+        if favoriteModels.count > 10 {
+            favoriteModels = Array(favoriteModels.prefix(10))
+        }
+    }
+
+    /// Star/unstar a model from Settings without changing the active model.
+    @discardableResult
+    func toggleFavorite(_ model: String) -> Bool {
+        guard !model.isEmpty else { return false }
+        if favoriteModels.contains(model) {
+            favoriteModels.removeAll { $0 == model }
+            return false
+        }
+        // Cap: drop oldest before adding so the new pick wins.
+        if favoriteModels.count >= 10 {
+            favoriteModels = Array(favoriteModels.prefix(9))
+        }
+        favoriteModels.append(model)
+        return true
     }
 
     private func providerForModel(_ model: String) -> String? {
