@@ -655,16 +655,23 @@ struct GlassInputBar: View {
                                 }
                             }
                         } label: {
-                            Text(shortModelName(currentModel))
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .foregroundStyle(theme.textPrimary)
-                                .minimumScaleFactor(0.85)
-                                .frame(height: 28)
-                                .padding(.horizontal, 8)
-                                .background(modelPillBackground)
-                                .clipShape(Capsule())
+                            HStack(spacing: 4) {
+                                if let prov = providerOf(currentModel), !prov.isEmpty {
+                                    Text(prov.capitalized)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(theme.accent)
+                                }
+                                Text(shortModelName(currentModel))
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(theme.textPrimary)
+                            }
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .minimumScaleFactor(0.85)
+                            .frame(height: 28)
+                            .padding(.horizontal, 8)
+                            .background(modelPillBackground)
+                            .clipShape(Capsule())
                         }
                         .layoutPriority(1)
                         .buttonStyle(.plain)

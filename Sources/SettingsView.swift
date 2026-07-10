@@ -278,76 +278,19 @@ struct SettingsView: View {
 
     private var modelCard: some View {
         glassCard {
-            VStack(alignment: .leading, spacing: theme.spacingM) {
+            VStack(alignment: .leading, spacing: 0) {
                 cardHeader("Model", icon: "cpu")
 
                 if isLoadingModels {
-                    HStack(spacing: theme.spacingS) {
-                        ProgressView()
-                            .tint(theme.accent)
-                        Text("Loading models...")
-                            .font(.subheadline)
-                            .foregroundStyle(theme.textSecondary)
-                    }
+                    ProgressView()
+                        .padding(.vertical, theme.spacingM)
                 } else if availableModels.isEmpty {
                     Text("No models available — connect to a server to load them.")
                         .font(.subheadline)
                         .foregroundStyle(theme.textSecondary)
+                        .padding(.vertical, theme.spacingM)
                 } else {
-                    // Active model picker — full catalog (not provider-filtered)
-                    Picker("Active Model", selection: $selectedModel) {
-                        ForEach(availableModels) { model in
-                            Text(pickerLabel(for: model))
-                                .tag(model.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(theme.textPrimary)
-                    .onChange(of: selectedModel) { _, newValue in
-                        store.selectPreferredModel(newValue)
-                    }
-
-                    // ---- Favorites (curated, shown in chat model pill) ----
-                    Divider()
-                    HStack {
-                        Text("Favorites")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(theme.textSecondary)
-                        Spacer()
-                        Text("\(store.favoriteModels.count)/10")
-                            .font(.caption)
-                            .foregroundStyle(theme.textMuted)
-                    }
-
-                    Text("Stars pin models into the chat bar picker. Tap the star, not the row name, to toggle.")
-                        .font(.caption)
-                        .foregroundStyle(theme.textMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if favoriteModelRows.isEmpty {
-                        Text("No favorites yet. Search below and tap a star.")
-                            .font(.subheadline)
-                            .foregroundStyle(theme.textMuted)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 4)
-                    } else {
-                        ForEach(favoriteModelRows) { model in
-                            favoriteRow(model, starred: true)
-                        }
-                    }
-
-                    // ---- Browse & star any model ----
-                    Divider()
-                    HStack {
-                        Text("All Models")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(theme.textSecondary)
-                        Spacer()
-                        Text("\(filteredAllModels.count)")
-                            .font(.caption)
-                            .foregroundStyle(theme.textMuted)
-                    }
-
+                    // Search bar
                     HStack(spacing: theme.spacingS) {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(theme.textMuted)
@@ -369,23 +312,63 @@ struct SettingsView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(theme.textMuted.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.top, theme.spacingM)
+                    .padding(.horizontal, theme.spacingM)
 
-                    if filteredAllModels.isEmpty {
-                        Text(modelSearch.isEmpty
-                              ? "No models loaded."
-                              : "No models match \"\(modelSearch)\".")
-                            .font(.subheadline)
-                            .foregroundStyle(theme.textMuted)
-                            .padding(.vertical, 4)
-                    } else {
-                        // Cap the inline list so Settings stays scrollable; search narrows further.
-                        ForEach(Array(filteredAllModels.prefix(40))) { model in
-                            favoriteRow(model, starred: store.favoriteModels.contains(model.id))
-                        }
-                        if filteredAllModels.count > 40 {
-                            Text("Showing 40 of \(filteredAllModels.count). Type more to narrow.")
-                                .font(.caption)
-                                .foregroundStyle(theme.textMuted)
+                    // Scrollable list of rows (Claude iOS style)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            // Favorites first
+                            if !favoriteModelRows.isEmpty {
+                                // Section header
+                                HStack {
+                                    Text("Favorites")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(theme.textSecondary)
+                                    Spacer()
+                                    Text("\(store.favoriteModels.count)/10")
+                                        .font(.caption)
+                                        .foregroundStyle(theme.textMuted)
+                                }
+                                .padding(.top, theme.spacingM)
+                                .padding(.horizontal, theme.spacingM)
+
+                                ForEach(favoriteModelRows) { model in
+                                    modelRow(model, starred: true, active: store.preferredModel == model.id, theme: theme)
+                                }
+                            }
+
+                            // All models (filtered by search)
+                            HStack {
+                                Text("All Models")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(theme.textSecondary)
+                                Spacer()
+                                Text("\(filteredAllModels.count)")
+                                    .font(.caption)
+                                    .foregroundStyle(theme.textMuted)
+                            }
+                            .padding(.top, theme.spacingM)
+                            .padding(.horizontal, theme.spacingM)
+
+                                if filteredAllModels.isEmpty {
+                                    Text(modelSearch.isEmpty
+                                          ? "No models loaded."
+                                          : "No models match \(modelSearch).")
+                                        .font(.subheadline)
+                                        .foregroundStyle(theme.textMuted)
+                                        .padding(.vertical, theme.spacingM)
+                                } else {
+                                ForEach(Array(filteredAllModels.prefix(50))) { model in
+                                    modelRow(model, starred: store.favoriteModels.contains(model.id), active: store.preferredModel == model.id, theme: theme)
+                                }
+                                if filteredAllModels.count > 50 {
+                                    Text("Showing 50 of \(filteredAllModels.count). Type more to narrow.")
+                                        .font(.caption)
+                                        .foregroundStyle(theme.textMuted)
+                                        .padding(.vertical, theme.spacingM)
+                                }
+                            }
                         }
                     }
                 }
@@ -431,51 +414,103 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func favoriteRow(_ model: ModelInfo, starred: Bool) -> some View {
-        HStack(spacing: theme.spacingS) {
-            // Dedicated button so star taps never fight the row select gesture.
+        HStack(spacing: theme.spacingM) {
+            // Model icon placeholder (can be extended later)
+            Image(systemName: modelHasImages(model) ? "photo" : "cpu.fill")
+                .font(.title3)
+                .foregroundStyle(starred ? theme.accent : theme.textSecondary)
+                .frame(width: 36)
+            
+            // Title + subtitle
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName(for: model))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(1)
+                Text(modelSubtitle(model))
+                    .font(.caption)
+                    .foregroundStyle(theme.textMuted)
+                    .lineLimit(1)
+            }
+            .padding(.leading, 4)
+            
+            Spacer(minLength: 0)
+            
+            // Star on the right (dedicated button)
             Button {
                 _ = store.toggleFavorite(model.id)
                 let generator = UIImpactFeedbackGenerator(style: .light)
                 generator.impactOccurred()
             } label: {
                 Image(systemName: starred ? "star.fill" : "star")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(starred ? .yellow : theme.textMuted)
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(starred ? "Remove from favorites" : "Add to favorites")
-
-            Button {
-                selectedModel = model.id
-                store.selectPreferredModel(model.id)
-            } label: {
-                HStack(spacing: theme.spacingS) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(displayName(for: model))
-                            .font(.subheadline)
-                            .foregroundStyle(theme.textPrimary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text(modelSubtitle(model))
-                            .font(.caption2)
-                            .foregroundStyle(theme.textMuted)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    if model.id == selectedModel || model.id == store.preferredModel {
-                        Image(systemName: "checkmark")
-                            .foregroundStyle(theme.accent)
-                            .font(.caption.weight(.semibold))
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
+    
+    /// Active/selected row helper (matches favoriteRow but shows checkmark instead of star)
+    private func modelRow(_ model: ModelInfo, starred: Bool, active: Bool, theme: any HermesTheme) -> some View {
+        HStack(spacing: theme.spacingM) {
+            // Model icon placeholder
+            Image(systemName: modelHasImages(model) ? "photo" : "cpu.fill")
+                .font(.title3)
+                .foregroundStyle(active ? theme.accent : (starred ? theme.accent : theme.textSecondary))
+                .frame(width: 36)
+            
+            // Title + subtitle
+            VStack(alignment: .leading, spacing: 2) {
+                Text(displayName(for: model))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(active ? theme.accent : theme.textPrimary)
+                    .lineLimit(1)
+                Text(modelSubtitle(model))
+                    .font(.caption)
+                    .foregroundStyle(theme.textMuted)
+                    .lineLimit(1)
+            }
+            .padding(.leading, 4)
+            
+            Spacer(minLength: 0)
+            
+            // Active indicator or star
+            if active {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 36)
+            } else {
+                Button {
+                    _ = store.toggleFavorite(model.id)
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
+                } label: {
+                    Image(systemName: starred ? "star.fill" : "star")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(starred ? .yellow : theme.textMuted)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(starred ? "Remove from favorites" : "Add to favorites")
+            }
+        }
+        .padding(.vertical, 4)
+        .background(active ? theme.bgSurfaceAlt.opacity(0.5) : .clear)
+        .cornerRadius(10)
+        .padding(.horizontal, theme.spacingM)
+    }
+    
+    private func modelHasImages(_ model: ModelInfo) -> Bool {
+        // Placeholder for future icon image support
+        return false
+    }
+
 
     private func modelSubtitle(_ model: ModelInfo) -> String {
         if let owner = model.ownedBy, !owner.isEmpty {
