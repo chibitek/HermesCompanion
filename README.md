@@ -117,8 +117,9 @@ Six built-in themes in a visual grid picker. Each one transforms the entire app 
 | **Tool approvals** | Approve or deny tool executions before they run. See exactly what your agent is about to do. |
 | **Skills browser** | Search and browse all skills available on your Hermes server. 238+ skills at your fingertips. |
 | **Multiple servers** | Connect to unlimited Hermes gateways. Personal, work, team, or dedicated GPU agents — switch with one tap. Each server keeps its own sessions, models, skills, and preferences. |
-| **Auto-login** | Keychain credential storage with auto-connect on launch and background/foreground reconnection with Tailscale awareness. |
+| **Auto-login** | Keychain credential storage with auto-connect on launch, per-server active-chat restoration, and background/foreground reconnection with Tailscale awareness. |
 | **Splash screen** | Logo fade-in on launch with smooth transition to chat or login. |
+| **What's New alerts** | After an app version changes, a one-time popup explains the release highlights. |
 | **Input bar** | Claude-style model picker pill, photo/file attachments, voice-to-text mic, waveform button for Hermes Talk, and configurable enter-key-sends. |
 
 ---

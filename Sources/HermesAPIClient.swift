@@ -16,16 +16,19 @@ final class HermesAPIClient: Sendable {
     /// their author prefix.
     func switchGatewayModel(_ modelId: String, provider: String? = nil) async {
         var host = config.normalizedBaseURL
+        let usesHTTPS = host.hasPrefix("https://")
         if host.hasPrefix("http://") { host = String(host.dropFirst(7)) }
         if host.hasPrefix("https://") { host = String(host.dropFirst(8)) }
         // Strip any port suffix
         if let colon = host.firstIndex(of: ":") {
             host = String(host[..<colon])
         }
-        guard let url = URL(string: "http://\(host):8643/model") else { return }
+        let scheme = usesHTTPS ? "https" : "http"
+        guard let url = URL(string: "\(scheme)://\(host):8643/model") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
         var payload = ["model": modelId]
         if let provider, !provider.isEmpty {
             payload["provider"] = provider
@@ -363,101 +366,6 @@ final class HermesAPIClient: Sendable {
         return value
     }
 
-    // MARK: - Runs (async execution)
-
-    /// POST /v1/runs — start an async run, returns run_id immediately
-    func startRun(input: String, instructions: String? = nil, sessionId: String? = nil) async throws -> RunResponse {
-        var req = URLRequest(url: try makeURL(path: "/v1/runs"))
-        req.httpMethod = "POST"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-
-        let body = RunRequest(input: input, instructions: instructions, sessionId: sessionId)
-        req.httpBody = try JSONEncoder().encode(body)
-
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        return try JSONDecoder().decode(RunResponse.self, from: data)
-    }
-
-    /// GET /v1/runs/{run_id}/events — SSE stream of run events
-    func streamRunEvents(runId: String) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
-        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/events"))
-        req.httpMethod = "GET"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-
-        let (bytes, response) = try await session.bytes(for: req)
-        try checkHTTPStatus(response)
-
-        return AsyncThrowingStream { continuation in
-            let task = Task {
-                var eventBuffer = ""
-                var dataBuffer = ""
-
-                do {
-                    for try await line in bytes.lines {
-                        if Task.isCancelled { break }
-
-                        if line.hasPrefix("event: ") {
-                            eventBuffer = String(line.dropFirst("event: ".count))
-                        } else if line.hasPrefix("data: ") {
-                            dataBuffer = String(line.dropFirst("data: ".count))
-                        } else if line.isEmpty && !eventBuffer.isEmpty {
-                            if let data = dataBuffer.data(using: .utf8) {
-                                var payload = try? JSONDecoder().decode(SSEEventPayload.self, from: data)
-                                if payload == nil {
-                                    payload = SSEEventPayload(
-                                        event: eventBuffer,
-                                        sessionId: nil, runId: nil, message_id: nil,
-                                        delta: nil, content: nil, toolName: nil,
-                                        preview: nil, args: nil,
-                                        completed: nil, partial: nil, interrupted: nil,
-                                        usage: nil, message: dataBuffer
-                                    )
-                                } else {
-                                    payload!.event = eventBuffer
-                                }
-                                if let payload = payload {
-                                    continuation.yield(payload)
-                                }
-                            }
-                            eventBuffer = ""
-                            dataBuffer = ""
-                        }
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in
-                task.cancel()
-            }
-        }
-    }
-
-    /// POST /v1/runs/{run_id}/approval
-    func resolveApproval(runId: String, choice: String, resolveAll: Bool = false) async throws {
-        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/approval"))
-        req.httpMethod = "POST"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-
-        let body = ApprovalResponse(choice: choice, all: resolveAll)
-        req.httpBody = try JSONEncoder().encode(body)
-
-        let (_, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-    }
-
-    /// POST /v1/runs/{run_id}/stop
-    func stopRun(runId: String) async throws {
-        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/stop"))
-        req.httpMethod = "POST"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (_, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-    }
-
     // MARK: - Models
 
     /// GET /v1/models — list available models and route aliases.
@@ -548,147 +456,22 @@ final class HermesAPIClient: Sendable {
         return result.session
     }
 
-    // MARK: - Run Status (enriched)
+    // MARK: - Approval
 
-    /// GET /v1/runs/{run_id} — pollable run status with model, timestamps, last event.
-    func getRunStatus(runId: String) async throws -> RunStatusResponse {
-        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)"))
-        req.httpMethod = "GET"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        return try JSONDecoder().decode(RunStatusResponse.self, from: data)
-    }
-
-    // MARK: - Cron Jobs
-
-    /// GET /api/jobs — list all cron jobs.
-    func listCronJobs(includeDisabled: Bool = false) async throws -> [CronJob] {
-        var path = "/api/jobs"
-        if includeDisabled {
-            path += "?include_disabled=true"
-        }
-        var req = URLRequest(url: try makeURL(path: path))
-        req.httpMethod = "GET"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(CronJobListResponse.self, from: data)
-        return result.jobs
-    }
-
-    /// GET /api/jobs/{id} — get a single cron job.
-    func getCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)"))
-        req.httpMethod = "GET"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
-        return result.job
-    }
-
-    /// POST /api/jobs — create a new cron job.
-    func createCronJob(
-        name: String,
-        schedule: String,
-        prompt: String,
-        deliver: String? = nil,
-        skills: [String]? = nil,
-        repeat: Int? = nil
-    ) async throws -> CronJob {
-        var req = URLRequest(url: try makeURL(path: "/api/jobs"))
+    /// POST /v1/runs/{run_id}/approval
+    /// NOTE: pendingApproval is never set by SSE handlers, so this method
+    /// is effectively dead code. Retained because AppStore.resolveApproval
+    /// still calls it (AppStore is off-limits for this phase).
+    func resolveApproval(runId: String, choice: String, resolveAll: Bool = false) async throws {
+        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/approval"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
 
-        let body = CreateCronJobRequest(
-            name: name,
-            schedule: schedule,
-            prompt: prompt,
-            deliver: deliver,
-            skills: skills,
-            repeat: `repeat`
-        )
+        let body = ApprovalResponse(choice: choice, all: resolveAll)
         req.httpBody = try JSONEncoder().encode(body)
 
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
-        return result.job
-    }
-
-    /// PATCH /api/jobs/{id} — update a cron job. Only non-nil fields are sent.
-    func updateCronJob(
-        jobId: String,
-        name: String? = nil,
-        schedule: String? = nil,
-        prompt: String? = nil,
-        deliver: String? = nil,
-        skills: [String]? = nil,
-        repeat: Int? = nil,
-        enabled: Bool? = nil
-    ) async throws -> CronJob {
-        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)"))
-        req.httpMethod = "PATCH"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-
-        let body = UpdateCronJobRequest(
-            name: name,
-            schedule: schedule,
-            prompt: prompt,
-            deliver: deliver,
-            skills: skills,
-            repeat: `repeat`,
-            enabled: enabled
-        )
-        req.httpBody = try JSONEncoder().encode(body)
-
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
-        return result.job
-    }
-
-    /// DELETE /api/jobs/{id} — delete a cron job.
-    func deleteCronJob(jobId: String) async throws {
-        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)"))
-        req.httpMethod = "DELETE"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (_, response) = try await session.data(for: req)
         try checkHTTPStatus(response)
-    }
-
-    /// POST /api/jobs/{id}/pause — pause a cron job.
-    func pauseCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)/pause"))
-        req.httpMethod = "POST"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
-        return result.job
-    }
-
-    /// POST /api/jobs/{id}/resume — resume a paused cron job.
-    func resumeCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)/resume"))
-        req.httpMethod = "POST"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
-        return result.job
-    }
-
-    /// POST /api/jobs/{id}/run — trigger immediate execution of a cron job.
-    func runCronJob(jobId: String) async throws -> CronJob {
-        var req = URLRequest(url: try makeURL(path: "/api/jobs/\(jobId)/run"))
-        req.httpMethod = "POST"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-        let (data, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-        let result = try JSONDecoder().decode(CronJobResponse.self, from: data)
-        return result.job
     }
 
     // MARK: - Error Handling

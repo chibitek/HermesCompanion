@@ -117,6 +117,7 @@ struct VoiceConversationPage: View {
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
             voiceConversation.conversationMode = .remote
+            store?.isVoiceConversationActive = true
             startVoiceConversationIfNeeded()
 
             // Don't auto-pick a session. Use the active session from ChatView
@@ -127,6 +128,7 @@ struct VoiceConversationPage: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            store?.isVoiceConversationActive = false
             voiceConversation.stopConversation()
         }
     }
@@ -217,67 +219,11 @@ struct VoiceConversationPage: View {
         return "SAY SOMETHING"
     }
 
-    // MARK: - Transcription Cards
-
-    private var transcriptionCards: some View {
-        VStack(spacing: 8) {
-            if !voiceConversation.transcribedText.isEmpty {
-                cardView(label: "YOU", text: voiceConversation.transcribedText, color: preset.secondary)
-            }
-            if !voiceConversation.spokenResponse.isEmpty {
-                cardView(label: "HERMES", text: voiceConversation.spokenResponse, color: preset.primary)
-            }
-            if let voiceError = voiceConversation.voiceError,
-               !voiceError.isEmpty,
-               !voiceConversation.isSpeaking,
-               !voiceConversation.isThinking {
-                cardView(label: "MIC", text: voiceError, color: preset.primary)
-            }
-        }
-    }
-
-    private func cardView(label: String, text: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(color)
-            Text(text)
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(color.opacity(0.9))
-                .lineLimit(5)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(color.opacity(0.05))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(color.opacity(0.3), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-
     // MARK: - Bottom Controls
 
     private var bottomControls: some View {
-        // Controls: MUTE (toggle mic), center END (green, ends the voice session → back to Chat), LOCAL (toggle local/remote or device mode)
+        // Controls: center END (green, ends the voice session -> back to Chat)
         HStack(spacing: 26) {
-            // MUTE button
-            VStack(spacing: 7) {
-                Button {
-                    // Toggle mute functionality
-                } label: {
-                    Text("􀊱")
-                        .font(.title2)
-                        .foregroundStyle(preset.primary)
-                        .frame(width: 54, height: 54)
-                        .background(
-                            Circle()
-                                .fill(preset.background)
-                                .stroke(preset.primary.opacity(0.35), lineWidth: 1)
-                        )
-                }
-                Text("MUTE")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(preset.secondary.opacity(0.8))
-            }
-            
             // END button
             VStack(spacing: 7) {
                 Button {
@@ -301,30 +247,11 @@ struct VoiceConversationPage: View {
                     }
                     .frame(width: 82, height: 82)
                 }
+                .accessibilityLabel("End conversation")
                 Text("END")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(preset.primary)
                     .shadow(color: preset.primary.opacity(0.6), radius: 3)
-            }
-            
-            // LOCAL button
-            VStack(spacing: 7) {
-                Button {
-                    // Toggle local/remote mode
-                } label: {
-                    Text("⇄")
-                        .font(.title2)
-                        .foregroundStyle(preset.primary)
-                        .frame(width: 54, height: 54)
-                        .background(
-                            Circle()
-                                .fill(preset.background)
-                                .stroke(preset.primary.opacity(0.35), lineWidth: 1)
-                        )
-                }
-                Text("LOCAL")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(preset.secondary.opacity(0.8))
             }
         }
         .padding(.bottom, 44)
@@ -332,14 +259,14 @@ struct VoiceConversationPage: View {
 
     private func startVoiceConversationIfNeeded() {
         guard !voiceConversation.isConversing else {
-            print("VoicePage: already conversing, not restarting")
+            FileLogger.shared.log("VoicePage: already conversing, not restarting")
             return
         }
-        print("VoicePage: starting conversation, mode=\(voiceConversation.conversationMode)")
+        FileLogger.shared.log("VoicePage: starting conversation, mode=\(voiceConversation.conversationMode)")
         voiceConversation.conversationMode = .remote
         voiceConversation.startConversation(
             onTranscription: { text in
-                print("VoicePage: transcription callback fired with text: \(text)")
+                FileLogger.shared.log("VoicePage: transcription callback fired with text: \(text)")
                 // Forward to ChatView so it sends through the active Hermes
                 // session. Only fires in remote mode.
                 onVoiceTranscription?(text)

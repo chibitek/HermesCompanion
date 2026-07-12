@@ -63,6 +63,10 @@ struct RootView: View {
     @State private var splashFinished = false
     @State private var autoConnectAttempted = false
     @State private var showServerPicker = false
+    @AppStorage(ReleaseNotes.lastPresentedVersionKey) private var lastPresentedReleaseNotesVersion = ""
+    @State private var showReleaseNotes = false
+
+    private var currentVersion: String { ReleaseNotes.currentVersion }
 
     var body: some View {
         ZStack {
@@ -104,6 +108,10 @@ struct RootView: View {
             }
         }
         .onAppear {
+            showReleaseNotes = ReleaseNotes.shouldPresent(
+                currentVersion: currentVersion,
+                lastPresentedVersion: lastPresentedReleaseNotesVersion
+            )
             // Fade out the splash after 1.8 seconds
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
                 withAnimation(.easeOut(duration: 0.6)) {
@@ -133,6 +141,13 @@ struct RootView: View {
                     showServerPicker = true
                 }
             }
+        }
+        .alert("What's New in Hermes \(currentVersion)", isPresented: $showReleaseNotes) {
+            Button("Got It") {
+                lastPresentedReleaseNotesVersion = currentVersion
+            }
+        } message: {
+            Text(ReleaseNotes.message(for: currentVersion))
         }
     }
 }

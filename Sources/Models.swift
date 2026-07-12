@@ -9,6 +9,7 @@ struct FileLogger {
 
     private let queue = DispatchQueue(label: "com.chibitek.hermescompanion.filelogger", qos: .utility)
     private let logURL: URL
+    private let maxFileSize: Int64 = 512_000 // 512 KB cap
 
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -19,7 +20,12 @@ struct FileLogger {
     func log(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
-        queue.sync { [logURL] in
+        queue.sync { [logURL, maxFileSize] in
+            // Rotate if file exceeds size cap
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: logURL.path),
+               let size = attrs[.size] as? Int64, size > maxFileSize {
+                try? FileManager.default.removeItem(at: logURL)
+            }
             if let data = line.data(using: .utf8) {
                 if FileManager.default.fileExists(atPath: logURL.path) {
                     if let handle = try? FileHandle(forWritingTo: logURL) {
@@ -170,10 +176,6 @@ struct SessionListResponse: Codable {
 
 struct CreateSessionRequest: Codable {
     let title: String?
-
-    enum CodingKeys: String, CodingKey {
-        case title
-    }
 }
 
 // MARK: - Messages
@@ -453,32 +455,6 @@ struct SkillsResponse: Codable {
     let data: [Skill]
 }
 
-// MARK: - Runs (async agent execution)
-
-struct RunRequest: Codable {
-    let input: String
-    let instructions: String?
-    let sessionId: String?
-
-    enum CodingKeys: String, CodingKey {
-        case input
-        case instructions
-        case sessionId = "session_id"
-    }
-}
-
-struct RunResponse: Codable {
-    let runId: String
-    let status: String
-    let sessionId: String?
-
-    enum CodingKeys: String, CodingKey {
-        case runId = "run_id"
-        case status
-        case sessionId = "session_id"
-    }
-}
-
 // MARK: - Approval
 
 struct ApprovalResponse: Codable {
@@ -624,10 +600,6 @@ struct GetSessionResponse: Codable {
 
 struct PatchSessionRequest: Codable {
     let title: String?
-
-    enum CodingKeys: String, CodingKey {
-        case title
-    }
 }
 
 // MARK: - Session Fork
@@ -641,96 +613,4 @@ struct ForkSessionRequest: Codable {
 struct ForkSessionResponse: Codable {
     let object: String
     let session: HermesSession
-}
-
-// MARK: - Cron Jobs (/api/jobs)
-
-struct CronJob: Codable, Identifiable, Hashable {
-    let id: String
-    let name: String
-    let schedule: String
-    let prompt: String
-    let enabled: Bool
-    let deliver: String?
-    let skills: [String]?
-    let skill: String?
-    let `repeat`: Int?
-    let lastRun: Double?
-    let nextRun: Double?
-    let lastOutput: String?
-    let status: String?
-    let createdAt: Double?
-    let origin: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, name, schedule, prompt, enabled, deliver, skills, skill, status, origin
-        case `repeat` = "repeat"
-        case lastRun = "last_run"
-        case nextRun = "next_run"
-        case lastOutput = "last_output"
-        case createdAt = "created_at"
-    }
-
-    var idHash: String { id }
-}
-
-struct CronJobListResponse: Codable {
-    let jobs: [CronJob]
-}
-
-struct CronJobResponse: Codable {
-    let job: CronJob
-}
-
-struct CreateCronJobRequest: Codable {
-    let name: String
-    let schedule: String
-    let prompt: String
-    let deliver: String?
-    let skills: [String]?
-    let `repeat`: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case name, schedule, prompt, deliver, skills, `repeat`
-    }
-}
-
-struct UpdateCronJobRequest: Codable {
-    // All fields optional — only send what changes.
-    // Server whitelist: name, schedule, prompt, deliver, skills, skill, repeat, enabled
-    let name: String?
-    let schedule: String?
-    let prompt: String?
-    let deliver: String?
-    let skills: [String]?
-    let `repeat`: Int?
-    let enabled: Bool?
-}
-
-// MARK: - Run Status (enriched)
-
-/// Full run status as returned by GET /v1/runs/{id}.
-/// The server stores this as a dict with these fields:
-///   object, run_id, status, updated_at, created_at, last_event, model,
-///   session_id, and optionally error/result fields.
-struct RunStatusResponse: Codable {
-    let object: String
-    let runId: String
-    let status: String
-    let updatedAt: Double?
-    let createdAt: Double?
-    let lastEvent: String?
-    let model: String?
-    let sessionId: String?
-    let error: String?
-    let result: String?
-
-    enum CodingKeys: String, CodingKey {
-        case object, status, model, error, result
-        case runId = "run_id"
-        case updatedAt = "updated_at"
-        case createdAt = "created_at"
-        case lastEvent = "last_event"
-        case sessionId = "session_id"
-    }
 }

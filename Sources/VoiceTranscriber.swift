@@ -114,6 +114,8 @@ final class VoiceTranscriber: ObservableObject {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
+        // ponytail: guard against double installTap — ObjC exception is uncatchable
+        inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
             recognitionRequest.append(buffer)
@@ -132,8 +134,9 @@ final class VoiceTranscriber: ObservableObject {
 
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
+        // Always remove tap — it may persist even if engine stopped between install and stop
+        audioEngine.inputNode.removeTap(onBus: 0)
 
         recognitionRequest?.endAudio()
         recognitionRequest = nil

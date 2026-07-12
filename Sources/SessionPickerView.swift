@@ -1,29 +1,40 @@
 import SwiftUI
 
-/// Session picker matching the design handoff: dark base, sticky glass header,
-/// glass card rows, mono teal subtype tags, bottom glass search bar.
 struct SessionPickerView: View {
     @ObservedObject var store: AppStore
     @EnvironmentObject var appearance: AppearanceSettings
     @Environment(\.dismiss) private var dismiss
     @Environment(\.activeTheme) private var theme
 
-    @State private var isCreating = false
+    @StateObject private var projects = ProjectStore()
+    @State private var mode: HistoryMode = .chats
+    @State private var selectedProjectID: UUID?
+    @State private var isCreatingSession = false
     @State private var newSessionTitle = ""
+    @State private var isCreatingProject = false
+    @State private var newProjectName = ""
     @State private var renamingSession: HermesSession?
-    @State private var detailSession: HermesSession?
     @State private var renameText = ""
+    @State private var renamingProject: ChatProject?
+    @State private var projectRenameText = ""
+    @State private var detailSession: HermesSession?
+    @State private var movingSession: HermesSession?
     @State private var searchText = ""
     @State private var sortMode: SessionSortMode = .lastActive
     @State private var showSortOptions = false
 
     private var visibleSessions: [HermesSession] {
         var result = store.sessions
+        if mode == .projects, let selectedProjectID {
+            let ids = Set(projects.sessionIDs(in: selectedProjectID))
+            result = result.filter { ids.contains($0.id) }
+        }
         if !searchText.isEmpty {
             result = result.filter {
                 ($0.title ?? "").localizedCaseInsensitiveContains(searchText) ||
                 ($0.source ?? "").localizedCaseInsensitiveContains(searchText) ||
-                $0.id.localizedCaseInsensitiveContains(searchText)
+                $0.id.localizedCaseInsensitiveContains(searchText) ||
+                (projects.project(for: $0.id)?.name.localizedCaseInsensitiveContains(searchText) ?? false)
             }
         }
         switch sortMode {
@@ -36,221 +47,326 @@ struct SessionPickerView: View {
         }
     }
 
+    private var title: String {
+        if mode == .projects, let selectedProjectID,
+           let project = projects.projects.first(where: { $0.id == selectedProjectID }) {
+            return project.name
+        }
+        return mode == .chats ? "History" : "Projects"
+    }
+
     var body: some View {
         ZStack {
-            // Deep base background from theme (#0A0E16)
-            theme.backgroundView
-                .ignoresSafeArea()
+            theme.backgroundView.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Sticky glass header
-                SessionsHeader(
-                    onDone: { dismiss() },
-                    onNew: { isCreating = true },
-                    onSort: { showSortOptions = true }
-                )
-                .zIndex(1)
+                header
+                Divider().background(theme.cardBorder)
 
-                Divider()
-                    .background(theme.cardBorder)
-                    .zIndex(1)
-
-                if store.sessions.isEmpty {
-                    Spacer()
-                    ContentUnavailableView(
-                        "No Sessions",
-                        systemImage: "tray",
-                        description: Text("Create a new session to start chatting.")
-                    )
-                    .foregroundStyle(theme.textPrimary)
-                    Spacer()
-                } else if visibleSessions.isEmpty {
-                    Spacer()
-                    ContentUnavailableView.search(text: searchText)
-                        .foregroundStyle(theme.textPrimary)
-                    Spacer()
+                if mode == .projects && selectedProjectID == nil {
+                    projectsOverview
                 } else {
-                    // Scrollable session list
-                    ScrollView {
-                        LazyVStack(spacing: theme.spacingS) {
-                            ForEach(visibleSessions) { session in
-                                SessionRowButton(
-                                    session: session,
-                                    isActive: store.activeSession?.id == session.id,
-                                    onSelect: {
-                                        Task {
-                                            await store.selectSession(session)
-                                            dismiss()
-                                        }
-                                    },
-                                    onRename: {
-                                        renamingSession = session
-                                        renameText = session.title ?? ""
-                                    },
-                                    onDetails: {
-                                        detailSession = session
-                                    },
-                                    onFork: {
-                                        Task {
-                                            await store.forkSession(session)
-                                            dismiss()
-                                        }
-                                    },
-                                    onDelete: {
-                                        Task { await store.deleteSession(session) }
-                                    }
-                                )
-                            }
-                        }
-                        .padding(.horizontal, theme.spacingM)
-                        .padding(.top, theme.spacingS)
-                        .padding(.bottom, theme.spacingXL + 60) // space for floating search bar
-                    }
-                    .refreshable {
-                        await store.refreshSessions()
-                    }
+                    chatsView
                 }
-
-            Spacer(minLength: 0)
-        }
-
-            // Bottom glass search bar
-            VStack {
-                Spacer()
-                HStack(spacing: theme.spacingS) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(theme.textMuted)
-
-                    TextField("Search sessions", text: $searchText)
-                        .font(theme.uiFont)
-                        .foregroundStyle(theme.textPrimary)
-                }
-                .padding(.horizontal, theme.spacingM)
-                .padding(.vertical, theme.spacingS + 2)
-                .background(
-                    AnyView(theme.glassCard(cornerRadius: theme.radiusS))
-                )
-                .padding(.horizontal, theme.spacingM)
-                .padding(.bottom, theme.spacingM)
             }
-            .ignoresSafeArea(.keyboard, edges: .bottom)
+
+            if !(mode == .projects && selectedProjectID == nil) {
+                searchBar
+            }
         }
-        .alert("New Session", isPresented: $isCreating) {
+        .alert("New Chat", isPresented: $isCreatingSession) {
             TextField("Title (optional)", text: $newSessionTitle)
             Button("Create") {
                 Task {
                     await store.createSession(title: newSessionTitle.isEmpty ? nil : newSessionTitle)
+                    if let sessionID = store.activeSession?.id, mode == .projects {
+                        projects.assign(sessionID: sessionID, to: selectedProjectID)
+                    }
                     newSessionTitle = ""
                     dismiss()
                 }
             }
-            Button("Cancel", role: .cancel) {
-                newSessionTitle = ""
-            }
+            Button("Cancel", role: .cancel) { newSessionTitle = "" }
         }
-        .alert("Rename Session", isPresented: Binding(
+        .alert("New Project", isPresented: $isCreatingProject) {
+            TextField("Project Name", text: $newProjectName)
+            Button("Create") {
+                let project = projects.createProject(name: newProjectName)
+                newProjectName = ""
+                selectedProjectID = project.id
+            }
+            Button("Cancel", role: .cancel) { newProjectName = "" }
+        }
+        .alert("Rename Chat", isPresented: Binding(
             get: { renamingSession != nil },
             set: { if !$0 { renamingSession = nil } }
         )) {
-            TextField("Session Title", text: $renameText)
+            TextField("Chat Title", text: $renameText)
             Button("Rename") {
                 if let session = renamingSession, !renameText.isEmpty {
                     Task { await store.renameSession(session, newTitle: renameText) }
                 }
                 renamingSession = nil
             }
-            Button("Cancel", role: .cancel) {
-                renamingSession = nil
+            Button("Cancel", role: .cancel) { renamingSession = nil }
+        }
+        .alert("Rename Project", isPresented: Binding(
+            get: { renamingProject != nil },
+            set: { if !$0 { renamingProject = nil } }
+        )) {
+            TextField("Project Name", text: $projectRenameText)
+            Button("Rename") {
+                if let project = renamingProject {
+                    projects.renameProject(project.id, name: projectRenameText)
+                }
+                renamingProject = nil
             }
+            Button("Cancel", role: .cancel) { renamingProject = nil }
         }
         .sheet(item: $detailSession) { session in
             SessionDetailView(store: store, session: session)
         }
-        .confirmationDialog("Sort Sessions", isPresented: $showSortOptions, titleVisibility: .visible) {
-            ForEach(SessionSortMode.allCases) { mode in
-                Button {
-                    sortMode = mode
-                } label: {
-                    Label(mode.label, systemImage: mode.icon)
+        .sheet(item: $movingSession) { session in
+            ProjectAssignmentSheet(projects: projects, session: session)
+                .withActiveTheme(appearance)
+        }
+        .confirmationDialog("Sort Chats", isPresented: $showSortOptions, titleVisibility: .visible) {
+            ForEach(SessionSortMode.allCases) { sortMode in
+                Button { self.sortMode = sortMode } label: {
+                    Label(sortMode.label, systemImage: sortMode.icon)
                 }
             }
             Button("Cancel", role: .cancel) { }
         }
     }
-}
 
-// MARK: - Sticky Glass Header
+    private var header: some View {
+        VStack(spacing: theme.spacingS) {
+            HStack {
+                Button {
+                    if selectedProjectID != nil {
+                        selectedProjectID = nil
+                    } else {
+                        dismiss()
+                    }
+                } label: {
+                    Image(systemName: selectedProjectID == nil ? "xmark" : "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
+                        .frame(width: 38, height: 34)
+                        .background(AnyView(theme.glassCard(cornerRadius: theme.controlRadius)))
+                }
+                .buttonStyle(.plain)
 
-private struct SessionsHeader: View {
-    @EnvironmentObject var appearance: AppearanceSettings
-    @Environment(\.activeTheme) private var theme
+                Spacer()
 
-    let onDone: () -> Void
-    let onNew: () -> Void
-    let onSort: () -> Void
+                Text(title)
+                    .font(theme.uiFont.weight(.bold))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(1)
 
-    var body: some View {
-        HStack(spacing: theme.spacingS) {
-            Button(action: onDone) {
-                Text("Done")
-                    .font(theme.uiFont.weight(.semibold))
-                    .foregroundStyle(theme.accent)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            Text("Sessions")
-                .font(theme.uiFont.weight(.bold))
-                .foregroundStyle(theme.textPrimary)
-
-            Spacer()
+                Spacer()
 
                 HStack(spacing: theme.spacingXS) {
-                Button(action: onNew) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(theme.accent)
-                        .frame(width: 38, height: 32)
-                        .background(
-                            AnyView(theme.glassCard(cornerRadius: theme.controlRadius))
-                        )
-                }
-                .buttonStyle(.plain)
+                    Button {
+                        if mode == .projects && selectedProjectID == nil {
+                            isCreatingProject = true
+                        } else {
+                            isCreatingSession = true
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(theme.accent)
+                            .frame(width: 38, height: 34)
+                            .background(AnyView(theme.glassCard(cornerRadius: theme.controlRadius)))
+                    }
+                    .buttonStyle(.plain)
 
-                Button(action: onSort) {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(theme.accent)
-                        .frame(width: 38, height: 32)
-                        .background(
-                            AnyView(theme.glassCard(cornerRadius: theme.controlRadius))
-                        )
+                    if !(mode == .projects && selectedProjectID == nil) {
+                        Button { showSortOptions = true } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                                .frame(width: 38, height: 34)
+                                .background(AnyView(theme.glassCard(cornerRadius: theme.controlRadius)))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
+            }
+
+            if selectedProjectID == nil {
+                Picker("History View", selection: $mode) {
+                    ForEach(HistoryMode.allCases) { mode in
+                        Label(mode.label, systemImage: mode.icon).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .tint(theme.accent)
             }
         }
         .padding(.horizontal, theme.spacingM)
         .padding(.vertical, theme.spacingS)
-        .background(
-            AnyView(
-                theme.glassCard(cornerRadius: 0)
-                    .opacity(0.9)
+        .background(AnyView(theme.glassCard(cornerRadius: 0).opacity(0.94)))
+    }
+
+    @ViewBuilder
+    private var projectsOverview: some View {
+        if projects.projects.isEmpty {
+            Spacer()
+            ContentUnavailableView(
+                "No Projects",
+                systemImage: "folder.badge.plus",
+                description: Text("Create a project to organize related chats.")
             )
-        )
+            .foregroundStyle(theme.textPrimary)
+            Button("Create Project") { isCreatingProject = true }
+                .buttonStyle(.borderedProminent)
+                .tint(theme.accent)
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVStack(spacing: theme.spacingS) {
+                    ForEach(projects.projects) { project in
+                        Button { selectedProjectID = project.id } label: {
+                            projectRow(project)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button {
+                                renamingProject = project
+                                projectRenameText = project.name
+                            } label: {
+                                Label("Rename Project", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                projects.deleteProject(project.id)
+                            } label: {
+                                Label("Delete Project", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                .padding(theme.spacingM)
+            }
+        }
+    }
+
+    private func projectRow(_ project: ChatProject) -> some View {
+        HStack(spacing: theme.spacingM) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(theme.accent.opacity(0.14))
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(theme.accent)
+            }
+            .frame(width: 48, height: 48)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(project.name)
+                    .font(theme.uiFont.weight(.semibold))
+                    .foregroundStyle(theme.textPrimary)
+                let count = projects.sessionCount(in: project.id)
+                Text(count == 1 ? "1 chat" : "\(count) chats")
+                    .font(.caption)
+                    .foregroundStyle(theme.textSecondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(theme.textMuted)
+        }
+        .padding(theme.spacingM)
+        .background(AnyView(theme.glassCard(cornerRadius: theme.radiusM)))
+    }
+
+    @ViewBuilder
+    private var chatsView: some View {
+        if visibleSessions.isEmpty {
+            Spacer()
+            ContentUnavailableView(
+                searchText.isEmpty ? "No Chats" : "No Results",
+                systemImage: searchText.isEmpty ? "bubble.left.and.bubble.right" : "magnifyingglass",
+                description: Text(mode == .projects ? "Move chats here with a long press in History." : "Create a new chat to get started.")
+            )
+            .foregroundStyle(theme.textPrimary)
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVStack(spacing: theme.spacingS) {
+                    ForEach(visibleSessions) { session in
+                        SessionRowButton(
+                            session: session,
+                            isActive: store.activeSession?.id == session.id,
+                            projectName: projects.project(for: session.id)?.name,
+                            onSelect: {
+                                Task {
+                                    await store.selectSession(session)
+                                    dismiss()
+                                }
+                            },
+                            onMove: { movingSession = session },
+                            onRename: {
+                                renamingSession = session
+                                renameText = session.title ?? ""
+                            },
+                            onDetails: { detailSession = session },
+                            onFork: {
+                                Task {
+                                    await store.forkSession(session)
+                                    dismiss()
+                                }
+                            },
+                            onDelete: {
+                                projects.assign(sessionID: session.id, to: nil)
+                                Task { await store.deleteSession(session) }
+                            }
+                        )
+                    }
+                }
+                .padding(.horizontal, theme.spacingM)
+                .padding(.top, theme.spacingS)
+                .padding(.bottom, theme.spacingXL + 60)
+            }
+            .refreshable { await store.refreshSessions() }
+        }
+    }
+
+    private var searchBar: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: theme.spacingS) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(theme.textMuted)
+                TextField("Search chats and projects", text: $searchText)
+                    .font(theme.uiFont)
+                    .foregroundStyle(theme.textPrimary)
+            }
+            .padding(.horizontal, theme.spacingM)
+            .padding(.vertical, theme.spacingS + 2)
+            .background(AnyView(theme.glassCard(cornerRadius: theme.radiusS)))
+            .padding(.horizontal, theme.spacingM)
+            .padding(.bottom, theme.spacingM)
+        }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
 
-// MARK: - Session Sort Mode
+private enum HistoryMode: String, CaseIterable, Identifiable {
+    case chats
+    case projects
+    var id: String { rawValue }
+    var label: String { self == .chats ? "Chats" : "Projects" }
+    var icon: String { self == .chats ? "bubble.left.and.bubble.right" : "folder" }
+}
 
 enum SessionSortMode: String, CaseIterable, Identifiable {
     case lastActive
     case title
     case messageCount
-
     var id: String { rawValue }
-
     var label: String {
         switch self {
         case .lastActive: return "Last Active"
@@ -258,7 +374,6 @@ enum SessionSortMode: String, CaseIterable, Identifiable {
         case .messageCount: return "Message Count"
         }
     }
-
     var icon: String {
         switch self {
         case .lastActive: return "clock"
@@ -268,12 +383,12 @@ enum SessionSortMode: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Session Row Button
-
 private struct SessionRowButton: View {
     let session: HermesSession
     let isActive: Bool
+    let projectName: String?
     let onSelect: () -> Void
+    let onMove: () -> Void
     let onRename: () -> Void
     let onDetails: () -> Void
     let onFork: () -> Void
@@ -281,46 +396,47 @@ private struct SessionRowButton: View {
 
     var body: some View {
         Button(action: onSelect) {
-            SessionRow(session: session, isActive: isActive)
+            SessionRow(session: session, isActive: isActive, projectName: projectName)
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button(action: onRename) {
-                Label("Rename", systemImage: "pencil")
+            Button(action: onMove) {
+                Label(projectName == nil ? "Move to Project" : "Change Project", systemImage: "folder")
             }
-            Button(action: onDetails) {
-                Label("Details", systemImage: "info.circle")
-            }
-            Button(action: onFork) {
-                Label("Fork", systemImage: "arrow.triangle.branch")
-            }
-            Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
-            }
+            Button(action: onRename) { Label("Rename", systemImage: "pencil") }
+            Button(action: onDetails) { Label("Details", systemImage: "info.circle") }
+            Button(action: onFork) { Label("Fork", systemImage: "arrow.triangle.branch") }
+            Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
         }
     }
 }
 
-// MARK: - Session Row
-
 struct SessionRow: View {
-    @EnvironmentObject var appearance: AppearanceSettings
     @Environment(\.activeTheme) private var theme
-
     let session: HermesSession
     let isActive: Bool
+    var projectName: String? = nil
 
     var body: some View {
-        HStack(alignment: .center, spacing: theme.spacingS) {
+        HStack(spacing: theme.spacingS) {
             VStack(alignment: .leading, spacing: theme.spacingXS) {
                 Text(session.title ?? "Untitled")
                     .font(theme.uiFont.weight(.semibold))
                     .foregroundStyle(theme.textPrimary)
                     .lineLimit(2)
 
-                Text(subtypeLabel)
-                    .font(.system(.caption, design: .monospaced, weight: .medium))
-                    .foregroundStyle(theme.accent)
+                HStack(spacing: 6) {
+                    if let projectName {
+                        Label(projectName, systemImage: "folder.fill")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(theme.accent)
+                            .lineLimit(1)
+                    } else {
+                        Text(session.source?.lowercased() ?? "api_server")
+                            .font(.system(.caption, design: .monospaced, weight: .medium))
+                            .foregroundStyle(theme.accent)
+                    }
+                }
 
                 Text(metadata)
                     .font(.caption)
@@ -333,7 +449,7 @@ struct SessionRow: View {
             if isActive {
                 Image(systemName: "checkmark")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color(red: 0.012, green: 0.137, blue: 0.118)) // #03231e on teal
+                    .foregroundStyle(Color(red: 0.012, green: 0.137, blue: 0.118))
                     .frame(width: 22, height: 22)
                     .background(theme.accent)
                     .clipShape(Circle())
@@ -342,44 +458,86 @@ struct SessionRow: View {
         .padding(.horizontal, theme.spacingM)
         .padding(.vertical, theme.spacingS + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            AnyView(theme.glassCard(cornerRadius: theme.radiusM))
-                .overlay(
-                    AnyView(
-                        RoundedRectangle(cornerRadius: theme.radiusM, style: .continuous)
-                            .stroke(isActive ? theme.accent.opacity(0.35) : theme.cardBorder, lineWidth: isActive ? 1.5 : theme.cardBorderWidth)
-                    )
-                )
+        .background(AnyView(theme.glassCard(cornerRadius: theme.radiusM)))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.radiusM, style: .continuous)
+                .stroke(isActive ? theme.accent.opacity(0.35) : theme.cardBorder, lineWidth: isActive ? 1.5 : theme.cardBorderWidth)
         )
         .contentShape(Rectangle())
-        }
-
-        /// Mono teal subtype tag shown under the title.
-        private var subtypeLabel: String {
-        session.source?.lowercased() ?? "api_server"
     }
 
-    /// Metadata line: "{messageCount} messages · {duration}".
     private var metadata: String {
         let count = session.messageCount ?? 0
         let countText = count == 1 ? "1 message" : "\(count) messages"
-        return "\(countText) · \(durationText)"
-    }
-
-    /// Human-readable duration between session start and last activity.
-    private var durationText: String {
         let end = session.lastActive ?? session.startedAt ?? Date().timeIntervalSince1970
         let start = session.startedAt ?? end
-        let duration = max(0, end - start)
-        return formatDuration(duration)
+        return "\(countText) · \(formatDuration(max(0, end - start)))"
     }
 }
 
-// MARK: - Session Detail
+private struct ProjectAssignmentSheet: View {
+    @ObservedObject var projects: ProjectStore
+    let session: HermesSession
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.activeTheme) private var theme
+    @State private var newProjectName = ""
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                theme.backgroundView.ignoresSafeArea()
+                List {
+                    Section {
+                        Button {
+                            projects.assign(sessionID: session.id, to: nil)
+                            dismiss()
+                        } label: {
+                            Label("No Project", systemImage: projects.project(for: session.id) == nil ? "checkmark.circle.fill" : "circle")
+                        }
+
+                        ForEach(projects.projects) { project in
+                            Button {
+                                projects.assign(sessionID: session.id, to: project.id)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Label(project.name, systemImage: "folder.fill")
+                                    Spacer()
+                                    if projects.project(for: session.id)?.id == project.id {
+                                        Image(systemName: "checkmark").foregroundStyle(theme.accent)
+                                    }
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Move \"\(session.title ?? "Untitled")\"")
+                    }
+
+                    Section("Create Project") {
+                        TextField("Project Name", text: $newProjectName)
+                        Button("Create and Move") {
+                            let project = projects.createProject(name: newProjectName)
+                            projects.assign(sessionID: session.id, to: project.id)
+                            dismiss()
+                        }
+                        .disabled(newProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("Move to Project")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
 
 struct SessionDetailView: View {
     @ObservedObject var store: AppStore
-    @EnvironmentObject var appearance: AppearanceSettings
     @Environment(\.activeTheme) private var theme
     let session: HermesSession
     @Environment(\.dismiss) private var dismiss
@@ -390,90 +548,47 @@ struct SessionDetailView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                theme.backgroundView
-                    .ignoresSafeArea()
-
+                theme.backgroundView.ignoresSafeArea()
                 List {
                     if isLoading {
-                        HStack {
-                            ProgressView()
-                            Text("Loading session...")
-                                .foregroundStyle(theme.textSecondary)
-                        }
+                        HStack { ProgressView(); Text("Loading chat...") }
                     } else if let detail {
-                        Section("Session") {
+                        Section("Chat") {
                             row("Title", detail.title ?? "Untitled")
                             row("ID", detail.id)
                             if let source = detail.source { row("Source", source) }
                             if let model = detail.model { row("Model", model) }
-                            if let parent = detail.parentSessionId { row("Parent", parent) }
                         }
                         Section("Activity") {
                             if let started = detail.date { row("Started", started.formatted(date: .abbreviated, time: .shortened)) }
                             if let active = detail.lastActiveDate { row("Last Active", active.formatted(date: .abbreviated, time: .shortened)) }
                             if let count = detail.messageCount { row("Messages", "\(count)") }
                             if let count = detail.toolCallCount { row("Tool Calls", "\(count)") }
-                            if let count = detail.apiCallCount { row("API Calls", "\(count)") }
                         }
                         Section("Tokens") {
                             if let count = detail.inputTokens { row("Input", count.formatted()) }
                             if let count = detail.outputTokens { row("Output", count.formatted()) }
                             if let count = detail.reasoningTokens { row("Reasoning", count.formatted()) }
-                            if let count = detail.cacheReadTokens { row("Cache Read", count.formatted()) }
-                            if let count = detail.cacheWriteTokens { row("Cache Write", count.formatted()) }
-                        }
-                        Section("Cost") {
-                            if let cost = detail.estimatedCostUsd { row("Estimated", cost.formatted(.currency(code: "USD"))) }
-                            if let cost = detail.actualCostUsd { row("Actual", cost.formatted(.currency(code: "USD"))) }
                         }
                         if let preview = detail.preview, !preview.isEmpty {
-                            Section("Preview") {
-                                Text(preview)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                        Section {
-                            Button {
-                                Task {
-                                    await store.forkSession(session)
-                                    dismiss()
-                                }
-                            } label: {
-                                Label("Fork Session", systemImage: "arrow.triangle.branch")
-                            }
+                            Section("Preview") { Text(preview).textSelection(.enabled) }
                         }
                     } else {
-                        ContentUnavailableView(
-                            "Session Unavailable",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text(errorMessage ?? "Details could not be loaded.")
-                        )
+                        ContentUnavailableView("Chat Unavailable", systemImage: "exclamationmark.triangle", description: Text(errorMessage ?? "Details could not be loaded."))
                     }
                 }
                 .scrollContentBackground(.hidden)
             }
-            .navigationTitle("Session Details")
+            .navigationTitle("Chat Details")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(theme.accent)
-                }
-            }
-            .task {
-                await load()
-            }
-            .refreshable {
-                await load()
-            }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            .task { await load() }
+            .refreshable { await load() }
         }
     }
 
     private func load() async {
-        guard let client = store.apiClient else {
-            errorMessage = "Not connected"
-            return
-        }
+        guard let client = store.apiClient else { errorMessage = "Not connected"; return }
         isLoading = true
         defer { isLoading = false }
         do {
@@ -486,47 +601,19 @@ struct SessionDetailView: View {
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label)
-                .foregroundStyle(theme.textSecondary)
+            Text(label).foregroundStyle(theme.textSecondary)
             Spacer()
-            Text(value)
-                .multilineTextAlignment(.trailing)
-                .textSelection(.enabled)
-                .foregroundStyle(theme.textPrimary)
+            Text(value).multilineTextAlignment(.trailing).textSelection(.enabled).foregroundStyle(theme.textPrimary)
         }
     }
 }
 
-// MARK: - Helpers
-
-private func formatDuration(_ interval: TimeInterval) -> String {
-    let totalSeconds = Int(interval)
-    let seconds = totalSeconds % 60
-    let minutes = (totalSeconds / 60) % 60
-    let hours = totalSeconds / 3600
-    let days = totalSeconds / 86400
-
-    if days > 0 {
-        let remainingHours = (totalSeconds % 86400) / 3600
-        if remainingHours > 0 {
-            return "\(days) day\(days == 1 ? "" : "s"), \(remainingHours) hr"
-        }
-        return "\(days) day\(days == 1 ? "" : "s")"
-    } else if hours > 0 {
-        return "\(hours) hr, \(minutes) min"
-    } else if minutes > 0 {
-        if seconds > 0 {
-            return "\(minutes) min, \(seconds) sec"
-        }
-        return "\(minutes) min"
-    } else {
-        return "\(seconds) sec"
-    }
-}
-
-private extension HermesSession {
-    var lastActiveDate: Date? {
-        guard let lastActive else { return nil }
-        return Date(timeIntervalSince1970: lastActive)
-    }
+private func formatDuration(_ seconds: TimeInterval) -> String {
+    let total = Int(seconds)
+    if total < 60 { return "\(total)s" }
+    let minutes = total / 60
+    if minutes < 60 { return "\(minutes)m" }
+    let hours = minutes / 60
+    if hours < 24 { return "\(hours)h \(minutes % 60)m" }
+    return "\(hours / 24)d \(hours % 24)h"
 }

@@ -7,37 +7,86 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01892F1A0E72775EC3C06A62 /* AttachmentData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B41AB784B26388253CB25A /* AttachmentData.swift */; };
+		03CBDC20873F48BEB4EBFE38 /* GlassComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4712C7DBDC790F10EB108C21 /* GlassComponents.swift */; };
 		06BDC2D2907A6188CDF10CDE /* VoiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */; };
 		090713634A1A6AA642140833 /* HermesAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497EB3A78A1FA95B37C99AB4 /* HermesAPIClient.swift */; };
+		149052C798A239F946342A23 /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */; };
 		159D645ED21E0A0B268E972B /* AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73744DD7755B96A455966F0B /* AppearanceSettings.swift */; };
+		1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */; };
 		1CEEEA7AA202CFB1EACF6FBA /* HermesThemes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A7E7C23745B5ED58953167 /* HermesThemes.swift */; };
 		1E7817CB4161ADFFE75D5B79 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A4E7B2B3C67580BB0A71C4C /* AppStore.swift */; };
+		25500519AB7EBEF810F3E7CC /* GlassAnimations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C65133D88E05ED712E002D1E /* GlassAnimations.swift */; };
+		2C03088CFC9E56596F6492CE /* ProviderSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */; };
+		38A7732AB4640EDD3102B363 /* ComposerCommandLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */; };
 		3A321980B7C573E252E73B94 /* KeychainManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8118B694B0A64F91BE0369 /* KeychainManager.swift */; };
 		3C5B316A8C97FB0309855517 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607284F3E16CE64024116B5A /* ChatView.swift */; };
+		3DA05CB84EEF6A3DA27B7C53 /* SkillCommandLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260F94CE910541B9E482A59B /* SkillCommandLogic.swift */; };
+		417C7F39149C64A1BF846BBE /* ActiveSessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661C9BE93899D1B3DF848273 /* ActiveSessionPersistence.swift */; };
+		43DD09E6024E5D9B9C5968DF /* StreamWatchdogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD348F4EBB40BD3B6F3F2C74 /* StreamWatchdogTests.swift */; };
+		447392FE56BF7B3443B7CBAF /* ComposerSubmissionLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6CC0110AB94C4C9331E73C4 /* ComposerSubmissionLogicTests.swift */; };
 		46B86EDE872B162DFABA640A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */; };
+		4F5C3B8B82D3CF74CFCF1D47 /* StreamWatchdogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0462220C6A7891E8E42F07B /* StreamWatchdogManager.swift */; };
+		538D0CA3818BBDB92BB6A232 /* ModelSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */; };
+		5A1B76115F8835F7DB19A51E /* WakePhraseListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7FD753E4E2095A6295A052 /* WakePhraseListener.swift */; };
 		5DC81AF16C507C454840EB47 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */; };
 		61377F4AC5E3A85BA6402496 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A7511EED5D149EE15F396D2F /* Assets.xcassets */; };
 		65563F266A0294EAAF0008E5 /* GlassTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53907E499DA24C590A36DA7A /* GlassTheme.swift */; };
 		67280C486BF59EDE78845066 /* VoiceConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */; };
 		6880344859436CE0F8CC146A /* VoiceConversationPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86EA7AA684EE78863AEC2F0A /* VoiceConversationPage.swift */; };
 		6B6F48425CBD5DB39DFA0D17 /* LocalLLMManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E4647E786299A5ADBD2D24D /* LocalLLMManager.swift */; };
+		75FC779EC102CC902983D646 /* GlassInputBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDDAD1C9B988CFE76287C44B /* GlassInputBar.swift */; };
 		7ECDCA84AFB356E702178F2A /* ConnectionSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347A8180AE6F941EDF51CFEE /* ConnectionSetupView.swift */; };
+		80E40DCA3AE420F927877943 /* SkillCommandLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */; };
 		8169CA68B0F068C4C454AA05 /* HermesCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */; };
 		848AF4A8EBE61688B4E15948 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E26F58E842815866FD9986 /* AppConfig.swift */; };
+		88DA1AED250A2CDB2759BEA7 /* SkillPickerLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEEC864AFC7E90082A8EDEA /* SkillPickerLayoutTests.swift */; };
+		8D8B6F1C677ED71BCAF05D0D /* VoiceActivationLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */; };
 		9326CB4014893810CB4C04B4 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13839144B0503760269527F6 /* Models.swift */; };
+		A165F3FB03821E3B9E0EB15B /* SkillsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F84C3E68E0066661BF529D /* SkillsListView.swift */; };
 		A7C964BA91BD19B6BE8FA0B9 /* FilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE611F1C01056A05C20BC7AA /* FilePickerView.swift */; };
+		A8FBD11A8D629EB4A29E5F40 /* ActiveSessionPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */; };
+		C976F5D603BB2A2E0CBC38D6 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */; };
+		CB8F46D3AEFF5EB3E585BAE5 /* ToolsetsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B87A150E7A7EE2D29064C1E /* ToolsetsListView.swift */; };
+		CFE8A23CD2204761B0C7F288 /* VoiceActivationLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15CE235401C5CF4AA8838394 /* VoiceActivationLogicTests.swift */; };
+		D3508E86FEF84CE0FB3A2362 /* ProjectStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */; };
 		DF0FB0C835B0C2295CADEA9F /* TerminalThemes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2028A3E91C21B0A78D04F0BC /* TerminalThemes.swift */; };
 		E17EEB828AE68D190408C742 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A1BB077B5C9F7833608AA0 /* AppearanceSettingsView.swift */; };
 		E5A0A1B90BAD77CBA352019D /* SessionPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 551BA7C230D94529FD10F5D2 /* SessionPickerView.swift */; };
+		F963F31C26FCEBF676C889CB /* GlassBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0877A3D2AFE7F4721ADA17AF /* GlassBubble.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AD9B5455B903F8AA87FB90F9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3E7F1B91E50A184ED7195582 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2FCC291CB54A965A8FBCF67F;
+			remoteInfo = HermesCompanion;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCommandLogicTests.swift; sourceTree = "<group>"; };
+		0877A3D2AFE7F4721ADA17AF /* GlassBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassBubble.swift; sourceTree = "<group>"; };
+		0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotes.swift; sourceTree = "<group>"; };
+		0B12E3F4318C118EAE60B80E /* HermesCompanionTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HermesCompanionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
+		0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivationLogic.swift; sourceTree = "<group>"; };
 		111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSettingsView.swift; sourceTree = "<group>"; };
 		12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesCompanionApp.swift; sourceTree = "<group>"; };
 		13839144B0503760269527F6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		15CE235401C5CF4AA8838394 /* VoiceActivationLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivationLogicTests.swift; sourceTree = "<group>"; };
+		1B7FD753E4E2095A6295A052 /* WakePhraseListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakePhraseListener.swift; sourceTree = "<group>"; };
+		1B87A150E7A7EE2D29064C1E /* ToolsetsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsetsListView.swift; sourceTree = "<group>"; };
 		2028A3E91C21B0A78D04F0BC /* TerminalThemes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemes.swift; sourceTree = "<group>"; };
+		260F94CE910541B9E482A59B /* SkillCommandLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCommandLogic.swift; sourceTree = "<group>"; };
 		323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		347A8180AE6F941EDF51CFEE /* ConnectionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSetupView.swift; sourceTree = "<group>"; };
+		35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerCommandLogic.swift; sourceTree = "<group>"; };
+		3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionPersistenceTests.swift; sourceTree = "<group>"; };
+		4712C7DBDC790F10EB108C21 /* GlassComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassComponents.swift; sourceTree = "<group>"; };
+		47B41AB784B26388253CB25A /* AttachmentData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentData.swift; sourceTree = "<group>"; };
 		497EB3A78A1FA95B37C99AB4 /* HermesAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesAPIClient.swift; sourceTree = "<group>"; };
 		4A4E7B2B3C67580BB0A71C4C /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		53907E499DA24C590A36DA7A /* GlassTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassTheme.swift; sourceTree = "<group>"; };
@@ -45,15 +94,27 @@
 		5E8118B694B0A64F91BE0369 /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
 		607284F3E16CE64024116B5A /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConversationManager.swift; sourceTree = "<group>"; };
+		661C9BE93899D1B3DF848273 /* ActiveSessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionPersistence.swift; sourceTree = "<group>"; };
 		66A7E7C23745B5ED58953167 /* HermesThemes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesThemes.swift; sourceTree = "<group>"; };
+		6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStoreTests.swift; sourceTree = "<group>"; };
 		73744DD7755B96A455966F0B /* AppearanceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettings.swift; sourceTree = "<group>"; };
+		78F84C3E68E0066661BF529D /* SkillsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsListView.swift; sourceTree = "<group>"; };
+		7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSelectionView.swift; sourceTree = "<group>"; };
 		86EA7AA684EE78863AEC2F0A /* VoiceConversationPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConversationPage.swift; sourceTree = "<group>"; };
+		8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesTests.swift; sourceTree = "<group>"; };
 		90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		93E26F58E842815866FD9986 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		9E4647E786299A5ADBD2D24D /* LocalLLMManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLLMManager.swift; sourceTree = "<group>"; };
+		9FEEC864AFC7E90082A8EDEA /* SkillPickerLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillPickerLayoutTests.swift; sourceTree = "<group>"; };
+		A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSelectionView.swift; sourceTree = "<group>"; };
 		A64856389980D1D73A2DC3C3 /* HermesCompanion.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HermesCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7511EED5D149EE15F396D2F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AD348F4EBB40BD3B6F3F2C74 /* StreamWatchdogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamWatchdogTests.swift; sourceTree = "<group>"; };
+		B0462220C6A7891E8E42F07B /* StreamWatchdogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamWatchdogManager.swift; sourceTree = "<group>"; };
 		BE611F1C01056A05C20BC7AA /* FilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePickerView.swift; sourceTree = "<group>"; };
+		C65133D88E05ED712E002D1E /* GlassAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassAnimations.swift; sourceTree = "<group>"; };
+		C6CC0110AB94C4C9331E73C4 /* ComposerSubmissionLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSubmissionLogicTests.swift; sourceTree = "<group>"; };
+		EDDAD1C9B988CFE76287C44B /* GlassInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassInputBar.swift; sourceTree = "<group>"; };
 		F7A1BB077B5C9F7833608AA0 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -62,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				56C31E72F342FA7E6A568D30 /* Sources */,
+				EA63EAD4C472465F110BA081 /* Tests */,
 				528A6F70550B0766167EF200 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -70,6 +132,7 @@
 			isa = PBXGroup;
 			children = (
 				A64856389980D1D73A2DC3C3 /* HermesCompanion.app */,
+				0B12E3F4318C118EAE60B80E /* HermesCompanionTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -77,26 +140,43 @@
 		56C31E72F342FA7E6A568D30 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				661C9BE93899D1B3DF848273 /* ActiveSessionPersistence.swift */,
 				93E26F58E842815866FD9986 /* AppConfig.swift */,
 				73744DD7755B96A455966F0B /* AppearanceSettings.swift */,
 				F7A1BB077B5C9F7833608AA0 /* AppearanceSettingsView.swift */,
 				4A4E7B2B3C67580BB0A71C4C /* AppStore.swift */,
 				A7511EED5D149EE15F396D2F /* Assets.xcassets */,
+				47B41AB784B26388253CB25A /* AttachmentData.swift */,
 				607284F3E16CE64024116B5A /* ChatView.swift */,
+				35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */,
 				347A8180AE6F941EDF51CFEE /* ConnectionSetupView.swift */,
 				BE611F1C01056A05C20BC7AA /* FilePickerView.swift */,
+				C65133D88E05ED712E002D1E /* GlassAnimations.swift */,
+				0877A3D2AFE7F4721ADA17AF /* GlassBubble.swift */,
+				4712C7DBDC790F10EB108C21 /* GlassComponents.swift */,
+				EDDAD1C9B988CFE76287C44B /* GlassInputBar.swift */,
 				53907E499DA24C590A36DA7A /* GlassTheme.swift */,
 				497EB3A78A1FA95B37C99AB4 /* HermesAPIClient.swift */,
 				12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */,
 				5E8118B694B0A64F91BE0369 /* KeychainManager.swift */,
 				9E4647E786299A5ADBD2D24D /* LocalLLMManager.swift */,
 				13839144B0503760269527F6 /* Models.swift */,
+				7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */,
+				0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */,
+				A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */,
+				0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */,
 				551BA7C230D94529FD10F5D2 /* SessionPickerView.swift */,
 				90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */,
+				260F94CE910541B9E482A59B /* SkillCommandLogic.swift */,
+				78F84C3E68E0066661BF529D /* SkillsListView.swift */,
+				B0462220C6A7891E8E42F07B /* StreamWatchdogManager.swift */,
+				1B87A150E7A7EE2D29064C1E /* ToolsetsListView.swift */,
+				0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */,
 				6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */,
 				86EA7AA684EE78863AEC2F0A /* VoiceConversationPage.swift */,
 				111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */,
 				323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */,
+				1B7FD753E4E2095A6295A052 /* WakePhraseListener.swift */,
 				862E65AB22578E282334728E /* Themes */,
 			);
 			path = Sources;
@@ -109,6 +189,21 @@
 				2028A3E91C21B0A78D04F0BC /* TerminalThemes.swift */,
 			);
 			path = Themes;
+			sourceTree = "<group>";
+		};
+		EA63EAD4C472465F110BA081 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */,
+				C6CC0110AB94C4C9331E73C4 /* ComposerSubmissionLogicTests.swift */,
+				6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */,
+				8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */,
+				03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */,
+				9FEEC864AFC7E90082A8EDEA /* SkillPickerLayoutTests.swift */,
+				AD348F4EBB40BD3B6F3F2C74 /* StreamWatchdogTests.swift */,
+				15CE235401C5CF4AA8838394 /* VoiceActivationLogicTests.swift */,
+			);
+			path = Tests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -131,6 +226,24 @@
 			productName = HermesCompanion;
 			productReference = A64856389980D1D73A2DC3C3 /* HermesCompanion.app */;
 			productType = "com.apple.product-type.application";
+		};
+		AD2A6E878BB701551F5B3818 /* HermesCompanionTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 95863D0E6CA9058A19C6C0CC /* Build configuration list for PBXNativeTarget "HermesCompanionTests" */;
+			buildPhases = (
+				04B3A196905309F29964F9E8 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				54709F1BAA1DC0519396AEBD /* PBXTargetDependency */,
+			);
+			name = HermesCompanionTests;
+			packageProductDependencies = (
+			);
+			productName = HermesCompanionTests;
+			productReference = 0B12E3F4318C118EAE60B80E /* HermesCompanionTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -162,6 +275,7 @@
 			projectRoot = "";
 			targets = (
 				2FCC291CB54A965A8FBCF67F /* HermesCompanion */,
+				AD2A6E878BB701551F5B3818 /* HermesCompanionTests */,
 			);
 		};
 /* End PBXProject section */
@@ -178,44 +292,101 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		04B3A196905309F29964F9E8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A8FBD11A8D629EB4A29E5F40 /* ActiveSessionPersistenceTests.swift in Sources */,
+				447392FE56BF7B3443B7CBAF /* ComposerSubmissionLogicTests.swift in Sources */,
+				D3508E86FEF84CE0FB3A2362 /* ProjectStoreTests.swift in Sources */,
+				149052C798A239F946342A23 /* ReleaseNotesTests.swift in Sources */,
+				80E40DCA3AE420F927877943 /* SkillCommandLogicTests.swift in Sources */,
+				88DA1AED250A2CDB2759BEA7 /* SkillPickerLayoutTests.swift in Sources */,
+				43DD09E6024E5D9B9C5968DF /* StreamWatchdogTests.swift in Sources */,
+				CFE8A23CD2204761B0C7F288 /* VoiceActivationLogicTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E510685563AA8BF3FA7686BD /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				417C7F39149C64A1BF846BBE /* ActiveSessionPersistence.swift in Sources */,
 				848AF4A8EBE61688B4E15948 /* AppConfig.swift in Sources */,
 				1E7817CB4161ADFFE75D5B79 /* AppStore.swift in Sources */,
 				159D645ED21E0A0B268E972B /* AppearanceSettings.swift in Sources */,
 				E17EEB828AE68D190408C742 /* AppearanceSettingsView.swift in Sources */,
+				01892F1A0E72775EC3C06A62 /* AttachmentData.swift in Sources */,
 				3C5B316A8C97FB0309855517 /* ChatView.swift in Sources */,
+				38A7732AB4640EDD3102B363 /* ComposerCommandLogic.swift in Sources */,
 				7ECDCA84AFB356E702178F2A /* ConnectionSetupView.swift in Sources */,
 				A7C964BA91BD19B6BE8FA0B9 /* FilePickerView.swift in Sources */,
+				25500519AB7EBEF810F3E7CC /* GlassAnimations.swift in Sources */,
+				F963F31C26FCEBF676C889CB /* GlassBubble.swift in Sources */,
+				03CBDC20873F48BEB4EBFE38 /* GlassComponents.swift in Sources */,
+				75FC779EC102CC902983D646 /* GlassInputBar.swift in Sources */,
 				65563F266A0294EAAF0008E5 /* GlassTheme.swift in Sources */,
 				090713634A1A6AA642140833 /* HermesAPIClient.swift in Sources */,
 				8169CA68B0F068C4C454AA05 /* HermesCompanionApp.swift in Sources */,
 				1CEEEA7AA202CFB1EACF6FBA /* HermesThemes.swift in Sources */,
 				3A321980B7C573E252E73B94 /* KeychainManager.swift in Sources */,
 				6B6F48425CBD5DB39DFA0D17 /* LocalLLMManager.swift in Sources */,
+				538D0CA3818BBDB92BB6A232 /* ModelSelectionView.swift in Sources */,
 				9326CB4014893810CB4C04B4 /* Models.swift in Sources */,
+				1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */,
+				2C03088CFC9E56596F6492CE /* ProviderSelectionView.swift in Sources */,
+				C976F5D603BB2A2E0CBC38D6 /* ReleaseNotes.swift in Sources */,
 				E5A0A1B90BAD77CBA352019D /* SessionPickerView.swift in Sources */,
 				46B86EDE872B162DFABA640A /* SettingsView.swift in Sources */,
+				3DA05CB84EEF6A3DA27B7C53 /* SkillCommandLogic.swift in Sources */,
+				A165F3FB03821E3B9E0EB15B /* SkillsListView.swift in Sources */,
+				4F5C3B8B82D3CF74CFCF1D47 /* StreamWatchdogManager.swift in Sources */,
 				DF0FB0C835B0C2295CADEA9F /* TerminalThemes.swift in Sources */,
+				CB8F46D3AEFF5EB3E585BAE5 /* ToolsetsListView.swift in Sources */,
+				8D8B6F1C677ED71BCAF05D0D /* VoiceActivationLogic.swift in Sources */,
 				67280C486BF59EDE78845066 /* VoiceConversationManager.swift in Sources */,
 				6880344859436CE0F8CC146A /* VoiceConversationPage.swift in Sources */,
 				06BDC2D2907A6188CDF10CDE /* VoiceSettingsView.swift in Sources */,
 				5DC81AF16C507C454840EB47 /* VoiceTranscriber.swift in Sources */,
+				5A1B76115F8835F7DB19A51E /* WakePhraseListener.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		54709F1BAA1DC0519396AEBD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2FCC291CB54A965A8FBCF67F /* HermesCompanion */;
+			targetProxy = AD9B5455B903F8AA87FB90F9 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		2817ECA84F6D20F08C835EE4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HermesCompanion.app/HermesCompanion";
+			};
+			name = Release;
+		};
 		6BA798C7A60A46CF8FC268EB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 71;
+				CURRENT_PROJECT_VERSION = 79;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
@@ -226,7 +397,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.8.27;
+				MARKETING_VERSION = 1.8.35;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -240,7 +411,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 71;
+				CURRENT_PROJECT_VERSION = 79;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
@@ -251,7 +422,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.8.27;
+				MARKETING_VERSION = 1.8.35;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -386,6 +557,23 @@
 			};
 			name = Release;
 		};
+		E08F9E2AC51357DD900140A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HermesCompanion.app/HermesCompanion";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -394,6 +582,15 @@
 			buildConfigurations = (
 				6EE02AE42D14AE659313DBC4 /* Debug */,
 				6BA798C7A60A46CF8FC268EB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		95863D0E6CA9058A19C6C0CC /* Build configuration list for PBXNativeTarget "HermesCompanionTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E08F9E2AC51357DD900140A9 /* Debug */,
+				2817ECA84F6D20F08C835EE4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

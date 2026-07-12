@@ -225,11 +225,6 @@ enum ThemeRegistry {
         allThemes.first { $0.id == id } ?? allThemes.first { $0.id == defaultThemeId }!
     }
 
-    /// The currently active theme, resolved from the stored ID.
-    /// Use this in views via @AppStorage("activeThemeId") + theme(for:).
-    static func activeTheme(id: String) -> any HermesTheme {
-        theme(for: id)
-    }
 }
 
 // MARK: - Hermes (Default Liquid Glass Theme)

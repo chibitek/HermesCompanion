@@ -122,34 +122,4 @@ final class AppearanceSettings: ObservableObject {
         default: return Color(red: 0.176, green: 0.831, blue: 0.749)
         }
     }
-
-    // MARK: - Font Helpers
-
-    func scaledFont(_ baseFont: Font) -> Font {
-        if messageFontSize > 0 {
-            return .system(size: messageFontSize)
-        }
-        return baseFont
-    }
-
-    var messageFont: Font {
-        if messageFontSize > 0 {
-            return .system(size: messageFontSize)
-        }
-        return .body
-    }
-
-    var captionFont: Font {
-        .system(size: max(10, 13 * fontScale))
-    }
-
-    // MARK: - Layout helpers (delegate spacing to active theme)
-
-    var spacingV: CGFloat { compactMode ? activeTheme.spacingS : activeTheme.spacingM }
-    var spacingH: CGFloat { compactMode ? activeTheme.spacingM : activeTheme.spacingL }
-    var bubblePaddingV: CGFloat { compactMode ? activeTheme.spacingS : activeTheme.spacingM }
-    var bubblePaddingH: CGFloat { compactMode ? activeTheme.spacingM : activeTheme.spacingL }
-    var bubbleRadius: CGFloat {
-        compactMode ? activeTheme.bubbleRadius * 0.7 : activeTheme.bubbleRadius
-    }
 }

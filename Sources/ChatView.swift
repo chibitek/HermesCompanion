@@ -37,6 +37,7 @@ final class VoiceTimeoutManager {
 struct ChatView: View {
     @ObservedObject var store: AppStore
     @EnvironmentObject var appearance: AppearanceSettings
+    @Environment(\.scenePhase) private var scenePhase
     @State private var inputText = ""
     @State private var showSessionPicker = false
     @State private var showSettings = false
@@ -46,6 +47,8 @@ struct ChatView: View {
     @State private var showFilePicker = false
     @StateObject private var voiceConversation = VoiceConversationManager()
     @State private var showVoicePage = false
+    @StateObject private var wakePhraseListener = WakePhraseListener()
+    @AppStorage("hey_hermes_enabled") private var heyHermesEnabled = true
 
     var body: some View {
         NavigationStack {
@@ -71,6 +74,7 @@ struct ChatView: View {
                         text: $inputText,
                         isStreaming: store.isStreaming,
                         onSend: sendMessage,
+                        onQueue: queueMessage,
                         onStop: { store.stopStreaming() },
                         onCamera: { showPhotoPicker = true },
                         onFilePick: { showFilePicker = true },
@@ -82,6 +86,10 @@ struct ChatView: View {
                         onSelectModel: { model in
                             store.selectPreferredModel(model)
                         },
+                        availableSkills: store.skills,
+                        onRefreshSkills: {
+                            await store.refreshSkills()
+                        },
                         onVoiceConversationTranscription: { transcription in
                             handleVoiceTranscription(transcription)
                         },
@@ -90,6 +98,13 @@ struct ChatView: View {
                         },
                         onOpenVoicePage: {
                             showVoicePage = true
+                        },
+                        onDictationStateChange: { isRecording in
+                            if isRecording {
+                                wakePhraseListener.pause()
+                            } else if scenePhase == .active, !showVoicePage {
+                                wakePhraseListener.resume()
+                            }
                         },
                         voiceConversation: voiceConversation
                     )
@@ -159,10 +174,51 @@ struct ChatView: View {
             voiceConversation.onStopBackgroundAudio = { [weak store] in
                 store?.stopSilentAudioForVoice()
             }
+            wakePhraseListener.onWakePhrase = {
+                guard !showVoicePage, !voiceConversation.isConversing else { return }
+                showVoicePage = true
+            }
+            if heyHermesEnabled { wakePhraseListener.start() }
+            Task { await store.refreshSkills() }
+        }
+        .onDisappear {
+            wakePhraseListener.stop()
         }
         .onChange(of: store.isConnected) { _, connected in
             voiceConversation.isHermesConnected = connected
             voiceConversation.refreshDefaultMode()
+        }
+        .onChange(of: heyHermesEnabled) { _, enabled in
+            enabled ? wakePhraseListener.start() : wakePhraseListener.stop()
+        }
+        .onChange(of: showVoicePage) { _, isPresented in
+            if isPresented {
+                wakePhraseListener.pause(deactivateAudioSession: false)
+            } else {
+                wakePhraseListener.resume()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                if !showVoicePage { wakePhraseListener.resume() }
+            case .inactive, .background:
+                wakePhraseListener.pause()
+            @unknown default:
+                wakePhraseListener.pause()
+            }
+        }
+        .onChange(of: showSettings) { _, presented in
+            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
+        }
+        .onChange(of: showSessionPicker) { _, presented in
+            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
+        }
+        .onChange(of: showPhotoPicker) { _, presented in
+            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
+        }
+        .onChange(of: showFilePicker) { _, presented in
+            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
         }
         // Photo picker — triggered by the input bar attachment menu
         .photosPicker(
@@ -203,7 +259,7 @@ struct ChatView: View {
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: GlassTheme.spacingM) {
+                LazyVStack(spacing: appearance.activeTheme.spacingM) {
                     if store.messages.isEmpty && store.streamingText.isEmpty {
                         emptyState
                     }
@@ -240,8 +296,8 @@ struct ChatView: View {
                             .id("thinking")
                     }
                 }
-                .padding(.horizontal, GlassTheme.spacingL)
-                .padding(.vertical, GlassTheme.spacingM)
+                .padding(.horizontal, appearance.activeTheme.spacingL)
+                .padding(.vertical, appearance.activeTheme.spacingM)
             }
             .onAppear {
                 // Scroll to the most recent message when the view first appears.
@@ -278,13 +334,13 @@ struct ChatView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: GlassTheme.spacingXL) {
+        VStack(spacing: appearance.activeTheme.spacingXL) {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 44, weight: .light))
                 .foregroundStyle(.secondary)
                 .frame(width: 88, height: 88)
 
-            VStack(spacing: GlassTheme.spacingS) {
+            VStack(spacing: appearance.activeTheme.spacingS) {
                 Text("Start a conversation")
                     .font(.title3)
                     .fontWeight(.medium)
@@ -294,7 +350,7 @@ struct ChatView: View {
                     .multilineTextAlignment(.center)
             }
 
-            VStack(spacing: GlassTheme.spacingM) {
+            VStack(spacing: appearance.activeTheme.spacingM) {
                 Button {
                     Task { await store.createSession(title: nil) }
                 } label: {
@@ -302,10 +358,10 @@ struct ChatView: View {
                         .font(.body)
                         .fontWeight(.medium)
                         .foregroundStyle(appearance.accent)
-                        .padding(.horizontal, GlassTheme.spacingL)
-                        .padding(.vertical, GlassTheme.spacingM)
+                        .padding(.horizontal, appearance.activeTheme.spacingL)
+                        .padding(.vertical, appearance.activeTheme.spacingM)
                         .background(appearance.accent.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: GlassTheme.radiusM, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: appearance.activeTheme.radiusM, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -326,34 +382,43 @@ struct ChatView: View {
     // MARK: - Tool Events Panel
 
     private var toolEventsPanel: some View {
-        VStack(alignment: .leading, spacing: GlassTheme.spacingXS) {
+        VStack(alignment: .leading, spacing: appearance.activeTheme.spacingXS) {
             Text("Tool Activity")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, GlassTheme.spacingM)
+                .padding(.horizontal, appearance.activeTheme.spacingM)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: GlassTheme.spacingS) {
+                HStack(spacing: appearance.activeTheme.spacingS) {
                     ForEach(store.toolEvents.suffix(12)) { evt in
                         GlassToolChip(event: evt)
                     }
                 }
-                .padding(.horizontal, GlassTheme.spacingM)
+                .padding(.horizontal, appearance.activeTheme.spacingM)
             }
         }
-        .padding(.vertical, GlassTheme.spacingS)
+        .padding(.vertical, appearance.activeTheme.spacingS)
     }
 
     // MARK: - Send
 
     private func sendMessage() {
-        let text = inputText.trimmingCharacters(in: .whitespaces)
+        let visibleText = inputText.trimmingCharacters(in: .whitespaces)
         let images = attachments.filter { $0.isImage }.map { $0.data }
         let fileAttachments = attachments
-        guard !text.isEmpty || !images.isEmpty || !fileAttachments.isEmpty else { return }
+        guard !visibleText.isEmpty || !images.isEmpty || !fileAttachments.isEmpty else { return }
+        let payload = SkillCommandLogic.messagePayload(for: visibleText)
         inputText = ""
         attachments = []
-        Task { await store.sendMessage(text, images: images, attachments: fileAttachments) }
+        Task { await store.sendMessage(payload, displayText: visibleText, images: images, attachments: fileAttachments) }
+    }
+
+    private func queueMessage() {
+        let visibleText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !visibleText.isEmpty else { return }
+        let payload = SkillCommandLogic.messagePayload(for: visibleText)
+        inputText = ""
+        store.queueMessage(payload, displayText: visibleText)
     }
 
     @MainActor

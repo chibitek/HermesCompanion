@@ -122,6 +122,7 @@ struct VoiceSettingsView: View {
     @AppStorage("premium_voice_name") private var premiumVoiceName: String = "Joanna"
     @AppStorage("premium_voice_speed") private var premiumVoiceSpeed: Double = 1.0
     @AppStorage("premium_voice_pitch") private var premiumVoicePitch: Double = 1.0
+    @AppStorage("hey_hermes_enabled") private var heyHermesEnabled = true
 
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @State private var filterQuality: Bool = true
@@ -131,6 +132,14 @@ struct VoiceSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Hey Hermes", isOn: $heyHermesEnabled)
+            } header: {
+                Text("Hands-Free Activation")
+            } footer: {
+                Text("When enabled, Hermes listens on-device for “Hey Hermes” while the app is open, then starts voice mode. iOS does not allow third-party wake phrases when the app is closed.")
+            }
+
             Section {
                 if let selectedVoice {
                     HStack {

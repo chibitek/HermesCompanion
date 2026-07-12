@@ -15,16 +15,14 @@ final class AppStore: ObservableObject {
     @Published var messages: [ChatDisplayMessage] = []
     @Published var isStreaming = false
     @Published var streamingText = ""
-    /// Clean text for display only — excludes agent reasoning/tool analysis
-    /// that streams before the final response. Prevents raw data leak in UI.
-    @Published var displayStreamingText = ""
     @Published var toolEvents: [ToolEvent] = []
-    /// True while the agent is running tools (reasoning/analysis phase).
-    /// When true, streamingText contains intermediate work, not user-facing text.
-    @Published var isAgentWorking = false
+    /// True while a voice conversation is active — prevents stopSilentAudio
+    /// from deactivating the shared AVAudioSession mid-conversation.
+    @Published var isVoiceConversationActive = false
     @Published var skills: [Skill] = []
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
+    @Published private(set) var queuedMessages: [String] = []
     @Published var error: AppError?
     @Published var isLoading = false
     @Published var isLoadingConnection = false
@@ -86,6 +84,7 @@ final class AppStore: ObservableObject {
 
     private(set) var apiClient: HermesAPIClient?
     private var streamTask: Task<Void, Never>?
+    private let activeSessionPersistence = ActiveSessionPersistence()
 
     // MARK: - Init
 
@@ -434,9 +433,25 @@ final class AppStore: ObservableObject {
         }
         do {
             self.sessions = try await client.listSessions()
+            await restoreActiveSessionIfAvailable()
         } catch {
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
         }
+    }
+
+    /// Restores the last chat used on this server after a cold launch. If that
+    /// chat no longer exists, clear the stale pointer and let the UI create a
+    /// fresh isolated session.
+    private func restoreActiveSessionIfAvailable() async {
+        guard activeSession == nil,
+              let baseURL = connectionConfig?.normalizedBaseURL,
+              let savedID = activeSessionPersistence.load(for: baseURL) else { return }
+
+        guard let savedSession = sessions.first(where: { $0.id == savedID }) else {
+            activeSessionPersistence.clear(for: baseURL)
+            return
+        }
+        await selectSession(savedSession)
     }
 
     func createSession(title: String? = nil) async {
@@ -465,6 +480,9 @@ final class AppStore: ObservableObject {
             return
         }
         self.activeSession = session
+        if let baseURL = connectionConfig?.normalizedBaseURL {
+            activeSessionPersistence.save(sessionID: session.id, for: baseURL)
+        }
         self.messages = []
         self.toolEvents = []
         self.streamingText = ""
@@ -514,6 +532,9 @@ final class AppStore: ObservableObject {
             if activeSession?.id == session.id {
                 activeSession = nil
                 messages = []
+                if let baseURL = connectionConfig?.normalizedBaseURL {
+                    activeSessionPersistence.clear(for: baseURL)
+                }
             }
         } catch {
             self.error = AppError(message: "Failed to delete session: \(error.localizedDescription)")
@@ -585,8 +606,14 @@ final class AppStore: ObservableObject {
 
     // MARK: - Chat (streaming)
 
+    func queueMessage(_ text: String, displayText: String? = nil) {
+        let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !payload.isEmpty else { return }
+        queuedMessages.append(payload)
+    }
+
     @discardableResult
-    func sendMessage(_ text: String, images: [Data] = [], attachments: [AttachmentData] = [], skipPostReload: Bool = false) async -> ChatDisplayMessage? {
+    func sendMessage(_ text: String, displayText: String? = nil, images: [Data] = [], attachments: [AttachmentData] = [], skipPostReload: Bool = false) async -> ChatDisplayMessage? {
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -595,207 +622,85 @@ final class AppStore: ObservableObject {
             return nil
         }
 
-        // Auto-create a session if none is active — the user should be able
-        // to just type and send without manually creating a session first.
-        let session: HermesSession
-        if let active = activeSession {
-            session = active
-        } else {
-            do {
-                let newSession = try await client.createSession(title: nil)
-                self.sessions.insert(newSession, at: 0)
-                self.activeSession = newSession
-                session = newSession
-            } catch {
-                self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
-                return nil
-            }
-        }
+        let session = await ensureSession(client: client)
+        guard let session else { return nil }
 
-        // Capture the assistant message count before the send. The empty-stream
-        // guard below uses this to tell a successful turn (server has a new
-        // assistant row after reload) from a connection that closed early (no
-        // new row). Local ChatDisplayMessage.id values are local UUIDs that
-        // don't match the server's integer id, so we diff by count, not id.
-        // (Count is captured before appending the user message, which is not
-        // an assistant message and so does not affect the assistant count.)
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
-        // Build display message (user's text + any images)
         let userMsg = ChatDisplayMessage(
             id: UUID().uuidString,
             role: "user",
-            content: text,
+            content: displayText ?? text,
             images: images,
             timestamp: Date()
         )
         messages.append(userMsg)
 
-        // Build the message payload for the API
-        let messagePayload = text
-
-        // Prepare streaming state
         isStreaming = true
         streamingText = ""
         toolEvents = []
         pendingApproval = nil
-
-        // Start background task to keep the network stream alive if the user
-        // switches to another app mid-response. iOS gives ~30s for non-audio
-        // tasks, which is enough for most chat responses.
         beginBackgroundKeepAlive()
 
-        // Stream watchdog: if no SSE events arrive for 90s, abort.
-        // This catches cases where iOS suspends the app and the SSE
-        // stream dies silently, leaving the user stuck on "thinking".
-        let watchdog = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 90_000_000_000) // 90s
-            guard let self = self else { return }
-            if self.isStreaming {
-                self.streamTask?.cancel()
-                self.isStreaming = false
-                self.streamingText = ""
-                self.endBackgroundTask()
-                self.error = AppError(message: "Response timed out. The server may be busy — please try again.")
-            }
+        let watchdog = StreamWatchdogManager()
+        watchdog.arm(after: 90) { [weak self] in
+            guard let self, self.isStreaming else { return }
+            self.streamTask?.cancel()
+            self.isStreaming = false
+            self.streamingText = ""
+            self.endBackgroundTask()
+            self.error = AppError(message: "The response stream stopped sending updates. Please try again.")
         }
 
-        // Cancel any existing stream task before starting a new one
         streamTask?.cancel()
 
         var assistantMessage: ChatDisplayMessage?
-        // Tracks whether the stream delivered a terminal completion event
-        // (assistant.completed or run.completed). The empty-stream guard below
-        // uses this to tell a legitimate empty reply from a connection that
-        // closed early. The JSON (attachment) path sets it on success.
         var receivedCompletion = false
+
         let task = Task { [weak self] in
             guard let self = self else { return }
             do {
                 if images.isEmpty && attachments.isEmpty {
-                    let stream = try await client.streamChat(sessionId: session.id, message: messagePayload, model: effectiveCurrentModel)
-                    for try await event in stream {
-                        if Task.isCancelled { return }
-                        if event.event == "assistant.completed" || event.event == "run.completed" {
-                            receivedCompletion = true
-                        }
-                        if let completedMessage = await self.handleSSEEvent(event) {
-                            assistantMessage = completedMessage
-                        }
-                    }
-
-                    if !streamingText.isEmpty {
-                        // The stream ended without a terminal event (assistant.completed
-                        // or run.completed). Apply the full artifact stripper — the
-                        // leftover may contain thinking tags, JSON fragments, or
-                        // tool-call artifacts that should never appear in the chat UI.
-                        let leftover = Self.stripRawArtifacts(streamingText)
+                    let (streamedMsg, streamedCompletion) = try await self.streamMessage(
+                        client: client, session: session, text: text, watchdog: watchdog
+                    )
+                    assistantMessage = streamedMsg
+                    if streamedCompletion { receivedCompletion = true }
+                    if !self.streamingText.isEmpty {
+                        receivedCompletion = true
+                        let leftover = Self.stripRawArtifacts(self.streamingText)
                         if !leftover.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let message = ChatDisplayMessage(
-                                id: UUID().uuidString,
-                                role: "assistant",
-                                content: leftover,
-                                timestamp: Date()
+                                id: UUID().uuidString, role: "assistant",
+                                content: leftover, timestamp: Date()
                             )
-                            messages.append(message)
+                            self.messages.append(message)
                             assistantMessage = message
                         }
-                        streamingText = ""
-                        receivedCompletion = true
+                        self.streamingText = ""
                     }
                 } else {
-                    // File and image attachments still use the JSON endpoint because
-                    // the current stream endpoint only accepts plain text messages.
-                    let response = try await client.sendChat(
-                        sessionId: session.id,
-                        message: messagePayload,
-                        model: effectiveCurrentModel,
-                        images: images,
-                        attachments: attachments
+                    assistantMessage = try await self.sendWithAttachments(
+                        client: client, session: session, text: text,
+                        images: images, attachments: attachments
                     )
-                    if Task.isCancelled { return }
-
                     receivedCompletion = true
-                    let content = response.message.content
-                    if !content.isEmpty {
-                        let message = ChatDisplayMessage(
-                            id: UUID().uuidString,
-                            role: response.message.role,
-                            content: content,
-                            timestamp: Date()
-                        )
-                        messages.append(message)
-                        if message.isAssistant {
-                            assistantMessage = message
-                        }
-                    }
-                }
-                // Voice mode skips the post-stream reload (getMessages + refreshSessions)
-                // to reduce response latency. The streamed text is already captured in
-                // assistantMessage, so the reload is redundant for voice — it just adds
-                // 200-500ms of network round-trips before the user hears the response.
-                if !skipPostReload && assistantMessage == nil {
-                    // Only reload from server if streaming didn't produce a message.
-                    // When we already have the streamed text, reloading replaces it
-                    // with server history that may have empty assistant messages or
-                    // different content — causing the displayed text to vanish or
-                    // show raw data.
-                    let history = try await client.getMessages(sessionId: session.id)
-                    self.messages = history
-                        .filter { $0.isUser || $0.isAssistant }
-                        .map { ChatDisplayMessage(from: $0) }
-                    await refreshSessions()
-                } else if !skipPostReload {
-                    // We have a streamed message — just refresh session counts
-                    // without replacing the chat messages.
-                    await refreshSessions()
                 }
 
-                // Voice mode fallback: when skipPostReload is true (voice mode)
-                // but we got no assistant message and no completion event, do a
-                // server reload as a last resort. The SSE stream may have closed
-                // early without delivering the response text, but the server
-                // might still have the assistant message in history. Without this
-                // fallback, voice mode would fail with "No response received"
-                // whenever the stream ends without a terminal event, even though
-                // the server successfully processed the message.
-                if skipPostReload && assistantMessage == nil && !receivedCompletion {
-                    FileLogger.shared.log("AppStore: voice mode fallback — no assistant message and no completion event, reloading from server")
-                    let history = try await client.getMessages(sessionId: session.id)
-                    self.messages = history
-                        .filter { $0.isUser || $0.isAssistant }
-                        .map { ChatDisplayMessage(from: $0) }
-                    await refreshSessions()
-                }
+                (assistantMessage, receivedCompletion) = try await self.postStreamReload(
+                    client: client, session: session, skipPostReload: skipPostReload,
+                    assistantMessage: assistantMessage, receivedCompletion: receivedCompletion
+                )
 
-                // Voice mode (and any other caller that needs a concrete return
-                // value) relies on assistantMessage being set. If the server ended
-                // the stream with run.completed but never emitted an explicit
-                // assistant.completed event, fall back to the newest assistant
-                // message that appeared in the reloaded history.
                 if assistantMessage == nil {
                     assistantMessage = self.messages.last(where: \.isAssistant)
                     FileLogger.shared.log("AppStore: fell back to reloaded assistant message: \(String(describing: assistantMessage?.content.prefix(60)))")
-                    print("AppStore: fell back to reloaded assistant message: \(String(describing: assistantMessage?.content.prefix(60)))")
                 }
 
-                // Empty-stream guard: if no terminal completion event arrived
-                // (assistant.completed / run.completed) AND the reloaded server
-                // history has no new assistant message for this turn, the
-                // connection almost certainly closed early (transient gateway
-                // error or network drop). Surface an error. Placed AFTER the
-                // getMessages reload so it never fires on a legitimate empty
-                // reply or a tool-heavy turn whose content landed in history.
-                // User-initiated cancellation returns earlier via Task.isCancelled,
-                // so it never reaches here. Count-only: local UUIDs don't match
-                // server integer ids, and a timestamp diff would always be true
-                // because the reloaded user message carries a fresh timestamp.
-                if !receivedCompletion {
-                    let newAssistantCount = self.messages.filter(\.isAssistant).count
-                    if newAssistantCount <= existingAssistantCount {
-                        self.error = AppError(message: "No response received — the server may have closed the connection early. Please try again.")
-                    }
-                }
+                self.emptyStreamGuard(
+                    receivedCompletion: receivedCompletion,
+                    existingAssistantCount: existingAssistantCount
+                )
             } catch let e as APIError {
                 self.error = AppError(message: e.errorDescription ?? "Message failed")
             } catch {
@@ -805,11 +710,12 @@ final class AppStore: ObservableObject {
             self.isStreaming = false
             self.endBackgroundTask()
             watchdog.cancel()
-            
-            // If the app is in the background, notify the user that the
-            // response has arrived. The silent audio + background task
-            // keeps the stream alive, but the user may have switched away.
-            // This gives them a tap-to-return notification.
+
+            if !self.queuedMessages.isEmpty {
+                let next = self.queuedMessages.removeFirst()
+                Task { await self.sendMessage(next) }
+            }
+
             if let assistantMessage,
                UIApplication.shared.applicationState != .active {
                 sendBackgroundNotification(text: assistantMessage.content)
@@ -818,6 +724,100 @@ final class AppStore: ObservableObject {
         streamTask = task
         await task.value
         return assistantMessage
+    }
+
+    // MARK: - sendMessage Helpers
+
+    private func ensureSession(client: HermesAPIClient) async -> HermesSession? {
+        if let active = activeSession { return active }
+        do {
+            let newSession = try await client.createSession(title: nil)
+            self.sessions.insert(newSession, at: 0)
+            self.activeSession = newSession
+            return newSession
+        } catch {
+            self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func streamMessage(
+        client: HermesAPIClient, session: HermesSession,
+        text: String, watchdog: StreamWatchdogManager
+    ) async throws -> (ChatDisplayMessage?, Bool) {
+        var assistantMessage: ChatDisplayMessage?
+        var receivedCompletion = false
+        let stream = try await client.streamChat(
+            sessionId: session.id, message: text, model: effectiveCurrentModel
+        )
+        for try await event in stream {
+            if Task.isCancelled { return (nil, false) }
+            watchdog.recordActivity()
+            if event.event == "assistant.completed" || event.event == "run.completed" {
+                receivedCompletion = true
+            }
+            if let completedMessage = await self.handleSSEEvent(event) {
+                assistantMessage = completedMessage
+            }
+        }
+        return (assistantMessage, receivedCompletion)
+    }
+
+    private func sendWithAttachments(
+        client: HermesAPIClient, session: HermesSession, text: String,
+        images: [Data], attachments: [AttachmentData]
+    ) async throws -> ChatDisplayMessage? {
+        let response = try await client.sendChat(
+            sessionId: session.id, message: text,
+            model: effectiveCurrentModel, images: images, attachments: attachments
+        )
+        if Task.isCancelled { return nil }
+        let content = response.message.content
+        guard !content.isEmpty else { return nil }
+        let message = ChatDisplayMessage(
+            id: UUID().uuidString, role: response.message.role,
+            content: content, timestamp: Date()
+        )
+        messages.append(message)
+        return message.isAssistant ? message : nil
+    }
+
+    private func postStreamReload(
+        client: HermesAPIClient, session: HermesSession, skipPostReload: Bool,
+        assistantMessage: ChatDisplayMessage?, receivedCompletion: Bool
+    ) async throws -> (ChatDisplayMessage?, Bool) {
+        let msg = assistantMessage
+        let completion = receivedCompletion
+
+        if !skipPostReload && msg == nil {
+            let history = try await client.getMessages(sessionId: session.id)
+            self.messages = history
+                .filter { $0.isUser || $0.isAssistant }
+                .map { ChatDisplayMessage(from: $0) }
+            await refreshSessions()
+        } else if !skipPostReload {
+            await refreshSessions()
+        }
+
+        // Voice mode fallback: reload from server if no message and no completion
+        if skipPostReload && msg == nil && !completion {
+            FileLogger.shared.log("AppStore: voice mode fallback — reloading from server")
+            let history = try await client.getMessages(sessionId: session.id)
+            self.messages = history
+                .filter { $0.isUser || $0.isAssistant }
+                .map { ChatDisplayMessage(from: $0) }
+            await refreshSessions()
+        }
+
+        return (msg, completion)
+    }
+
+    private func emptyStreamGuard(receivedCompletion: Bool, existingAssistantCount: Int) {
+        guard !receivedCompletion else { return }
+        let newAssistantCount = self.messages.filter(\.isAssistant).count
+        if newAssistantCount <= existingAssistantCount {
+            self.error = AppError(message: "No response received — the server may have closed the connection early. Please try again.")
+        }
     }
 
     func stopStreaming() {
@@ -940,14 +940,14 @@ final class AppStore: ObservableObject {
     static func stripRawArtifacts(_ text: String) -> String {
         var cleaned = text
 
-        // Strip reasoning/thinking blocks
-        if cleaned.contains("<think") {
-            while let startTag = cleaned.range(of: "<think"),
-                  let endTag = cleaned.range(of: "</think", range: startTag.upperBound..<cleaned.endIndex) {
-                cleaned.removeSubrange(startTag.lowerBound..<endTag.upperBound)
-            }
-            cleaned = cleaned.replacingOccurrences(of: "<think", with: "")
+        // Strip reasoning/thinking blocks:  to  (inclusive)
+        while let startTag = cleaned.range(of: ""),
+              let endTag = cleaned.range(of: "", range: startTag.upperBound..<cleaned.endIndex) {
+            cleaned.removeSubrange(startTag.lowerBound..<endTag.upperBound)
         }
+        // Strip any leftover bare  or  tags (unclosed or mismatched)
+        cleaned = cleaned.replacingOccurrences(of: "", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "", with: "")
 
         // Strip standalone JSON objects/arrays that aren't human text
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1103,9 +1103,10 @@ final class AppStore: ObservableObject {
                 Task {
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                     await MainActor.run {
-                        if self.connectionConfig != nil {
-                            Task { await self.reconnectIfNeeded() }
-                        }
+                        // Verify the config hasn't changed since we started retrying.
+                        // If the user switched servers, don't let a stale retry hijack the new connection.
+                        guard let currentConfig = self.connectionConfig, currentConfig == config else { return }
+                        Task { await self.reconnectIfNeeded() }
                     }
                 }
             }
@@ -1189,9 +1190,9 @@ final class AppStore: ObservableObject {
         silentPlayer?.stop()
         silentPlayer = nil
         isBackgroundAudioActive = false
-        // Deactivate the session — safe to do here since we only stop silent
-        // audio when not streaming. VoiceConversationManager manages its own
-        // audio session lifecycle.
+        // Don't deactivate the shared session if a voice conversation is active —
+        // VoiceConversationManager needs .playAndRecord active.
+        guard !isVoiceConversationActive else { return }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -1233,8 +1234,7 @@ final class AppStore: ObservableObject {
     private func sendBackgroundNotification(text: String) {
         let content = UNMutableNotificationContent()
         content.title = "Hermes"
-        let preview = text.prefix(100)
-        content.body = String(preview)
+        content.body = "New response received"
         content.sound = nil  // silent — the app's TTS handles audio
         content.categoryIdentifier = "chat_response"
         
@@ -1285,15 +1285,6 @@ struct ChatDisplayMessage: Identifiable, Equatable {
     var shouldDisplay: Bool {
         isUser || isAssistant
     }
-
-    /// Whether this message should be hidden from the chat view.
-    /// Tool, system, and hidden messages contain raw data that must
-    /// never appear as a chat bubble.
-    var isHidden: Bool {
-        role == "hidden" || role == "tool" || role == "system"
-    }
-    var isSystem: Bool { role == "system" }
-    var isTool: Bool { role == "tool" }
 }
 
 struct ToolEvent: Identifiable, Equatable {
