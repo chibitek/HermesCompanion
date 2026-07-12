@@ -39,36 +39,6 @@ struct CRTGlowOverlay: View {
     }
 }
 
-/// Subtle screen flicker animation
-struct ScreenFlicker: ViewModifier {
-    @State private var flicker = false
-    var intensity: Double = 0.03
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(flicker ? 1.0 - intensity : 1.0)
-            .animation(
-                .easeInOut(duration: 0.15).repeatForever(autoreverses: true),
-                value: flicker
-            )
-            .onAppear { flicker = true }
-    }
-}
-
-// MARK: - Theme Extensions for CRT
-
-extension View {
-    /// Apply CRT scanlines and glow for terminal themes
-    func crtEffect(color: Color, scanlineOpacity: Double = 0.12) -> some View {
-        self.overlay {
-            ZStack {
-                CRTGlowOverlay(color: color, intensity: 0.06)
-                CRTScanlineOverlay(opacity: scanlineOpacity)
-            }
-        }
-    }
-}
-
 // MARK: - Retro Amber Terminal Theme
 
 struct RetroAmberTheme: HermesTheme {

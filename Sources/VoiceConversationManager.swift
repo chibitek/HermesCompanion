@@ -102,7 +102,7 @@ final class VoiceConversationManager: ObservableObject {
 
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
-    private let silenceTimeout: TimeInterval = 0.4  // Faster finalization after user stops talking
+    private let silenceTimeout = VoiceEndpointingPolicy.silenceTimeout
     private var lastTranscriptionTime: Date = .distantPast
     private var lastTranscribedText: String = ""
 
@@ -328,7 +328,7 @@ final class VoiceConversationManager: ObservableObject {
         let cleanResponse = filterGatewayArtifacts(rawResponse)
         
         if cleanResponse.isEmpty {
-            print("Response is empty after filtering, failing turn")
+            FileLogger.shared.log("VoiceManager: response is empty after filtering, failing turn")
             failRemoteTurn(message: "Hermes did not return a voice response.")
             return
         }
@@ -689,7 +689,7 @@ final class VoiceConversationManager: ObservableObject {
         guard !isFinalizing else {
             // Empty transcription -- just stop listening.
             // Don't auto-restart to avoid loops. User can tap mic to resume.
-            print("VoiceManager: empty or already finalizing")
+            FileLogger.shared.log("VoiceManager: empty or already finalizing")
             stopListening()
             return
         }

@@ -22,10 +22,6 @@ enum AppConfig {
     static let defaultPort = 8642
     /// Keychain service name
     static let keychainService = "com.chibitek.hermescompanion"
-    /// SSE keepalive timeout (seconds)
-    static let sseKeepaliveTimeout: TimeInterval = 30
-    /// Max image size for camera attachments (points)
-    static let maxImageDimension: CGFloat = 1024
     /// JPEG quality for camera images
     static let imageJPEGQuality: CGFloat = 0.8
 }
