@@ -99,57 +99,6 @@ struct GlassThinkingIndicator: View {
     }
 }
 
-// MARK: - Glass Approval Card (theme-aware)
-
-struct GlassApprovalCard: View {
-    let approval: PendingApproval
-    let onResolve: (String) -> Void
-    @EnvironmentObject private var appearance: AppearanceSettings
-
-    private var theme: any HermesTheme { appearance.activeTheme }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: theme.spacingM) {
-            HStack(spacing: theme.spacingS) {
-                Image(systemName: "exclamationmark.shield.fill")
-                    .font(.title3)
-                    .foregroundStyle(theme.warning)
-                Text("Approval Required")
-                    .font(.headline)
-                    .foregroundStyle(theme.textPrimary)
-            }
-
-            Text(approval.command)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
-                .foregroundStyle(theme.textBody)
-                .padding(theme.spacingM)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.warning.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: theme.radiusS, style: .continuous)
-                        .stroke(theme.warning.opacity(0.2), lineWidth: 1)
-                )
-
-            HStack(spacing: theme.spacingM) {
-                GlassButton("Allow Once", tint: theme.accent) { onResolve("once") }
-                GlassButton("Allow Session", tint: theme.accentSecondary) { onResolve("session") }
-                GlassButton("Deny", tint: theme.danger) { onResolve("deny") }
-            }
-        }
-        .padding(theme.spacingL)
-        .background(AnyView(theme.glassCard(cornerRadius: theme.radiusXL)))
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.radiusXL, style: .continuous)
-                .stroke(theme.warning.opacity(0.25), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: theme.radiusXL, style: .continuous))
-        .padding(.horizontal, theme.spacingL)
-        .padding(.bottom, theme.spacingS)
-    }
-}
-
 // MARK: - Glass Button (theme-aware)
 
 struct GlassButton: View {

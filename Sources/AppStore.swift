@@ -26,7 +26,6 @@ final class AppStore: ObservableObject {
     @Published var error: AppError?
     @Published var isLoading = false
     @Published var isLoadingConnection = false
-    @Published var pendingApproval: PendingApproval?
     @Published var serverHealthStatus: [String: ServerHealthState] = [:]
 
     // MARK: - Multi-connection
@@ -281,7 +280,6 @@ final class AppStore: ObservableObject {
         streamingText = ""
         skills = []
         toolsets = []
-        pendingApproval = nil
 
         self.connectionConfig = config
         loadPreferences(for: config)
@@ -631,7 +629,6 @@ final class AppStore: ObservableObject {
         isStreaming = true
         streamingText = ""
         toolEvents = []
-        pendingApproval = nil
         beginBackgroundKeepAlive()
 
         let watchdog = StreamWatchdogManager()
@@ -961,23 +958,6 @@ final class AppStore: ObservableObject {
 
     // MARK: - Approval
 
-    func resolveApproval(choice: String) async {
-        guard let approval = pendingApproval else { return }
-        let client: HermesAPIClient
-        do {
-            client = try self.client()
-        } catch {
-            self.error = AppError(message: "Not connected")
-            return
-        }
-        do {
-            try await client.resolveApproval(runId: approval.runId, choice: choice)
-            self.pendingApproval = nil
-        } catch {
-            self.error = AppError(message: "Failed to resolve approval: \(error.localizedDescription)")
-        }
-    }
-
     // MARK: - Error Clear
 
     func clearError() {
@@ -1291,13 +1271,6 @@ enum ToolEventType: String, Equatable {
     case started
     case completed
     case failed
-}
-
-struct PendingApproval: Identifiable, Sendable {
-    let id: String
-    let runId: String
-    let command: String
-    let tool: String?
 }
 
 struct AppError: Identifiable {

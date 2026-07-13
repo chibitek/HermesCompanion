@@ -455,13 +455,6 @@ struct SkillsResponse: Codable {
     let data: [Skill]
 }
 
-// MARK: - Approval
-
-struct ApprovalResponse: Codable {
-    let choice: String  // "once", "session", "always", "deny"
-    let all: Bool?
-}
-
 // MARK: - Models (/v1/models)
 
 struct ModelInfo: Codable, Identifiable, Hashable {

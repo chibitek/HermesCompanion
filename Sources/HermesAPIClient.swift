@@ -456,24 +456,6 @@ final class HermesAPIClient: Sendable {
         return result.session
     }
 
-    // MARK: - Approval
-
-    /// POST /v1/runs/{run_id}/approval
-    /// NOTE: pendingApproval is never set by SSE handlers, so this method
-    /// is effectively dead code. Retained because AppStore.resolveApproval
-    /// still calls it (AppStore is off-limits for this phase).
-    func resolveApproval(runId: String, choice: String, resolveAll: Bool = false) async throws {
-        var req = URLRequest(url: try makeURL(path: "/v1/runs/\(runId)/approval"))
-        req.httpMethod = "POST"
-        authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-
-        let body = ApprovalResponse(choice: choice, all: resolveAll)
-        req.httpBody = try JSONEncoder().encode(body)
-
-        let (_, response) = try await session.data(for: req)
-        try checkHTTPStatus(response)
-    }
-
     // MARK: - Error Handling
 
     private func checkHTTPStatus(_ response: URLResponse) throws {

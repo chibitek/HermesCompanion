@@ -1,34 +1,6 @@
 import SwiftUI
 import AVFoundation
 
-enum PremiumVoiceService: String, CaseIterable {
-    case amazonPolly = "Amazon Polly"
-    case googleCloudTTS = "Google Cloud TTS"
-    
-    var displayName: String {
-        switch self {
-        case .amazonPolly: return "Amazon Polly"
-        case .googleCloudTTS: return "Google Cloud Text-to-Speech"
-        }
-    }
-    
-    var availableVoices: [String] {
-        switch self {
-        case .amazonPolly:
-            return ["Joanna", "Matthew", "Salli", "Kevin", "Ivy", "Kendra", "Kimberly", "Justin"]
-        case .googleCloudTTS:
-            return ["en-US-Standard-A", "en-US-Standard-B", "en-US-Standard-C", "en-US-Standard-D", "en-US-Standard-E", "en-US-Standard-F", "en-US-Standard-G", "en-US-Standard-H", "en-US-Standard-I", "en-US-Standard-J"]
-        }
-    }
-    
-    var defaultVoice: String {
-        switch self {
-        case .amazonPolly: return "Joanna"
-        case .googleCloudTTS: return "en-US-Standard-A"
-        }
-    }
-}
-
 enum VoiceDefaults {
     static let voiceIdentifierKey = "voice_identifier"
 
@@ -118,10 +90,6 @@ struct VoiceSettingsView: View {
     @AppStorage("voice_speed") private var speed: Double = 0.5
     @AppStorage("voice_pitch") private var pitch: Double = 1.0
     @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
-    @AppStorage("premium_voice_service") private var premiumVoiceService: String = PremiumVoiceService.amazonPolly.rawValue
-    @AppStorage("premium_voice_name") private var premiumVoiceName: String = "Joanna"
-    @AppStorage("premium_voice_speed") private var premiumVoiceSpeed: Double = 1.0
-    @AppStorage("premium_voice_pitch") private var premiumVoicePitch: Double = 1.0
     @AppStorage("hey_hermes_enabled") private var heyHermesEnabled = true
 
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
@@ -179,48 +147,6 @@ struct VoiceSettingsView: View {
                 Text("Voice")
             } footer: {
                 Text("Enhanced and premium voices sound more natural. Download additional voices in iOS Settings under Accessibility > Spoken Content.")
-            }
-
-            // Premium Voice Service Settings
-            Section {
-                Picker("Service", selection: $premiumVoiceService) {
-                    ForEach(PremiumVoiceService.allCases, id: \.rawValue) { service in
-                        Text(service.displayName).tag(service.rawValue)
-                    }
-                }
-                .pickerStyle(.menu)
-                
-                let currentService = PremiumVoiceService(rawValue: premiumVoiceService) ?? .amazonPolly
-                Picker("Voice", selection: $premiumVoiceName) {
-                    ForEach(currentService.availableVoices, id: \.self) { voice in
-                        Text(voice).tag(voice)
-                    }
-                }
-                .pickerStyle(.menu)
-                
-                HStack {
-                    Text("Speed")
-                    Spacer()
-                    Text(String(format: "%.2f", premiumVoiceSpeed))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $premiumVoiceSpeed, in: 0.25...2.0, step: 0.05)
-                    .tint(accent)
-                    
-                HStack {
-                    Text("Pitch")
-                    Spacer()
-                    Text(String(format: "%.1f", premiumVoicePitch))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Slider(value: $premiumVoicePitch, in: 0.5...2.0, step: 0.1)
-                    .tint(accent)
-            } header: {
-                Text("Premium Voice Service")
-            } footer: {
-                Text("Premium voice services offer higher quality synthetic voices. Requires internet connection.")
             }
 
             Section {
@@ -337,72 +263,21 @@ struct VoiceSettingsView: View {
     private func previewVoice() {
         previewSynthesizer.stopSpeaking(at: .immediate)
         let utterance = AVSpeechUtterance(string: "Hello, this is how your Hermes voice sounds.")
-        
-        // Check if we're using premium voice settings
-        let currentService = PremiumVoiceService(rawValue: premiumVoiceService) ?? .amazonPolly
-        let usePremiumSettings = currentService.availableVoices.contains(premiumVoiceName)
-        
-        if usePremiumSettings {
-            // Use premium voice settings for preview
-            // Map premium speed (0.25...2.0) to AVSpeechUtterance rate range (0...1, default 0.5)
-            let mappedSpeed = Float(premiumVoiceSpeed * 0.5) // Scale to fit within system TTS range
-            utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
-                                min(AVSpeechUtteranceMaximumSpeechRate, mappedSpeed))
-            utterance.pitchMultiplier = Float(premiumVoicePitch)
-            
-            // Try to find a premium-quality voice if available
-            if let voice = findPremiumQualityVoice() {
-                utterance.voice = voice
-            } else {
-                // Fallback to system voice
-                if !selectedVoiceId.isEmpty,
-                   let voice = AVSpeechSynthesisVoice(identifier: selectedVoiceId) {
-                    utterance.voice = voice
-                } else {
-                    utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
-                }
-            }
+
+        if !selectedVoiceId.isEmpty,
+           let voice = AVSpeechSynthesisVoice(identifier: selectedVoiceId) {
+            utterance.voice = voice
         } else {
-            // Use regular system voice settings
-            if !selectedVoiceId.isEmpty,
-               let voice = AVSpeechSynthesisVoice(identifier: selectedVoiceId) {
-                utterance.voice = voice
-            } else {
-                utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
-            }
-            utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
-                                min(AVSpeechUtteranceMaximumSpeechRate, Float(speed)))
-            utterance.pitchMultiplier = Float(pitch)
+            utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
         }
-        
+        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
+                            min(AVSpeechUtteranceMaximumSpeechRate, Float(speed)))
+        utterance.pitchMultiplier = Float(pitch)
+
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {}
         previewSynthesizer.speak(utterance)
-    }
-    
-    /// Find a premium-quality voice that matches the selected service
-    private func findPremiumQualityVoice() -> AVSpeechSynthesisVoice? {
-        let allVoices = AVSpeechSynthesisVoice.speechVoices()
-        
-        // Filter for premium quality voices
-        let premiumVoices = allVoices.filter { $0.quality == .premium }
-        
-        // If we have premium voices, try to find one that matches our settings
-        if !premiumVoices.isEmpty {
-            // Try to find a voice with a name that matches our premium voice name
-            if let matchingVoice = premiumVoices.first(where: { 
-                $0.name.localizedCaseInsensitiveContains(premiumVoiceName) 
-            }) {
-                return matchingVoice
-            }
-            
-            // Fallback to the first premium voice
-            return premiumVoices.first
-        }
-        
-        // No premium voices available, return nil to use fallback
-        return nil
     }
 }
