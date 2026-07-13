@@ -181,9 +181,11 @@ struct ChatView: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                if !showVoicePage { wakePhraseListener.resume() }
-            case .inactive, .background:
-                wakePhraseListener.pause()
+                wakePhraseListener.resumeFromBackground()
+            case .background:
+                wakePhraseListener.startBackgroundMode()
+            case .inactive:
+                break
             @unknown default:
                 wakePhraseListener.pause()
             }

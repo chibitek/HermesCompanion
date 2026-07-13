@@ -28,7 +28,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Camera is used to send photos to Hermes for analysis.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone access lets Hermes hear voice messages and detect Hey Hermes while the app is open.</string>
+	<string>Microphone access lets Hermes hear voice messages, detect Hey Hermes while the app is open or in the background, and enable hands-free voice conversation.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Speech recognition is used to transcribe your voice messages.</string>
 	<key>UIBackgroundModes</key>
