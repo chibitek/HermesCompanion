@@ -259,7 +259,7 @@ struct SettingsView: View {
     private var providerCard: some View {
         glassCard {
             VStack(alignment: .leading, spacing: 0) {
-                cardHeader("Provider", icon: "server.rack")
+                cardHeader("Source", icon: "server.rack")
                     .padding(.bottom, theme.spacingS)
 
                 NavigationLink {
@@ -271,7 +271,7 @@ struct SettingsView: View {
                     )
                 } label: {
                     settingsNavigationRow(
-                        title: "Provider",
+                        title: "Source",
                         subtitle: providerSummary,
                         icon: "server.rack",
                         value: displayName(for: selectedProvider)
