@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var selectedProvider: String = ""
     @State private var selectedModel: String = ""
     @State private var selectedThinking: String = ""
+    @State private var isPriming: Bool = false
     @State private var selectedServerURL: String = ""
     @State private var modelSearch: String = ""
     @State private var modelRefreshMessage: String?
@@ -78,13 +79,14 @@ struct SettingsView: View {
             .onChange(of: store.connectionConfig?.baseURL) { _, _ in
                 Task {
                     await store.refreshCapabilities()
-                    primePickers()
                     await loadModels()
+                    isPriming = true
                     primePickers()
+                    isPriming = false
                 }
             }
             .onChange(of: selectedProvider) { oldValue, newValue in
-                guard oldValue != newValue else { return }
+                guard oldValue != newValue, !isPriming else { return }
                 store.preferredProvider = newValue
                 Task {
                     await loadModels(forProvider: newValue, preferExistingSelection: false)
@@ -670,7 +672,12 @@ struct SettingsView: View {
             let catalog = try await client.getModelCatalog(refresh: forceRefresh)
             availableModels = catalog.data
             configuredProviders = catalog.providers ?? []
-            store.availableModels = availableModels.map(\.id)
+            // Only update the store's availableModels if we got a non-empty
+            // list. Transient failures shouldn't replace the store's list
+            // (which the compact picker reads) with an empty one.
+            if !availableModels.isEmpty {
+                store.availableModels = availableModels.map { $0.id }
+            }
             addCurrentModelIfNeeded()
             let resolvedProvider = availableProviders.contains(targetProvider)
                 ? targetProvider
