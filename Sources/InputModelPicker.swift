@@ -7,6 +7,7 @@ struct InputModelPicker: View {
     let currentModel: String
     let availableModels: [String]
     let favoriteModels: [String]
+    let modelInfos: [String: ModelInfo]
     let onSelect: (String) -> Void
     var onToggleFavorite: ((String) -> Void)? = nil
 
@@ -23,14 +24,26 @@ struct InputModelPicker: View {
         favoriteModels.filter { availableModels.contains($0) || $0 == currentModel }
     }
 
-    /// All providers that have at least one favorited model.
-    /// If there are no favorites, show all providers.
+    /// Resolve the source (provider) for a model.
+    /// Uses the server-reported provider from ModelInfo, falling back to
+    /// the model ID prefix (e.g. "openai/gpt-4" -> "openai"), then "Other".
+    private func sourceOf(_ model: String) -> String {
+        if let info = modelInfos[model], let provider = info.provider, !provider.isEmpty {
+            return provider
+        }
+        if let info = modelInfos[model], let owned = info.ownedBy, !owned.isEmpty {
+            return owned
+        }
+        return ProviderUtils.providerOf(model) ?? "Other"
+    }
+
+    /// All sources that have available models.
     private var allProviders: [String] {
         var seen = Set<String>()
         var result: [String] = []
 
         for model in availableModels {
-            let prov = ProviderUtils.providerOf(model) ?? "Other"
+            let prov = sourceOf(model)
             if seen.insert(prov).inserted {
                 result.append(prov)
             }
@@ -42,7 +55,7 @@ struct InputModelPicker: View {
     /// If searching, filter by query.
     private var filteredModels: [String] {
         guard let provider = selectedProvider else { return [] }
-        let providerModels = availableModels.filter { (ProviderUtils.providerOf($0) ?? "Other") == provider }
+        let providerModels = availableModels.filter { sourceOf($0) == provider }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let base = query.isEmpty ? providerModels : providerModels.filter {
             $0.lowercased().contains(query) || ProviderUtils.shortModelName($0).lowercased().contains(query)
@@ -112,7 +125,7 @@ struct InputModelPicker: View {
                                 Text(providerDisplayName(provider))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(theme.textPrimary)
-                                let count = availableModels.filter { (ProviderUtils.providerOf($0) ?? "Other") == provider }.count
+                                let count = availableModels.filter { sourceOf($0) == provider }.count
                                 Text(count == 1 ? "1 model" : "\(count) models")
                                     .font(.caption)
                                     .foregroundStyle(theme.textMuted)

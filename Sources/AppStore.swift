@@ -22,6 +22,7 @@ final class AppStore: ObservableObject {
     @Published var skills: [Skill] = []
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
+    @Published var modelInfos: [String: ModelInfo] = [:]
     @Published private(set) var queuedMessages: [String] = []
     @Published var error: AppError?
     @Published var isLoading = false
@@ -325,7 +326,9 @@ final class AppStore: ObservableObject {
         }
         // Load available models
         do {
-            let models = try await client.getModels().map { $0.id }
+            let infos = try await client.getModels()
+            self.modelInfos = Dictionary(uniqueKeysWithValues: infos.map { ($0.id, $0) })
+            let models = infos.map { $0.id }
             self.availableModels = modelsIncludingCurrent(models)
         } catch {
             self.availableModels = modelsIncludingCurrent([])

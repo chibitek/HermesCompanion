@@ -14,6 +14,7 @@ struct GlassInputBar: View {
     let onRemoveAttachment: (Int) -> Void
     var currentModel: String = ""
     var availableModels: [String] = []
+    var modelInfos: [String: ModelInfo] = [:]
     var favoriteModels: [String] = []
     var onSelectModel: ((String) -> Void)? = nil
     var onToggleFavorite: ((String) -> Void)? = nil
@@ -276,6 +277,7 @@ struct GlassInputBar: View {
                                 currentModel: currentModel,
                                 availableModels: availableModels,
                                 favoriteModels: favoriteModels,
+                                modelInfos: modelInfos,
                                 onSelect: { model in
                                     onSelectModel?(model)
                                     showModelPicker = false
