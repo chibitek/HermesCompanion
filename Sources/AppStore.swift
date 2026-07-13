@@ -337,22 +337,22 @@ final class AppStore: ObservableObject {
 
     func selectPreferredModel(_ model: String, provider: String? = nil) {
         preferredModel = model
-        // Resolve provider: explicit > from model ID prefix > from capabilities > current
+        // Resolve provider ONLY from explicit arg or model ID prefix (e.g. "openai/gpt-4").
+        // Do NOT fall back to capabilities.currentProvider — that's the gateway's
+        // current state, not necessarily where this model lives. Sending a stale
+        // provider (e.g. "nous") to switchGatewayModel breaks local Ollama models.
         let resolvedProvider = nonEmpty(provider)
             ?? providerForModel(model)
-            ?? nonEmpty(capabilities?.currentProvider)
-            ?? nonEmpty(effectiveCurrentProvider)
             ?? ""
         if !resolvedProvider.isEmpty {
             preferredProvider = resolvedProvider
         }
-        // Promote to favorite (most-recent first, cap at 10). Selecting always
-        // stars so the chat pill menu stays useful even without Settings.
-        addFavorite(model)
-        // Switch the gateway's active model so the next message uses it.
-        let selectedProvider = preferredProvider
+        // Switch the gateway's active model. Only send provider when we know it
+        // from the model ID or explicit arg; otherwise let the gateway keep its
+        // current provider config.
+        let selectedProvider = resolvedProvider.isEmpty ? nil : resolvedProvider
         Task {
-            await apiClient?.switchGatewayModel(model, provider: selectedProvider.isEmpty ? nil : selectedProvider)
+            await apiClient?.switchGatewayModel(model, provider: selectedProvider)
         }
     }
 

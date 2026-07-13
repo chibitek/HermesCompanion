@@ -314,12 +314,10 @@ struct SettingsView: View {
                         subtitle: modelSubtitle,
                         onSelect: { model in
                             selectedModel = model.id
-                            store.preferredModel = model.id
-                            store.preferredProvider = selectedProvider
-                            let provider = selectedProvider.isEmpty ? nil : selectedProvider
-                            Task {
-                                await store.apiClient?.switchGatewayModel(model.id, provider: provider)
-                            }
+                            // Only pass provider if it's from the model ID or explicit selection.
+                            // Don't send stale provider (e.g. "nous") for local Ollama models.
+                            let modelProvider = model.ownedBy?.isEmpty == false ? model.ownedBy : nil
+                            store.selectPreferredModel(model.id, provider: modelProvider)
                         },
                         onToggleFavorite: { model in
                             _ = store.toggleFavorite(model.id)
