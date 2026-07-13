@@ -54,6 +54,7 @@
 		DF0FB0C835B0C2295CADEA9F /* TerminalThemes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2028A3E91C21B0A78D04F0BC /* TerminalThemes.swift */; };
 		E17EEB828AE68D190408C742 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7A1BB077B5C9F7833608AA0 /* AppearanceSettingsView.swift */; };
 		E5A0A1B90BAD77CBA352019D /* SessionPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 551BA7C230D94529FD10F5D2 /* SessionPickerView.swift */; };
+		EF598FC3F601152B1E4F52B5 /* ProviderUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29A06329B461E36625FB7949 /* ProviderUtils.swift */; };
 		F963F31C26FCEBF676C889CB /* GlassBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0877A3D2AFE7F4721ADA17AF /* GlassBubble.swift */; };
 /* End PBXBuildFile section */
 
@@ -82,6 +83,7 @@
 		1B87A150E7A7EE2D29064C1E /* ToolsetsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsetsListView.swift; sourceTree = "<group>"; };
 		2028A3E91C21B0A78D04F0BC /* TerminalThemes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemes.swift; sourceTree = "<group>"; };
 		260F94CE910541B9E482A59B /* SkillCommandLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCommandLogic.swift; sourceTree = "<group>"; };
+		29A06329B461E36625FB7949 /* ProviderUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderUtils.swift; sourceTree = "<group>"; };
 		323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		347A8180AE6F941EDF51CFEE /* ConnectionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSetupView.swift; sourceTree = "<group>"; };
 		35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerCommandLogic.swift; sourceTree = "<group>"; };
@@ -167,6 +169,7 @@
 				7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */,
 				0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */,
 				A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */,
+				29A06329B461E36625FB7949 /* ProviderUtils.swift */,
 				0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */,
 				551BA7C230D94529FD10F5D2 /* SessionPickerView.swift */,
 				90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */,
@@ -339,6 +342,7 @@
 				9326CB4014893810CB4C04B4 /* Models.swift in Sources */,
 				1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */,
 				2C03088CFC9E56596F6492CE /* ProviderSelectionView.swift in Sources */,
+				EF598FC3F601152B1E4F52B5 /* ProviderUtils.swift in Sources */,
 				C976F5D603BB2A2E0CBC38D6 /* ReleaseNotes.swift in Sources */,
 				E5A0A1B90BAD77CBA352019D /* SessionPickerView.swift in Sources */,
 				46B86EDE872B162DFABA640A /* SettingsView.swift in Sources */,
@@ -390,7 +394,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 85;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
@@ -415,7 +419,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 84;
+				CURRENT_PROJECT_VERSION = 85;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;

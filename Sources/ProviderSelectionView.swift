@@ -35,7 +35,7 @@ struct ProviderSelectionView: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: providerIcon(provider))
+                                Image(systemName: ProviderUtils.icon(for: provider))
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundStyle(selectedProvider == provider ? theme.accent : theme.textSecondary)
                                     .frame(width: 34, height: 34)
@@ -77,15 +77,5 @@ struct ProviderSelectionView: View {
         .navigationTitle("Provider")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search providers")
-    }
-
-    private func providerIcon(_ provider: String) -> String {
-        switch provider {
-        case "ollama-local", "lmstudio": return "desktopcomputer"
-        case "ollama-cloud", "openrouter", "nous": return "cloud"
-        case "anthropic", "openai-api", "gemini", "xai": return "sparkles"
-        case "github-copilot", "copilot", "codex-oauth", "openai-codex", "qwen-oauth", "minimax-oauth": return "person.badge.key"
-        default: return "server.rack"
-        }
     }
 }

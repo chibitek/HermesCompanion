@@ -56,16 +56,11 @@ struct CyberpunkVoicePreset: Identifiable, CaseIterable, Equatable {
 struct VoiceConversationPage: View {
     @ObservedObject var voiceConversation: VoiceConversationManager
     var store: AppStore? = nil
-    var currentModel: String = ""
-    var availableModels: [String] = []
-    var onSelectModel: ((String) -> Void)? = nil
     var onVoiceTranscription: ((String) -> Void)? = nil
     var onClose: (() -> Void)? = nil
 
     @State private var preset: CyberpunkVoicePreset = .matrix
     @State private var showSettings = false
-    @State private var showSessionPicker = false
-    @State private var micPulse = false
 
     // Rain intensity changes with conversation state
     private var rainIntensity: Double {
@@ -106,11 +101,6 @@ struct VoiceConversationPage: View {
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showSettings) {
             VoiceSettingsSheet(preset: preset)
-        }
-        .sheet(isPresented: $showSessionPicker) {
-            if let store = store {
-                SessionPickerView(store: store)
-            }
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true

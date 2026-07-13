@@ -837,25 +837,7 @@ struct SettingsView: View {
            !reportedName.isEmpty {
             return reportedName
         }
-        switch slug {
-        case "ollama-local": return "Ollama (local)"
-        case "opencode-zen": return "OpenCode Zen"
-        case "opencode-go": return "OpenCode Go"
-        case "ollama-cloud": return "Ollama Cloud"
-        case "openai-api": return "OpenAI"
-        case "codex-oauth", "openai-codex": return "OpenAI Codex"
-        case "github-copilot", "copilot": return "GitHub Copilot"
-        case "kimi-coding": return "Kimi"
-        case "qwen-oauth": return "Qwen"
-        case "minimax-oauth": return "MiniMax OAuth"
-        case "lmstudio": return "LM Studio"
-        case "zai": return "Z.AI / GLM"
-        case "xai": return "xAI / Grok"
-        case "openrouter": return "OpenRouter"
-        case "nous": return "Nous"
-        case "custom": return "Custom"
-        default: return slug.capitalized
-        }
+        return ProviderUtils.displayName(for: slug)
     }
 
     private var appVersion: String {
