@@ -43,6 +43,7 @@
 		88DA1AED250A2CDB2759BEA7 /* SkillPickerLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEEC864AFC7E90082A8EDEA /* SkillPickerLayoutTests.swift */; };
 		8D8B6F1C677ED71BCAF05D0D /* VoiceActivationLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */; };
 		9326CB4014893810CB4C04B4 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13839144B0503760269527F6 /* Models.swift */; };
+		94E71C645906B47600BA858B /* InputModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CACEE629F1AD027D714EFB4 /* InputModelPicker.swift */; };
 		A165F3FB03821E3B9E0EB15B /* SkillsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F84C3E68E0066661BF529D /* SkillsListView.swift */; };
 		A7C964BA91BD19B6BE8FA0B9 /* FilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE611F1C01056A05C20BC7AA /* FilePickerView.swift */; };
 		A8FBD11A8D629EB4A29E5F40 /* ActiveSessionPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */; };
@@ -91,6 +92,7 @@
 		4A4E7B2B3C67580BB0A71C4C /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		53907E499DA24C590A36DA7A /* GlassTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassTheme.swift; sourceTree = "<group>"; };
 		551BA7C230D94529FD10F5D2 /* SessionPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPickerView.swift; sourceTree = "<group>"; };
+		5CACEE629F1AD027D714EFB4 /* InputModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputModelPicker.swift; sourceTree = "<group>"; };
 		5E8118B694B0A64F91BE0369 /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
 		607284F3E16CE64024116B5A /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConversationManager.swift; sourceTree = "<group>"; };
@@ -158,6 +160,7 @@
 				53907E499DA24C590A36DA7A /* GlassTheme.swift */,
 				497EB3A78A1FA95B37C99AB4 /* HermesAPIClient.swift */,
 				12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */,
+				5CACEE629F1AD027D714EFB4 /* InputModelPicker.swift */,
 				5E8118B694B0A64F91BE0369 /* KeychainManager.swift */,
 				9E4647E786299A5ADBD2D24D /* LocalLLMManager.swift */,
 				13839144B0503760269527F6 /* Models.swift */,
@@ -329,6 +332,7 @@
 				090713634A1A6AA642140833 /* HermesAPIClient.swift in Sources */,
 				8169CA68B0F068C4C454AA05 /* HermesCompanionApp.swift in Sources */,
 				1CEEEA7AA202CFB1EACF6FBA /* HermesThemes.swift in Sources */,
+				94E71C645906B47600BA858B /* InputModelPicker.swift in Sources */,
 				3A321980B7C573E252E73B94 /* KeychainManager.swift in Sources */,
 				6B6F48425CBD5DB39DFA0D17 /* LocalLLMManager.swift in Sources */,
 				538D0CA3818BBDB92BB6A232 /* ModelSelectionView.swift in Sources */,

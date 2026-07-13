@@ -86,6 +86,9 @@ struct ChatView: View {
                         onSelectModel: { model in
                             store.selectPreferredModel(model)
                         },
+                        onToggleFavorite: { model in
+                            _ = store.toggleFavorite(model)
+                        },
                         availableSkills: store.skills,
                         onRefreshSkills: {
                             await store.refreshSkills()

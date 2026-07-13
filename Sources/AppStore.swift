@@ -337,19 +337,22 @@ final class AppStore: ObservableObject {
 
     func selectPreferredModel(_ model: String, provider: String? = nil) {
         preferredModel = model
-        if let provider = nonEmpty(provider) ?? providerForModel(model) {
-            preferredProvider = provider
+        // Resolve provider: explicit > from model ID prefix > from capabilities > current
+        let resolvedProvider = nonEmpty(provider)
+            ?? providerForModel(model)
+            ?? nonEmpty(capabilities?.currentProvider)
+            ?? nonEmpty(effectiveCurrentProvider)
+            ?? ""
+        if !resolvedProvider.isEmpty {
+            preferredProvider = resolvedProvider
         }
         // Promote to favorite (most-recent first, cap at 10). Selecting always
         // stars so the chat pill menu stays useful even without Settings.
         addFavorite(model)
         // Switch the gateway's active model so the next message uses it.
-        // The gateway ignores per-request model fields (upstream issue #16216),
-        // so we call a companion server on port 8643 that runs
-        // `hermes config set` to change the gateway's default model+provider.
         let selectedProvider = preferredProvider
         Task {
-            await apiClient?.switchGatewayModel(model, provider: selectedProvider)
+            await apiClient?.switchGatewayModel(model, provider: selectedProvider.isEmpty ? nil : selectedProvider)
         }
     }
 
