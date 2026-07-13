@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Compact model picker sheet shown from the chat input bar.
-/// Layout: Favorites section first, then a scrollable provider list.
-/// Tapping a provider shows that provider's models (favorites pinned to top).
+/// Model picker: shows unique model names (deduplicated across sources).
+/// Tap a model to see which sources serve it, then pick a source.
 struct InputModelPicker: View {
     let currentModel: String
     let availableModels: [String]
@@ -13,20 +12,35 @@ struct InputModelPicker: View {
 
     @EnvironmentObject private var appearance: AppearanceSettings
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedProvider: String?
+    @State private var selectedModelName: String?
     @State private var searchText = ""
 
     private var theme: any HermesTheme { appearance.activeTheme }
     private var favoriteSet: Set<String> { Set(favoriteModels) }
 
-    /// Favorites that are either in the available list or the current model.
-    private var validFavorites: [String] {
-        favoriteModels.filter { availableModels.contains($0) || $0 == currentModel }
+    // MARK: - Deduplication
+
+    /// All unique model names (short names), deduplicated across sources.
+    /// Each name maps to the list of model IDs that share it.
+    private var uniqueModels: [(name: String, ids: [String])] {
+        var groups: [String: [String]] = [:]
+        for model in availableModels {
+            let name = ProviderUtils.shortModelName(model)
+            groups[name, default: []].append(model)
+        }
+        return groups.map { (name: $0.key, ids: $0.value) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    /// Resolve the source (provider) for a model.
-    /// Uses the server-reported provider from ModelInfo, falling back to
-    /// the model ID prefix (e.g. "openai/gpt-4" -> "openai"), then "Other".
+    /// Sources for a given model name (deduplicated).
+    private func sourcesFor(_ name: String) -> [(id: String, provider: String)] {
+        let ids = uniqueModels.first { $0.name == name }?.ids ?? []
+        return ids.map { (id: $0, provider: sourceOf($0)) }
+            .sorted { ProviderUtils.displayName(for: $0.provider).localizedCaseInsensitiveCompare(ProviderUtils.displayName(for: $1.provider)) == .orderedAscending }
+    }
+
+    // MARK: - Source resolution
+
     private func sourceOf(_ model: String) -> String {
         if let info = modelInfos[model], let provider = info.provider, !provider.isEmpty {
             return provider
@@ -37,49 +51,25 @@ struct InputModelPicker: View {
         return ProviderUtils.providerOf(model) ?? "Other"
     }
 
-    /// All sources that have available models.
-    private var allProviders: [String] {
-        var seen = Set<String>()
-        var result: [String] = []
+    // MARK: - Search
 
-        for model in availableModels {
-            let prov = sourceOf(model)
-            if seen.insert(prov).inserted {
-                result.append(prov)
-            }
-        }
-        return result.sorted()
-    }
-
-    /// Models for the selected provider — all models, favorites sorted first.
-    /// If searching, filter by query.
-    private var filteredModels: [String] {
-        guard let provider = selectedProvider else { return [] }
-        let providerModels = availableModels.filter { sourceOf($0) == provider }
+    private var filteredUnique: [(name: String, ids: [String])] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = query.isEmpty ? providerModels : providerModels.filter {
-            $0.lowercased().contains(query) || ProviderUtils.shortModelName($0).lowercased().contains(query)
-        }
-        // Sort: favorites first, then alphabetical
-        return base.sorted { a, b in
-            let aFav = favoriteSet.contains(a)
-            let bFav = favoriteSet.contains(b)
-            if aFav != bFav { return aFav && !bFav }
-            return ProviderUtils.shortModelName(a).localizedCaseInsensitiveCompare(ProviderUtils.shortModelName(b)) == .orderedAscending
-        }
+        guard !query.isEmpty else { return uniqueModels }
+        return uniqueModels.filter { $0.name.lowercased().contains(query) }
     }
+
+    // MARK: - Body
 
     var body: some View {
         NavigationStack {
             ZStack {
                 theme.backgroundView.ignoresSafeArea()
 
-                if selectedProvider == nil {
-                    // First screen: favorites + provider list
-                    providerList
-                } else {
-                    // Second screen: models for selected provider
+                if selectedModelName == nil {
                     modelList
+                } else {
+                    sourceList
                 }
             }
         }
@@ -87,89 +77,22 @@ struct InputModelPicker: View {
         .presentationDragIndicator(.visible)
     }
 
-    // MARK: - Provider List (first screen)
-
-    private var providerList: some View {
-        List {
-            // Favorites section — only show if user has favorites
-            if !validFavorites.isEmpty {
-                Section {
-                    ForEach(validFavorites, id: \.self) { model in
-                        modelRow(model)
-                    }
-                } header: {
-                    HStack {
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(.yellow)
-                            .font(.caption)
-                        Text("Favorites")
-                            .foregroundStyle(theme.textSecondary)
-                    }
-                }
-            }
-
-            // Providers section
-            Section {
-                ForEach(allProviders, id: \.self) { provider in
-                    Button {
-                        selectedProvider = provider
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: providerIcon(provider))
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(theme.accent)
-                                .frame(width: 34, height: 34)
-                                .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(providerDisplayName(provider))
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(theme.textPrimary)
-                                let count = availableModels.filter { sourceOf($0) == provider }.count
-                                Text(count == 1 ? "1 model" : "\(count) models")
-                                    .font(.caption)
-                                    .foregroundStyle(theme.textMuted)
-                            }
-
-                            Spacer()
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(theme.textMuted)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            } header: {
-                Text("Sources")
-                    .foregroundStyle(theme.textSecondary)
-            }
-        }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .navigationTitle("Select Model")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { dismiss() }
-                    .foregroundStyle(theme.accent)
-            }
-        }
-    }
-
-    // MARK: - Model List (second screen)
+    // MARK: - Screen 1: Model list
 
     private var modelList: some View {
         List {
-            // Favorites for this provider
-            let providerFavorites = filteredModels.filter { favoriteSet.contains($0) }
-            let nonFavorites = filteredModels.filter { !favoriteSet.contains($0) }
+            // Favorites — deduplicated by name, show first
+            let favNames = filteredUnique.filter { name, ids in
+                ids.contains { favoriteSet.contains($0) }
+            }
+            let otherNames = filteredUnique.filter { name, ids in
+                !ids.contains { favoriteSet.contains($0) }
+            }
 
-            if !providerFavorites.isEmpty {
+            if !favNames.isEmpty {
                 Section {
-                    ForEach(providerFavorites, id: \.self) { model in
-                        modelRow(model)
+                    ForEach(favNames, id: \.name) { entry in
+                        modelRow(entry)
                     }
                 } header: {
                     HStack {
@@ -182,22 +105,22 @@ struct InputModelPicker: View {
                 }
             }
 
-            if !nonFavorites.isEmpty {
+            if !otherNames.isEmpty {
                 Section {
-                    ForEach(nonFavorites, id: \.self) { model in
-                        modelRow(model)
+                    ForEach(otherNames, id: \.name) { entry in
+                        modelRow(entry)
                     }
                 } header: {
                     HStack {
-                        Text(providerDisplayName(selectedProvider ?? ""))
+                        Text("Models")
                         Spacer()
-                        Text("\(filteredModels.count)")
+                        Text("\(filteredUnique.count)")
                     }
                     .foregroundStyle(theme.textSecondary)
                 }
             }
 
-            if filteredModels.isEmpty {
+            if filteredUnique.isEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? "No Models" : "No Matching Models",
                     systemImage: "cpu"
@@ -207,14 +130,68 @@ struct InputModelPicker: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .navigationTitle(providerDisplayName(selectedProvider ?? ""))
+        .navigationTitle("Select Model")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search models")
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") { dismiss() }
+                    .foregroundStyle(theme.accent)
+            }
+        }
+    }
+
+    // MARK: - Screen 2: Source list for a model
+
+    private var sourceList: some View {
+        List {
+            if let name = selectedModelName {
+                let sources = sourcesFor(name)
+                ForEach(sources, id: \.id) { source in
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onSelect(source.id)
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: ProviderUtils.icon(for: source.provider))
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                                .frame(width: 34, height: 34)
+                                .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(ProviderUtils.displayName(for: source.provider))
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(theme.textPrimary)
+                                Text(source.id)
+                                    .font(.caption)
+                                    .foregroundStyle(theme.textMuted)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            if source.id == currentModel {
+                                Image(systemName: "checkmark")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(theme.accent)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .navigationTitle(selectedModelName ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    selectedProvider = nil
-                    searchText = ""
+                    selectedModelName = nil
                 } label: {
                     HStack(spacing: 2) {
                         Image(systemName: "chevron.left")
@@ -228,13 +205,19 @@ struct InputModelPicker: View {
 
     // MARK: - Model Row
 
-    private func modelRow(_ model: String) -> some View {
-        let isSelected = model == currentModel
-        let isFavorite = favoriteSet.contains(model)
+    private func modelRow(_ entry: (name: String, ids: [String])) -> some View {
+        let isFavorite = entry.ids.contains { favoriteSet.contains($0) }
+        let isSelected = entry.ids.contains { $0 == currentModel }
+        let sourceCount = entry.ids.count
 
         return Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            onSelect(model)
+            if sourceCount == 1 {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onSelect(entry.ids[0])
+                dismiss()
+            } else {
+                selectedModelName = entry.name
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "cpu")
@@ -244,21 +227,25 @@ struct InputModelPicker: View {
                     .background(theme.accent.opacity(isSelected ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ProviderUtils.shortModelName(model))
+                    Text(entry.name)
                         .font(.body.weight(.medium))
                         .foregroundStyle(isSelected ? theme.accent : theme.textPrimary)
                         .lineLimit(1)
-                    Text(model)
-                        .font(.caption)
-                        .foregroundStyle(theme.textMuted)
-                        .lineLimit(1)
+                    if sourceCount > 1 {
+                        Text("\(sourceCount) sources")
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
+                    } else {
+                        Text(entry.ids[0])
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
+                            .lineLimit(1)
+                    }
                 }
 
                 Spacer(minLength: 0)
 
-                // Star/unstar — use onTapGesture, not Button, to avoid
-                // SwiftUI's nested-button issue where the outer row button
-                // swallows the tap.
+                // Star — onTapGesture to avoid nested-button issue
                 if let onToggleFavorite {
                     Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.system(size: 14, weight: .semibold))
@@ -266,7 +253,8 @@ struct InputModelPicker: View {
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            onToggleFavorite(model)
+                            // ponytail: favorite the first id for this name
+                            onToggleFavorite(entry.ids[0])
                         }
                         .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
                 } else if isFavorite {
@@ -280,6 +268,12 @@ struct InputModelPicker: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(theme.accent)
                 }
+
+                if sourceCount > 1 {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(theme.textMuted)
+                }
             }
             .contentShape(Rectangle())
         }
@@ -289,6 +283,5 @@ struct InputModelPicker: View {
     // MARK: - Helpers
 
     private func providerIcon(_ provider: String) -> String { ProviderUtils.icon(for: provider) }
-
     private func providerDisplayName(_ provider: String) -> String { ProviderUtils.displayName(for: provider) }
 }
