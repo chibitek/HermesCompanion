@@ -16,6 +16,7 @@ struct GlassInputBar: View {
     var availableModels: [String] = []
     var favoriteModels: [String] = []
     var onSelectModel: ((String) -> Void)? = nil
+    var onToggleFavorite: ((String) -> Void)? = nil
     var availableSkills: [Skill] = []
     var onRefreshSkills: (() async -> Void)? = nil
 
@@ -35,6 +36,7 @@ struct GlassInputBar: View {
     // External VoiceConversationManager passed from ChatView so overlay state stays in sync
     var voiceConversation: VoiceConversationManager
     @State private var showAttachmentMenu = false
+    @State private var showModelPicker = false
     @State private var highlightedSkillID: String?
     @State private var didRequestSkillsForCurrentMenu = false
 
@@ -248,55 +250,8 @@ struct GlassInputBar: View {
                     }
 
                     if !currentModel.isEmpty {
-                        Menu {
-                            // Group favorites by provider
-                            let favs = favoriteModels.filter { availableModels.contains($0) || $0 == currentModel }
-                            let favProviders = Array(Set(favs.compactMap { providerOf($0) })).sorted()
-
-                            if !favs.isEmpty {
-                                ForEach(favProviders, id: \.self) { prov in
-                                    Menu(prov) {
-                                        let provFavs = favs.filter { providerOf($0) == prov }
-                                        ForEach(provFavs, id: \.self) { model in
-                                            Button {
-                                                let generator = UIImpactFeedbackGenerator(style: .light)
-                                                generator.impactOccurred()
-                                                onSelectModel?(model)
-                                            } label: {
-                                                if model == currentModel {
-                                                    Label(shortModelName(model), systemImage: "checkmark")
-                                                } else {
-                                                    Text(shortModelName(model))
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Divider()
-                            }
-
-                            // "All Models" submenu grouped by provider
-                            let allProviders = Array(Set(availableModels.compactMap { providerOf($0) })).sorted()
-                            Menu("All Models") {
-                                ForEach(allProviders, id: \.self) { prov in
-                                    Menu(prov) {
-                                        let provModels = availableModels.filter { providerOf($0) == prov }
-                                        ForEach(provModels, id: \.self) { model in
-                                            Button {
-                                                let generator = UIImpactFeedbackGenerator(style: .light)
-                                                generator.impactOccurred()
-                                                onSelectModel?(model)
-                                            } label: {
-                                                if model == currentModel {
-                                                    Label(shortModelName(model), systemImage: "checkmark")
-                                                } else {
-                                                    Text(shortModelName(model))
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        Button {
+                            showModelPicker = true
                         } label: {
                             HStack(spacing: 4) {
                                 if let prov = providerOf(currentModel), !prov.isEmpty {
@@ -318,6 +273,21 @@ struct GlassInputBar: View {
                         }
                         .layoutPriority(1)
                         .buttonStyle(.plain)
+                        .sheet(isPresented: $showModelPicker) {
+                            InputModelPicker(
+                                currentModel: currentModel,
+                                availableModels: availableModels,
+                                favoriteModels: favoriteModels,
+                                onSelect: { model in
+                                    onSelectModel?(model)
+                                    showModelPicker = false
+                                },
+                                onToggleFavorite: { model in
+                                    onToggleFavorite?(model)
+                                }
+                            )
+                            .environmentObject(appearance)
+                        }
                     }
 
                     Spacer(minLength: 0)
