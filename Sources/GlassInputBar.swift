@@ -22,8 +22,6 @@ struct GlassInputBar: View {
 
     // Voice conversation callback - called when a transcription is ready in live modes (remote mode)
     var onVoiceConversationTranscription: ((String) -> Void)?
-    // Callback to speak a response (set by ChatView when in live conversation mode)
-    var onSpeakResponse: ((String) -> Void)?
     // Callback to open the full-screen cyberpunk voice page
     var onOpenVoicePage: (() -> Void)? = nil
     var onDictationStateChange: ((Bool) -> Void)? = nil
@@ -254,12 +252,12 @@ struct GlassInputBar: View {
                             showModelPicker = true
                         } label: {
                             HStack(spacing: 4) {
-                                if let prov = providerOf(currentModel), !prov.isEmpty {
+                                if let prov = ProviderUtils.providerOf(currentModel), !prov.isEmpty {
                                     Text(prov.capitalized)
                                         .font(.system(size: 10, weight: .semibold))
                                         .foregroundStyle(theme.accent)
                                 }
-                                Text(shortModelName(currentModel))
+                                Text(ProviderUtils.shortModelName(currentModel))
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(theme.textPrimary)
                             }
@@ -515,19 +513,6 @@ struct GlassInputBar: View {
         if isStreaming { return "Stop" }
         if canSend { return "Send message" }
         return "Open voice conversation"
-    }
-
-    private func shortModelName(_ model: String) -> String {
-        // Shorten common model names for the pill
-        if model.contains("/") {
-            return model.split(separator: "/").last.map { String($0) } ?? model
-        }
-        return model
-    }
-
-    private func providerOf(_ model: String) -> String? {
-        guard let slash = model.firstIndex(of: "/"), slash > model.startIndex else { return nil }
-        return String(model[..<slash])
     }
 
     private func attachmentThumbnail(_ index: Int) -> some View {

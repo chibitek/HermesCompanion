@@ -96,9 +96,6 @@ struct ChatView: View {
                         onVoiceConversationTranscription: { transcription in
                             handleVoiceTranscription(transcription)
                         },
-                        onSpeakResponse: { text in
-                            voiceConversation.speakResponse(text)
-                        },
                         onOpenVoicePage: {
                             showVoicePage = true
                         },
@@ -154,11 +151,6 @@ struct ChatView: View {
                 VoiceConversationPage(
                     voiceConversation: voiceConversation,
                     store: store,
-                    currentModel: store.effectiveCurrentModel,
-                    availableModels: store.availableModels,
-                    onSelectModel: { model in
-                        store.selectPreferredModel(model)
-                    },
                     onVoiceTranscription: { transcription in
                         handleVoiceTranscription(transcription)
                     },

@@ -356,12 +356,6 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Set the single favorite model (called when selecting a model).
-    func addFavorite(_ model: String) {
-        guard !model.isEmpty else { return }
-        favoriteModels = [model]
-    }
-
     /// Single-favorite toggle: starring a model replaces the previous favorite.
     /// Tapping the star on an already-favorited model unstars it.
     /// Called from Settings. Returns true if now favorited, false if unfavorited.

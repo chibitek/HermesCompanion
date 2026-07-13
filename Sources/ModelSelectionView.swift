@@ -164,19 +164,5 @@ struct ModelSelectionView: View {
         .padding(.vertical, 3)
     }
 
-    private var providerDisplayName: String {
-        switch provider {
-        case "openrouter": return "OpenRouter"
-        case "ollama-local": return "Ollama (local)"
-        case "ollama-cloud": return "Ollama Cloud"
-        case "opencode-zen": return "OpenCode Zen"
-        case "opencode-go": return "OpenCode Go"
-        case "openai-api": return "OpenAI"
-        case "codex-oauth", "openai-codex": return "OpenAI Codex"
-        case "github-copilot", "copilot": return "GitHub Copilot"
-        case "kimi-coding": return "Kimi"
-        case "qwen-oauth": return "Qwen"
-        default: return provider.capitalized
-        }
-    }
+    private var providerDisplayName: String { ProviderUtils.displayName(for: provider) }
 }

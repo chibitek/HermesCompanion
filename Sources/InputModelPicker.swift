@@ -30,11 +30,11 @@ struct InputModelPicker: View {
         var result: [String] = []
 
         // If we have favorites, only show providers that contain a favorite
-        let favProviders = Set(validFavorites.compactMap { providerOf($0) })
-        let source = favProviders.isEmpty ? availableModels : availableModels.filter { favProviders.contains(providerOf($0) ?? "Other") }
+        let favProviders = Set(validFavorites.compactMap { ProviderUtils.providerOf($0) })
+        let source = favProviders.isEmpty ? availableModels : availableModels.filter { favProviders.contains(ProviderUtils.providerOf($0) ?? "Other") }
 
         for model in source {
-            let prov = providerOf(model) ?? "Other"
+            let prov = ProviderUtils.providerOf(model) ?? "Other"
             if seen.insert(prov).inserted {
                 result.append(prov)
             }
@@ -46,19 +46,19 @@ struct InputModelPicker: View {
     /// If searching, filter by query.
     private var filteredModels: [String] {
         guard let provider = selectedProvider else { return [] }
-        let providerModels = availableModels.filter { (providerOf($0) ?? "Other") == provider }
+        let providerModels = availableModels.filter { (ProviderUtils.providerOf($0) ?? "Other") == provider }
         // Only show favorites
         let favOnly = providerModels.filter { favoriteSet.contains($0) || $0 == currentModel }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let base = query.isEmpty ? favOnly : favOnly.filter {
-            $0.lowercased().contains(query) || shortModelName($0).lowercased().contains(query)
+            $0.lowercased().contains(query) || ProviderUtils.shortModelName($0).lowercased().contains(query)
         }
         // Sort: favorites first, then alphabetical
         return base.sorted { a, b in
             let aFav = favoriteSet.contains(a)
             let bFav = favoriteSet.contains(b)
             if aFav != bFav { return aFav && !bFav }
-            return shortModelName(a).localizedCaseInsensitiveCompare(shortModelName(b)) == .orderedAscending
+            return ProviderUtils.shortModelName(a).localizedCaseInsensitiveCompare(ProviderUtils.shortModelName(b)) == .orderedAscending
         }
     }
 
@@ -118,7 +118,7 @@ struct InputModelPicker: View {
                                 Text(providerDisplayName(provider))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(theme.textPrimary)
-                                let count = availableModels.filter { (providerOf($0) ?? "Other") == provider }.count
+                                let count = availableModels.filter { (ProviderUtils.providerOf($0) ?? "Other") == provider }.count
                                 Text(count == 1 ? "1 model" : "\(count) models")
                                     .font(.caption)
                                     .foregroundStyle(theme.textMuted)
@@ -237,7 +237,7 @@ struct InputModelPicker: View {
                     .background(theme.accent.opacity(isSelected ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(shortModelName(model))
+                    Text(ProviderUtils.shortModelName(model))
                         .font(.body.weight(.medium))
                         .foregroundStyle(isSelected ? theme.accent : theme.textPrimary)
                         .lineLimit(1)
@@ -281,43 +281,7 @@ struct InputModelPicker: View {
 
     // MARK: - Helpers
 
-    private func providerOf(_ model: String) -> String? {
-        guard let slash = model.firstIndex(of: "/"), slash > model.startIndex else { return nil }
-        return String(model[..<slash])
-    }
+    private func providerIcon(_ provider: String) -> String { ProviderUtils.icon(for: provider) }
 
-    private func shortModelName(_ model: String) -> String {
-        if model.contains("/") {
-            return model.split(separator: "/").last.map { String($0) } ?? model
-        }
-        return model
-    }
-
-    private func providerIcon(_ provider: String) -> String {
-        switch provider.lowercased() {
-        case "ollama", "ollama-local", "lmstudio": return "desktopcomputer"
-        case "openrouter", "nous": return "cloud"
-        case "anthropic", "openai", "openai-api", "gemini", "xai": return "sparkles"
-        case "github-copilot", "copilot", "codex-oauth", "openai-codex", "qwen-oauth": return "person.badge.key"
-        default: return "server.rack"
-        }
-    }
-
-    private func providerDisplayName(_ provider: String) -> String {
-        switch provider.lowercased() {
-        case "openrouter": return "OpenRouter"
-        case "ollama", "ollama-local": return "Ollama (local)"
-        case "ollama-cloud": return "Ollama Cloud"
-        case "nous": return "Nous"
-        case "anthropic": return "Anthropic"
-        case "openai", "openai-api": return "OpenAI"
-        case "gemini": return "Google"
-        case "xai": return "xAI"
-        case "github-copilot", "copilot": return "GitHub Copilot"
-        case "codex-oauth", "openai-codex": return "OpenAI Codex"
-        case "qwen-oauth": return "Qwen"
-        case "other": return "Other"
-        default: return provider.capitalized
-        }
-    }
+    private func providerDisplayName(_ provider: String) -> String { ProviderUtils.displayName(for: provider) }
 }

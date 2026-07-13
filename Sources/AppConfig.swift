@@ -12,8 +12,6 @@ import Foundation
 
 /// Global app configuration constants
 enum AppConfig {
-    /// App name shown in UI
-    static let appName = "Hermes"
     /// GitHub repo for help/about
     static let repoURL = "https://github.com/chibitek/HermesCompanion"
     /// Hermes Agent docs
@@ -22,6 +20,4 @@ enum AppConfig {
     static let defaultPort = 8642
     /// Keychain service name
     static let keychainService = "com.chibitek.hermescompanion"
-    /// JPEG quality for camera images
-    static let imageJPEGQuality: CGFloat = 0.8
 }

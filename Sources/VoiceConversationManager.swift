@@ -18,14 +18,6 @@ enum ConversationMode: String, CaseIterable {
         }
     }
 
-    var toggled: ConversationMode {
-        switch self {
-        case .local: return .remote
-        case .remote: return .premium
-        case .premium: return .local
-        }
-    }
-    
     var displayName: String {
         switch self {
         case .local: return "On-Device"
@@ -83,7 +75,6 @@ final class VoiceConversationManager: ObservableObject {
 
     // Audio level monitoring
     private var levelTimer: Timer?
-    private var audioMetersNode: AVAudioInputNode? { audioEngine.inputNode }
 
     // TTS
     private let synthesizer = AVSpeechSynthesizer()
@@ -103,9 +94,6 @@ final class VoiceConversationManager: ObservableObject {
     // Silence detection: auto-finalize when user stops talking
     private var silenceTimer: Timer?
     private let silenceTimeout = VoiceEndpointingPolicy.silenceTimeout
-    private var lastTranscriptionTime: Date = .distantPast
-    private var lastTranscribedText: String = ""
-
     // Debounce for finalization
     private var isFinalizing = false
     private var pendingConversationStartID: UUID?
@@ -120,20 +108,7 @@ final class VoiceConversationManager: ObservableObject {
         synthesizer.delegate = delegateBridge
 
         // Load voice settings from UserDefaults (set via Settings > Voice)
-        voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
-        if voiceSpeed == 0 { voiceSpeed = 0.5 }
-        voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
-        if voicePitch == 0 { voicePitch = 1.0 }
-        voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
-        
-        // Load premium voice settings
-        let premiumServiceRaw = UserDefaults.standard.string(forKey: "premium_voice_service") ?? PremiumVoiceService.amazonPolly.rawValue
-        premiumVoiceService = PremiumVoiceService(rawValue: premiumServiceRaw) ?? .amazonPolly
-        premiumVoiceName = UserDefaults.standard.string(forKey: "premium_voice_name") ?? "Joanna"
-        premiumVoiceSpeed = UserDefaults.standard.double(forKey: "premium_voice_speed")
-        if premiumVoiceSpeed == 0 { premiumVoiceSpeed = 1.0 }
-        premiumVoicePitch = UserDefaults.standard.double(forKey: "premium_voice_pitch")
-        if premiumVoicePitch == 0 { premiumVoicePitch = 1.0 }
+        syncVoiceSettings()
 
         // Default to local mode only if the on-device LLM is available AND
         // there's no Hermes server connection. When connected, always prefer
@@ -164,21 +139,8 @@ final class VoiceConversationManager: ObservableObject {
     func refreshDefaultMode() {
         if localLLM.isAvailable && !isHermesConnected {
             conversationMode = .local
-        } else if isHermesConnected {
-            conversationMode = .remote
         } else {
-            // Check if we have network connectivity for premium mode
-            Task { @MainActor in
-                let isConnected = await hasNetworkConnectivity()
-                // Already on MainActor — no dispatch needed
-                if isConnected {
-                    // We could default to premium mode if network is available
-                    // But for now, we'll stick with remote as the default
-                    self.conversationMode = .remote
-                } else {
-                    self.conversationMode = .remote
-                }
-            }
+            conversationMode = .remote
         }
     }
 
@@ -947,30 +909,6 @@ final class VoiceConversationManager: ObservableObject {
         isSpeaking = false
     }
 
-    // MARK: - Mode Toggle
-
-    func toggleMode() {
-        conversationMode = conversationMode.toggled
-        if conversationMode == .local && !localLLM.isAvailable {
-            localLLM.refreshAvailability()
-            if !localLLM.isAvailable {
-                // Fallback to remote
-                conversationMode = .remote
-            }
-        }
-        // If switching to premium mode, ensure we have network connectivity
-        if conversationMode == .premium {
-            Task { @MainActor in
-                let isConnected = await hasNetworkConnectivity()
-                if !isConnected {
-                    // Fallback to remote mode if no network connectivity
-                    self.conversationMode = .remote
-                    self.voiceError = "No internet connection. Switched to remote mode."
-                }
-            }
-        }
-    }
-
     // MARK: - Voice Settings Sync
 
     /// Reload voice settings from UserDefaults. Call this when the voice page
@@ -992,17 +930,6 @@ final class VoiceConversationManager: ObservableObject {
         if premiumVoicePitch == 0 { premiumVoicePitch = 1.0 }
     }
 
-    /// Sync voice settings from @AppStorage values stored in the voice page.
-    func updateVoiceSettings(speed: Float, pitch: Float, identifier: String, premiumService: PremiumVoiceService, premiumVoiceName: String, premiumSpeed: Double, premiumPitch: Double) {
-        voiceSpeed = speed
-        voicePitch = pitch
-        voiceIdentifier = identifier
-        self.premiumVoiceService = premiumService
-        self.premiumVoiceName = premiumVoiceName
-        self.premiumVoiceSpeed = premiumSpeed
-        self.premiumVoicePitch = premiumPitch
-    }
-    
     // MARK: - Network Connectivity
     
     /// Check if device has internet connectivity
