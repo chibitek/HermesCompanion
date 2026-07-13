@@ -314,7 +314,12 @@ struct SettingsView: View {
                         subtitle: modelSubtitle,
                         onSelect: { model in
                             selectedModel = model.id
-                            store.selectPreferredModel(model.id, provider: selectedProvider)
+                            store.preferredModel = model.id
+                            store.preferredProvider = selectedProvider
+                            let provider = selectedProvider.isEmpty ? nil : selectedProvider
+                            Task {
+                                await store.apiClient?.switchGatewayModel(model.id, provider: provider)
+                            }
                         },
                         onToggleFavorite: { model in
                             _ = store.toggleFavorite(model.id)
