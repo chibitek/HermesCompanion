@@ -35,7 +35,14 @@ final class HermesAPIClient: Sendable {
         }
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
         req.timeoutInterval = 5
-        _ = try? await session.data(for: req)
+        do {
+            let (resp, _) = try await session.data(for: req)
+            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                FileLogger.shared.log("switchGatewayModel HTTP \(http.statusCode) for model=\(modelId) provider=\(provider ?? "nil")")
+            }
+        } catch {
+            FileLogger.shared.log("switchGatewayModel failed: \(error.localizedDescription) for model=\(modelId)")
+        }
     }
 
     init(config: ConnectionConfig) {

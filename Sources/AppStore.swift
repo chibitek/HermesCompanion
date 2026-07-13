@@ -314,25 +314,31 @@ final class AppStore: ObservableObject {
         }
         do {
             self.capabilities = try await client.getCapabilities()
-            // Sync preferredModel to the gateway's actual current model
-            // when no valid user preference is saved.
-            let gwModel = self.capabilities?.currentModel ?? self.capabilities?.model ?? ""
-            if !gwModel.isEmpty,
-               preferredModel.isEmpty || !availableModels.contains(preferredModel) {
-                preferredModel = gwModel
-            }
         } catch {
             // Non-fatal — capabilities are optional
         }
         // Load available models
+        var modelsLoaded = false
         do {
             let infos = try await client.getModels()
             self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             let models = infos.map { $0.id }
             self.availableModels = modelsIncludingCurrent(models)
+            modelsLoaded = true
         } catch {
             self.availableModels = modelsIncludingCurrent([])
+
             // Non-fatal
+        }
+        // Sync preferredModel to gateway's current model ONLY when models
+        // loaded successfully. If getModels() failed, availableModels is stale
+        // and we must not overwrite the user's saved preference.
+        if modelsLoaded {
+            let gwModel = self.capabilities?.currentModel ?? self.capabilities?.model ?? ""
+            if !gwModel.isEmpty,
+               preferredModel.isEmpty || !availableModels.contains(preferredModel) {
+                preferredModel = gwModel
+            }
         }
     }
 
