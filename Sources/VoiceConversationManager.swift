@@ -4,38 +4,9 @@ import AVFoundation
 import Speech
 import Network
 
-/// Voice conversation mode: local (on-device), remote (Hermes API), or premium (cloud TTS services).
-enum ConversationMode: String, CaseIterable {
-    case local = "Local"
-    case remote = "Remote"
-    case premium = "Premium"
-
-    var icon: String {
-        switch self {
-        case .local: return "iphone.radiowaves.left.and.right"
-        case .remote: return "cloud.fill"
-        case .premium: return "sparkles"
-        }
-    }
-
-    var displayName: String {
-        switch self {
-        case .local: return "On-Device"
-        case .remote: return "Hermes Server"
-        case .premium: return "Cloud TTS"
-        }
-    }
-}
-
-/// Voice conversation mode for live 2-way voice interaction.
+/// Voice conversation manager for live 2-way voice interaction with Hermes.
 ///
-/// In **local** mode:
-/// 1. Records audio and transcribes via SFSpeechRecognizer
-/// 2. Generates response on-device via LocalLLMManager (Apple Foundation Models)
-/// 3. Speaks the response using AVSpeechSynthesizer
-/// 4. Resumes listening — fully hands-free
-///
-/// In **remote** mode:
+/// Flow:
 /// 1. Records audio and transcribes via SFSpeechRecognizer
 /// 2. Sends transcribed text to Hermes API
 /// 3. Speaks the response using AVSpeechSynthesizer
@@ -49,7 +20,6 @@ final class VoiceConversationManager: ObservableObject {
     @Published var transcribedText = ""
     @Published var spokenResponse = ""
     @Published var hasPermission = false
-    @Published var conversationMode: ConversationMode = .local
     @Published var audioLevel: Float = 0.0
     @Published var voiceError: String?
 
@@ -57,13 +27,6 @@ final class VoiceConversationManager: ObservableObject {
     var voiceSpeed: Float = 0.5
     var voicePitch: Float = 1.0
     var voiceIdentifier: String = ""
-    var premiumVoiceService: PremiumVoiceService = .amazonPolly
-    var premiumVoiceName: String = "Joanna"
-    var premiumVoiceSpeed: Double = 1.0
-    var premiumVoicePitch: Double = 1.0
-
-    // Local LLM
-    let localLLM = LocalLLMManager()
 
     // Speech recognition
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
@@ -82,7 +45,6 @@ final class VoiceConversationManager: ObservableObject {
 
     // Conversation flow
     private var onTranscriptionComplete: ((String) -> Void)?
-    private var onLocalResponse: ((String) -> Void)?
     // Called before starting voice mode to stop background audio
     var onStopBackgroundAudio: (() -> Void)?
 
@@ -110,16 +72,6 @@ final class VoiceConversationManager: ObservableObject {
         // Load voice settings from UserDefaults (set via Settings > Voice)
         syncVoiceSettings()
 
-        // Default to local mode only if the on-device LLM is available AND
-        // there's no Hermes server connection. When connected, always prefer
-        // remote (Hermes) so the voice conversation has the same session
-        // context and memory as the typed chat.
-        if localLLM.isAvailable && !isHermesConnected {
-            conversationMode = .local
-        } else {
-            conversationMode = .remote
-        }
-
         // Observe audio session interruptions
         NotificationCenter.default.addObserver(
             self,
@@ -127,21 +79,6 @@ final class VoiceConversationManager: ObservableObject {
             name: AVAudioSession.interruptionNotification,
             object: nil
         )
-    }
-
-    /// Whether a Hermes server is connected. Set by ChatView / AppStore.
-    /// When true, voice mode should default to remote so the conversation
-    /// shares context with the typed chat.
-    var isHermesConnected: Bool = true
-
-    /// Re-evaluate the default mode based on current connection state.
-    /// Call when the Hermes connection state changes.
-    func refreshDefaultMode() {
-        if localLLM.isAvailable && !isHermesConnected {
-            conversationMode = .local
-        } else {
-            conversationMode = .remote
-        }
     }
 
     @objc private func handleAudioSessionInterruption(_ notification: Notification) {
@@ -197,11 +134,10 @@ final class VoiceConversationManager: ObservableObject {
 
     // MARK: - Start/Stop Conversation
 
-    /// Start a live conversation. In local mode, responses are generated on-device.
-    /// In remote mode, `onTranscription` is called and the caller sends to Hermes API.
+    /// Start a live conversation. `onTranscription` is called when the user's
+    /// speech is finalized; the caller sends it to the Hermes API.
     func startConversation(
-        onTranscription: ((String) -> Void)? = nil,
-        onLocalResponse: ((String) -> Void)? = nil
+        onTranscription: ((String) -> Void)? = nil
     ) {
         guard hasPermission else {
             let startID = UUID()
@@ -211,8 +147,7 @@ final class VoiceConversationManager: ObservableObject {
                 guard pendingConversationStartID == startID else { return }
                 if hasPermission {
                     startConversation(
-                        onTranscription: onTranscription,
-                        onLocalResponse: onLocalResponse
+                        onTranscription: onTranscription
                     )
                 } else {
                     pendingConversationStartID = nil
@@ -226,7 +161,6 @@ final class VoiceConversationManager: ObservableObject {
         isConversing = true
         voiceError = nil
         self.onTranscriptionComplete = onTranscription
-        self.onLocalResponse = onLocalResponse
         startListening()
     }
 
@@ -240,7 +174,6 @@ final class VoiceConversationManager: ObservableObject {
         isFinalizing = false
         voiceError = nil
         onTranscriptionComplete = nil
-        onLocalResponse = nil
         // Deactivate audio session now that conversation is fully over
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
@@ -620,8 +553,7 @@ final class VoiceConversationManager: ObservableObject {
     }
 
     /// Finalize the current transcription and trigger the conversation flow.
-    /// In local mode: generates a response via LocalLLMManager, speaks it, resumes listening.
-    /// In remote mode: calls the onTranscriptionComplete callback.
+    /// Calls the onTranscriptionComplete callback to send text to the Hermes API.
     @MainActor
     func finalizeTranscription(_ text: String) {
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -660,40 +592,12 @@ final class VoiceConversationManager: ObservableObject {
         voiceError = nil
         stopListening(resetFinalizing: false)
 
-        switch conversationMode {
-        case .local:
-            isThinking = true
-            scheduleThinkingSafetyTimer()
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                let response = await self.localLLM.generateResponse(to: finalText)
-                self.isThinking = false
-                self.isFinalizing = false
-                self.invalidateThinkingSafetyTimer()
-                if self.isConversing {
-                    self.speakResponse(response)
-                    self.onLocalResponse?(response)
-                }
-            }
-
-        case .remote:
-            FileLogger.shared.log("VoiceManager: remote mode finalize for '\(finalText)'")
-            isThinking = true
-            scheduleThinkingSafetyTimer()
-            FileLogger.shared.log("VoiceManager: remote mode, calling onTranscriptionComplete with '\(finalText)'")
-            onTranscriptionComplete?(finalText)
-            // For remote mode, isFinalizing will be reset when speakResponse is called
-
-        case .premium:
-            FileLogger.shared.log("VoiceManager: premium mode finalize for '\(finalText)'")
-            // For premium mode, we still send to Hermes but speak with premium TTS
-            isThinking = true
-            scheduleThinkingSafetyTimer()
-            FileLogger.shared.log("VoiceManager: premium mode, calling onTranscriptionComplete with '\(finalText)'")
-            onTranscriptionComplete?(finalText)
-            // For premium mode, isFinalizing will be reset when speakResponse is called
-            // by the caller after receiving the API response.
-        }
+        FileLogger.shared.log("VoiceManager: remote mode finalize for '\(finalText)'")
+        isThinking = true
+        scheduleThinkingSafetyTimer()
+        FileLogger.shared.log("VoiceManager: calling onTranscriptionComplete with '\(finalText)'")
+        onTranscriptionComplete?(finalText)
+        // isFinalizing will be reset when speakResponse is called
     }
 
     // MARK: - Silence Detection
@@ -778,12 +682,12 @@ final class VoiceConversationManager: ObservableObject {
 
     // MARK: - TTS
 
-    /// Speak a text response using AVSpeechSynthesizer or premium cloud TTS services.
+    /// Speak a text response using AVSpeechSynthesizer.
     /// Automatically resumes listening after speech completes.
     func speakResponse(_ text: String) {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanText.isEmpty, isConversing else { 
-            return 
+        guard !cleanText.isEmpty, isConversing else {
+            return
         }
 
         // Voice settings are cached in instance properties and synced
@@ -795,13 +699,7 @@ final class VoiceConversationManager: ObservableObject {
         isSpeaking = true
         voiceError = nil
 
-        // Handle different conversation modes
-        switch conversationMode {
-        case .local, .remote:
-            speakWithSystemTTS(cleanText)
-        case .premium:
-            speakWithPremiumTTS(cleanText)
-        }
+        speakWithSystemTTS(cleanText)
     }
     
     /// Speak using the system's built-in AVSpeechSynthesizer
@@ -837,70 +735,6 @@ final class VoiceConversationManager: ObservableObject {
         startBargeInMonitoring()
     }
     
-    /// Speak using premium cloud TTS services (Amazon Polly or Google Cloud TTS)
-    private func speakWithPremiumTTS(_ text: String) {
-        // Audio session is already configured as .playAndRecord from the
-        // listening phase. Skip redundant reconfiguration to reduce latency.
-        let audioSession = AVAudioSession.sharedInstance()
-        if audioSession.category != .playAndRecord {
-            try? audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
-            try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        }
-
-        let utterance = AVSpeechUtterance(string: text)
-        
-        // Use premium voice settings
-        // Map premium speed (0.25...2.0) to AVSpeechUtterance rate range (0...1, default 0.5)
-        let mappedSpeed = Float(premiumVoiceSpeed * 0.5) // Scale to fit within system TTS range
-        utterance.rate = max(AVSpeechUtteranceMinimumSpeechRate,
-                            min(AVSpeechUtteranceMaximumSpeechRate, mappedSpeed))
-        utterance.pitchMultiplier = Float(premiumVoicePitch)
-        utterance.preUtteranceDelay = 0
-        utterance.postUtteranceDelay = 0
-        if let voice = findPremiumQualityVoice() {
-            utterance.voice = voice
-        } else {
-            // Fallback to system voice
-            if !voiceIdentifier.isEmpty,
-               let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
-                utterance.voice = voice
-            } else if let voice = VoiceDefaults.bestAvailableVoice() {
-                utterance.voice = voice
-            } else {
-                utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
-            }
-        }
-
-        synthesizer.speak(utterance)
-
-        // Start monitoring mic for barge-in (user interrupting the AI)
-        startBargeInMonitoring()
-    }
-    
-    /// Find a premium-quality voice that matches the selected service
-    private func findPremiumQualityVoice() -> AVSpeechSynthesisVoice? {
-        let allVoices = AVSpeechSynthesisVoice.speechVoices()
-        
-        // Filter for premium quality voices
-        let premiumVoices = allVoices.filter { $0.quality == .premium }
-        
-        // If we have premium voices, try to find one that matches our settings
-        if !premiumVoices.isEmpty {
-            // Try to find a voice with a name that matches our premium voice name
-            if let matchingVoice = premiumVoices.first(where: { 
-                $0.name.localizedCaseInsensitiveContains(premiumVoiceName) 
-            }) {
-                return matchingVoice
-            }
-            
-            // Fallback to the first premium voice
-            return premiumVoices.first
-        }
-        
-        // No premium voices available, return nil to use fallback
-        return nil
-    }
-
     func stopSpeaking() {
         stopBargeInMonitoring()
         if synthesizer.isSpeaking {
@@ -919,15 +753,6 @@ final class VoiceConversationManager: ObservableObject {
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
         if voicePitch == 0 { voicePitch = 1.0 }
         voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
-        
-        // Sync premium voice settings
-        let premiumServiceRaw = UserDefaults.standard.string(forKey: "premium_voice_service") ?? PremiumVoiceService.amazonPolly.rawValue
-        premiumVoiceService = PremiumVoiceService(rawValue: premiumServiceRaw) ?? .amazonPolly
-        premiumVoiceName = UserDefaults.standard.string(forKey: "premium_voice_name") ?? "Joanna"
-        premiumVoiceSpeed = UserDefaults.standard.double(forKey: "premium_voice_speed")
-        if premiumVoiceSpeed == 0 { premiumVoiceSpeed = 1.0 }
-        premiumVoicePitch = UserDefaults.standard.double(forKey: "premium_voice_pitch")
-        if premiumVoicePitch == 0 { premiumVoicePitch = 1.0 }
     }
 
     // MARK: - Network Connectivity

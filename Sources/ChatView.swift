@@ -64,12 +64,6 @@ struct ChatView: View {
                         toolEventsPanel
                     }
 
-                    if let approval = store.pendingApproval {
-                        GlassApprovalCard(approval: approval) { choice in
-                            Task { await store.resolveApproval(choice: choice) }
-                        }
-                    }
-
                     GlassInputBar(
                         text: $inputText,
                         isStreaming: store.isStreaming,
@@ -160,12 +154,7 @@ struct ChatView: View {
                 )
             }
         }
-        // Keep the voice manager's default mode in sync with connection state.
-        // When Hermes is connected, voice mode defaults to remote so the
-        // conversation has the same memory as the typed chat.
         .onAppear {
-            voiceConversation.isHermesConnected = store.isConnected
-            voiceConversation.refreshDefaultMode()
             voiceConversation.onStopBackgroundAudio = { [weak store] in
                 store?.stopSilentAudioForVoice()
             }
@@ -178,10 +167,6 @@ struct ChatView: View {
         }
         .onDisappear {
             wakePhraseListener.stop()
-        }
-        .onChange(of: store.isConnected) { _, connected in
-            voiceConversation.isHermesConnected = connected
-            voiceConversation.refreshDefaultMode()
         }
         .onChange(of: heyHermesEnabled) { _, enabled in
             enabled ? wakePhraseListener.start() : wakePhraseListener.stop()

@@ -106,7 +106,6 @@ struct VoiceConversationPage: View {
             UIApplication.shared.isIdleTimerDisabled = true
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
-            voiceConversation.conversationMode = .remote
             store?.isVoiceConversationActive = true
             startVoiceConversationIfNeeded()
 
@@ -252,16 +251,13 @@ struct VoiceConversationPage: View {
             FileLogger.shared.log("VoicePage: already conversing, not restarting")
             return
         }
-        FileLogger.shared.log("VoicePage: starting conversation, mode=\(voiceConversation.conversationMode)")
-        voiceConversation.conversationMode = .remote
+        FileLogger.shared.log("VoicePage: starting conversation")
         voiceConversation.startConversation(
             onTranscription: { text in
                 FileLogger.shared.log("VoicePage: transcription callback fired with text: \(text)")
-                // Forward to ChatView so it sends through the active Hermes
-                // session. Only fires in remote mode.
+                // Forward to ChatView so it sends through the active Hermes session.
                 onVoiceTranscription?(text)
-            },
-            onLocalResponse: { _ in }
+            }
         )
     }
     
@@ -343,10 +339,6 @@ var preset: CyberpunkVoicePreset = .neon
 @AppStorage("voice_speed") private var speed: Double = 0.5
 @AppStorage("voice_pitch") private var pitch: Double = 1.0
 @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
-@AppStorage("premium_voice_service") private var premiumVoiceService: String = PremiumVoiceService.amazonPolly.rawValue
-@AppStorage("premium_voice_name") private var premiumVoiceName: String = "Joanna"
-@AppStorage("premium_voice_speed") private var premiumVoiceSpeed: Double = 1.0
-@AppStorage("premium_voice_pitch") private var premiumVoicePitch: Double = 1.0
 @State private var availableVoices: [AVSpeechSynthesisVoice] = []
 @Environment(\.activeTheme) private var theme
 @Environment(\.dismiss) private var dismiss
@@ -360,7 +352,6 @@ var body: some View {
                     speedSection
                     pitchSection
                     voiceSection
-                    premiumVoiceSection
                 }
                 .padding(theme.spacingM)
             }
@@ -429,41 +420,6 @@ private var voiceSection: some View {
         ForEach(availableVoices, id: \.identifier) { voice in
             voiceRow(voice)
         }
-    }
-    .padding(theme.spacingM)
-    .background(cardBackground)
-}
-    
-private var premiumVoiceSection: some View {
-    VStack(alignment: .leading, spacing: theme.spacingS) {
-        Text("PREMIUM VOICE")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .foregroundStyle(theme.accentSecondary)
-            
-        let currentService = PremiumVoiceService(rawValue: premiumVoiceService) ?? .amazonPolly
-            
-        rowLabel("Service") {
-            Picker("Service", selection: $premiumVoiceService) {
-                ForEach(PremiumVoiceService.allCases, id: \.rawValue) { service in
-                    Text(service.displayName).tag(service.rawValue)
-                }
-            }
-            .pickerStyle(.menu)
-            .tint(theme.accent)
-        }
-            
-        rowLabel("Voice") {
-            Picker("Voice", selection: $premiumVoiceName) {
-                ForEach(currentService.availableVoices, id: \.self) { voice in
-                    Text(voice).tag(voice)
-                }
-            }
-            .pickerStyle(.menu)
-            .tint(theme.accent)
-        }
-            
-        sliderRow("Speed", value: $premiumVoiceSpeed, range: 0.25...2.0, step: 0.05)
-        sliderRow("Pitch", value: $premiumVoicePitch, range: 0.5...2.0, step: 0.1)
     }
     .padding(theme.spacingM)
     .background(cardBackground)
