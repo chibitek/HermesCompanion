@@ -362,14 +362,15 @@ final class AppStore: ObservableObject {
         favoriteModels = [model]
     }
 
-    /// Single-favorite toggle: starring a model unstars the previous one.
+    /// Single-favorite toggle: starring a model replaces the previous favorite.
+    /// Tapping the star on an already-favorited model unstars it.
     /// Called from Settings. Returns true if now favorited, false if unfavorited.
     @discardableResult
     func toggleFavorite(_ model: String) -> Bool {
         guard !model.isEmpty else { return false }
-        if favoriteModels == [model] {
-            // Already the only favorite — unstar it
-            favoriteModels = []
+        if favoriteModels.contains(model) {
+            // Already favorited — unstar it
+            favoriteModels.removeAll { $0 == model }
             return false
         }
         // Replace any existing favorites with this one
