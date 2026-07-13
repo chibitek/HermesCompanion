@@ -74,7 +74,7 @@ struct ProviderSelectionView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Provider")
+        .navigationTitle("Source")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search providers")
     }

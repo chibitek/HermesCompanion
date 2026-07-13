@@ -129,7 +129,7 @@ struct InputModelPicker: View {
                     .buttonStyle(.plain)
                 }
             } header: {
-                Text("Providers")
+                Text("Sources")
                     .foregroundStyle(theme.textSecondary)
             }
         }
