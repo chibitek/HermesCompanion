@@ -327,7 +327,7 @@ final class AppStore: ObservableObject {
         // Load available models
         do {
             let infos = try await client.getModels()
-            self.modelInfos = Dictionary(uniqueKeysWithValues: infos.map { ($0.id, $0) })
+            self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             let models = infos.map { $0.id }
             self.availableModels = modelsIncludingCurrent(models)
         } catch {
