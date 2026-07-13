@@ -76,6 +76,7 @@ struct ChatView: View {
                         onRemoveAttachment: removeAttachment,
                         currentModel: store.effectiveCurrentModel,
                         availableModels: store.availableModels,
+                        modelInfos: store.modelInfos,
                         favoriteModels: store.favoriteModels,
                         onSelectModel: { model in
                             store.selectPreferredModel(model)

@@ -3,10 +3,12 @@ import Foundation
 import Speech
 import UserNotifications
 
-/// Low-profile foreground/background listener that opens hands-free voice mode
-/// when the user says "Hey Hermes". iOS reserves true system-wide wake words for
-/// Siri, so this listener operates while Hermes is active or in background
-/// (using the `audio` background mode to keep the audio session alive).
+/// Low-profile foreground listener that opens hands-free voice mode when the
+/// user says "Hey Hermes". iOS reserves true system-wide wake words for Siri,
+/// so this listener operates while Hermes is active in the foreground. When
+/// the app is backgrounded, the listener keeps running using the `audio`
+/// background mode and posts a local notification when the wake phrase is
+/// detected, which brings the app back to the foreground.
 @MainActor
 final class WakePhraseListener: ObservableObject {
     var onWakePhrase: (() -> Void)?
