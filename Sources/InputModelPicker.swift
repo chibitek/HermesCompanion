@@ -29,11 +29,7 @@ struct InputModelPicker: View {
         var seen = Set<String>()
         var result: [String] = []
 
-        // If we have favorites, only show providers that contain a favorite
-        let favProviders = Set(validFavorites.compactMap { ProviderUtils.providerOf($0) })
-        let source = favProviders.isEmpty ? availableModels : availableModels.filter { favProviders.contains(ProviderUtils.providerOf($0) ?? "Other") }
-
-        for model in source {
+        for model in availableModels {
             let prov = ProviderUtils.providerOf(model) ?? "Other"
             if seen.insert(prov).inserted {
                 result.append(prov)
@@ -42,15 +38,13 @@ struct InputModelPicker: View {
         return result.sorted()
     }
 
-    /// Models for the selected provider — only favorites.
+    /// Models for the selected provider — all models, favorites sorted first.
     /// If searching, filter by query.
     private var filteredModels: [String] {
         guard let provider = selectedProvider else { return [] }
         let providerModels = availableModels.filter { (ProviderUtils.providerOf($0) ?? "Other") == provider }
-        // Only show favorites
-        let favOnly = providerModels.filter { favoriteSet.contains($0) || $0 == currentModel }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = query.isEmpty ? favOnly : favOnly.filter {
+        let base = query.isEmpty ? providerModels : providerModels.filter {
             $0.lowercased().contains(query) || ProviderUtils.shortModelName($0).lowercased().contains(query)
         }
         // Sort: favorites first, then alphabetical

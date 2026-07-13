@@ -49,7 +49,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion
         MARKETING_VERSION: "1.8.35"
-        CURRENT_PROJECT_VERSION: 86
+        CURRENT_PROJECT_VERSION: 87
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
