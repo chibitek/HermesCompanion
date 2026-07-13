@@ -23,7 +23,7 @@ struct HermesCompanionApp: App {
                     }
                     // Request notification permission so we can alert the
                     // user when a chat response arrives while backgrounded.
-                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                                     switch newPhase {
