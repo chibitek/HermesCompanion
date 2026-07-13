@@ -23,12 +23,17 @@ struct InputModelPicker: View {
         favoriteModels.filter { availableModels.contains($0) || $0 == currentModel }
     }
 
-    /// All providers derived from model IDs (prefix before `/`).
-    /// Models without a `/` are grouped under "Other".
+    /// All providers that have at least one favorited model.
+    /// If there are no favorites, show all providers.
     private var allProviders: [String] {
         var seen = Set<String>()
         var result: [String] = []
-        for model in availableModels {
+
+        // If we have favorites, only show providers that contain a favorite
+        let favProviders = Set(validFavorites.compactMap { providerOf($0) })
+        let source = favProviders.isEmpty ? availableModels : availableModels.filter { favProviders.contains(providerOf($0) ?? "Other") }
+
+        for model in source {
             let prov = providerOf(model) ?? "Other"
             if seen.insert(prov).inserted {
                 result.append(prov)
@@ -37,12 +42,15 @@ struct InputModelPicker: View {
         return result.sorted()
     }
 
-    /// Models for the selected provider. If searching, filter by query.
+    /// Models for the selected provider — only favorites.
+    /// If searching, filter by query.
     private var filteredModels: [String] {
         guard let provider = selectedProvider else { return [] }
         let providerModels = availableModels.filter { (providerOf($0) ?? "Other") == provider }
+        // Only show favorites
+        let favOnly = providerModels.filter { favoriteSet.contains($0) || $0 == currentModel }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let base = query.isEmpty ? providerModels : providerModels.filter {
+        let base = query.isEmpty ? favOnly : favOnly.filter {
             $0.lowercased().contains(query) || shortModelName($0).lowercased().contains(query)
         }
         // Sort: favorites first, then alphabetical
