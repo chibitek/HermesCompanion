@@ -256,19 +256,19 @@ struct InputModelPicker: View {
 
                 Spacer(minLength: 0)
 
-                // Star/unstar button
+                // Star/unstar — use onTapGesture, not Button, to avoid
+                // SwiftUI's nested-button issue where the outer row button
+                // swallows the tap.
                 if let onToggleFavorite {
-                    Button {
-                        onToggleFavorite(model)
-                    } label: {
-                        Image(systemName: isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(isFavorite ? .yellow : theme.textMuted)
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(isFavorite ? .yellow : theme.textMuted)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            onToggleFavorite(model)
+                        }
+                        .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
                 } else if isFavorite {
                     Image(systemName: "star.fill")
                         .font(.system(size: 12))
