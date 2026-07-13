@@ -356,30 +356,24 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Pin a model to the favorites list shown in the chat model pill.
-    /// Caps at 10; moves existing entries to the front.
+    /// Set the single favorite model (called when selecting a model).
     func addFavorite(_ model: String) {
         guard !model.isEmpty else { return }
-        favoriteModels.removeAll { $0 == model }
-        favoriteModels.insert(model, at: 0)
-        if favoriteModels.count > 10 {
-            favoriteModels = Array(favoriteModels.prefix(10))
-        }
+        favoriteModels = [model]
     }
 
-    /// Star/unstar a model from Settings without changing the active model.
+    /// Single-favorite toggle: starring a model unstars the previous one.
+    /// Called from Settings. Returns true if now favorited, false if unfavorited.
     @discardableResult
     func toggleFavorite(_ model: String) -> Bool {
         guard !model.isEmpty else { return false }
-        if favoriteModels.contains(model) {
-            favoriteModels.removeAll { $0 == model }
+        if favoriteModels == [model] {
+            // Already the only favorite — unstar it
+            favoriteModels = []
             return false
         }
-        // Cap: drop oldest before adding so the new pick wins.
-        if favoriteModels.count >= 10 {
-            favoriteModels = Array(favoriteModels.prefix(9))
-        }
-        favoriteModels.append(model)
+        // Replace any existing favorites with this one
+        favoriteModels = [model]
         return true
     }
 
