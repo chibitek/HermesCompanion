@@ -149,17 +149,15 @@ struct ModelSelectionView: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                onToggleFavorite(model)
-            } label: {
-                Image(systemName: isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(isFavorite ? .yellow : theme.textMuted)
-                    .frame(width: 38, height: 38)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+            Image(systemName: isFavorite ? "star.fill" : "star")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(isFavorite ? .yellow : theme.textMuted)
+                .frame(width: 38, height: 38)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onToggleFavorite(model)
+                }
+                .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
         }
         .padding(.vertical, 3)
     }
