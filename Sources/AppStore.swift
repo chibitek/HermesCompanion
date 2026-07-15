@@ -637,7 +637,10 @@ final class AppStore: ObservableObject {
         beginBackgroundKeepAlive()
 
         let watchdog = StreamWatchdogManager()
-        watchdog.arm(after: 90) { [weak self] in
+        // 180s initial grace: the server can take 30-60s to process a large
+        // system prompt and emit the first SSE event, especially via Tailscale.
+        // Once events start arriving, recordActivity() resets to 90s intervals.
+        watchdog.arm(after: 180, initialTimeout: 180) { [weak self] in
             guard let self, self.isStreaming else { return }
             self.streamTask?.cancel()
             self.isStreaming = false
