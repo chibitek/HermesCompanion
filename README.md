@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Hermes Agent](https://img.shields.io/badge/Powered%20by-Hermes%20Agent-FFD700?style=for-the-badge)](https://github.com/NousResearch/hermes-agent)
 
-**Chat. Voice. Tools. Approvals. Sessions. Themes.**
+**Chat. Voice. Camera. Controls. Tools. Approvals. Sessions. Themes.**
 
 Your Hermes agent, in your pocket. Stream responses in real time. Talk out loud with Matrix-style voice mode. Approve tool executions. Switch models on the fly. All from your iPhone.
 
@@ -56,7 +56,7 @@ Real-time streaming chat with full tool execution visibility. Watch your agent t
 
 ### Multimodal Attachments
 
-Send photos and files directly in chat. Tap the + button to attach from your Photo Library or Files app. Images are automatically converted to JPEG for LLM vision API compatibility.
+Send photos and files directly in chat. Tap the paperclip to attach from Camera, Photo Library, or Files. Photos from the camera or library are automatically converted to JPEG for LLM vision API compatibility.
 
 <p align="center">
 <img src="screenshots/chat-attachments.png" width="280" alt="Chat screen with attachment menu showing Photo Library and Files options" />
@@ -110,17 +110,23 @@ Six built-in themes in a visual grid picker. Each one transforms the entire app 
 | | |
 | --- | --- |
 | **Real-time streaming chat** | Full SSE streaming with tool execution visibility, approval prompts, and multimodal support (photos and files). Watch your agent work in real time. |
+| **Camera attachments** | Take photos directly from within the app and send them to your agent for analysis. No need to switch to the Camera app and back. |
 | **Hermes Talk voice mode** | 2-way voice conversation with on-device transcription, TTS playback, Matrix rain visualizer, CRT effects, and 4 cyberpunk voice presets. |
+| **Hey Hermes wake phrase** | Hands-free activation. Say "Hey Hermes" to start a voice conversation without touching the screen. Toggle from in-app settings or Control Center. |
+| **Control Center toggle** | Toggle Hey Hermes voice activation directly from iOS Control Center. The toggle stays in sync with the in-app setting via App Group shared storage. |
 | **Six themes** | Liquid Glass, Matrix terminal, Retro Amber CRT, Neon, Blue Hacker, and Cyberpunk. Every theme transforms the entire app. |
 | **Session management** | Full history with rename, fork, search. Auto-scroll to most recent message. Foreground sync for cross-platform replies. |
 | **Provider-agnostic** | Connect to any Hermes gateway. Switch providers and models on the fly. 300+ models from Nous, OpenRouter, Ollama, Huggingface, and more. |
+| **Multi-favorite model picker** | Star multiple models to pin them to the top of the picker. Grouped by source (Ollama, Nous, Anthropic, etc.). Tap a star to favorite, tap again to remove. |
 | **Tool approvals** | Approve or deny tool executions before they run. See exactly what your agent is about to do. |
 | **Skills browser** | Search and browse all skills available on your Hermes server. 238+ skills at your fingertips. |
+| **Skills command bar** | Type `/` in the input bar to search and invoke skills by name. Skill suggestions filter as you type. |
 | **Multiple servers** | Connect to unlimited Hermes gateways. Personal, work, team, or dedicated GPU agents — switch with one tap. Each server keeps its own sessions, models, skills, and preferences. |
+| **Project linking** | Link sessions to projects for organized context. Assign projects from the session picker. |
 | **Auto-login** | Keychain credential storage with auto-connect on launch, per-server active-chat restoration, and background/foreground reconnection with Tailscale awareness. |
 | **Splash screen** | Logo fade-in on launch with smooth transition to chat or login. |
 | **What's New alerts** | After an app version changes, a one-time popup explains the release highlights. |
-| **Input bar** | Claude-style model picker pill, photo/file attachments, voice-to-text mic, waveform button for Hermes Talk, and configurable enter-key-sends. |
+| **Input bar** | Claude-style model picker pill, camera/photo/file attachments, voice-to-text mic, waveform button for Hermes Talk, skills command bar, and configurable enter-key-sends. |
 
 ---
 
@@ -305,7 +311,7 @@ For design contributions, see the [design handoff documents](#design) for the de
 
 - [ ] TestFlight distribution
 - [ ] Push notifications for tool approval requests
-- [ ] Widget for active session status
+- [x] Control Center widget for voice activation toggle
 - [ ] Siri Shortcuts integration
 - [ ] Apple Watch companion app
 - [ ] iPad layout with split-view sessions and chat
