@@ -10,6 +10,8 @@ struct GlassInputBar: View {
     let onStop: () -> Void
     let onCamera: () -> Void
     let onFilePick: () -> Void
+    var onCameraCapture: (() -> Void)? = nil
+    var onNewSession: (() -> Void)? = nil
     let attachments: [AttachmentData]
     let onRemoveAttachment: (Int) -> Void
     var currentModel: String = ""
@@ -234,7 +236,7 @@ struct GlassInputBar: View {
                     Button {
                         showAttachmentMenu = true
                     } label: {
-                        Image(systemName: "plus")
+                        Image(systemName: "paperclip")
                             .font(.system(size: 21, weight: .regular))
                             .foregroundStyle(theme.textPrimary)
                             .frame(width: 44, height: 44)
@@ -243,10 +245,41 @@ struct GlassInputBar: View {
                     }
                     .buttonStyle(.plain)
                     .confirmationDialog("Attach", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
-                        Button("Photo Library") { onCamera() }
-                        Button("Files") { onFilePick() }
+                        if onCameraCapture != nil {
+                            Button {
+                                showAttachmentMenu = false
+                                onCameraCapture?()
+                            } label: {
+                                Label("Camera", systemImage: "camera")
+                            }
+                        }
+                        Button {
+                            showAttachmentMenu = false
+                            onCamera()
+                        } label: {
+                            Label("Photo Library", systemImage: "photo.on.rectangle")
+                        }
+                        Button {
+                            showAttachmentMenu = false
+                            onFilePick()
+                        } label: {
+                            Label("Files", systemImage: "folder")
+                        }
                         Button("Cancel", role: .cancel) {}
                     }
+
+                    Button {
+                        onNewSession?()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 21, weight: .regular))
+                            .foregroundStyle(theme.textPrimary)
+                            .frame(width: 44, height: 44)
+                            .background(controlBackground)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("New session")
 
                     if !currentModel.isEmpty {
                         Button {

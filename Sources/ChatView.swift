@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import WidgetKit
 
 /// Manages voice timeouts using a flag-based approach.
 /// Task.sleep cancellation is unreliable on iOS, so we use a simple
@@ -45,10 +46,11 @@ struct ChatView: View {
     @State private var showPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showFilePicker = false
+    @State private var showCameraPicker = false
     @StateObject private var voiceConversation = VoiceConversationManager()
     @State private var showVoicePage = false
     @StateObject private var wakePhraseListener = WakePhraseListener()
-    @AppStorage("hey_hermes_enabled") private var heyHermesEnabled = true
+    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = true
 
     var body: some View {
         NavigationStack {
@@ -72,6 +74,12 @@ struct ChatView: View {
                         onStop: { store.stopStreaming() },
                         onCamera: { showPhotoPicker = true },
                         onFilePick: { showFilePicker = true },
+                        onCameraCapture: { showCameraPicker = true },
+                        onNewSession: {
+                            inputText = ""
+                            attachments = []
+                            Task { await store.createSession(title: nil) }
+                        },
                         attachments: attachments,
                         onRemoveAttachment: removeAttachment,
                         currentModel: store.effectiveCurrentModel,
@@ -171,6 +179,9 @@ struct ChatView: View {
         }
         .onChange(of: heyHermesEnabled) { _, enabled in
             enabled ? wakePhraseListener.start() : wakePhraseListener.stop()
+            if #available(iOS 18.0, *) {
+                ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
+            }
         }
         .onChange(of: showVoicePage) { _, isPresented in
             if isPresented {
@@ -234,6 +245,16 @@ struct ChatView: View {
             FilePickerView { data, fileName, mimeType in
                 attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: mimeType))
             }
+        }
+        // Camera picker sheet — take a photo directly
+        .sheet(isPresented: $showCameraPicker) {
+            CameraPickerView { data in
+                let fileName = "camera_\(UUID().uuidString.prefix(8)).jpg"
+                attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: "image/jpeg"))
+            }
+        }
+        .onChange(of: showCameraPicker) { _, presented in
+            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
         }
     }
 

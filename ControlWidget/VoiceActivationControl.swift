@@ -2,22 +2,17 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-struct VoiceActivationControlWidget: ControlWidget {
-    var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(
-            kind: "com.chibitek.hermescompanion.voice-activation"
-        ) {
-            ControlWidgetToggle(
-                action: ToggleVoiceActivationIntent(),
-                label: Text("Voice Activated"),
-                isOn: VoiceActivationProvider()
-            )
-            .tint(.green)
-        }
-        .displayName(Text("Voice Activated"))
-        .description(Text("Toggle Hey Hermes voice activation"))
+// MARK: - Value Provider
+
+struct VoiceActivationValueProvider: ControlValueProvider {
+    let previewValue = true
+
+    func currentValue() async throws -> Bool {
+        SharedDefaults.shared.bool(forKey: "hey_hermes_enabled")
     }
 }
+
+// MARK: - Toggle Intent
 
 struct ToggleVoiceActivationIntent: SetValueIntent {
     static let title: LocalizedStringResource = "Voice Activated"
@@ -40,17 +35,27 @@ struct ToggleVoiceActivationIntent: SetValueIntent {
     }
 }
 
-struct VoiceActivationProvider: DynamicValueProvider {
-    func current() -> Bool {
-        SharedDefaults.shared.bool(forKey: "hey_hermes_enabled")
-    }
-}
+// MARK: - Control Widget
 
-/// Shared UserDefaults via App Group so the main app and Control Widget
-/// extension can read/write the same settings.
-enum SharedDefaults {
-    static let suiteName = "group.com.chibitek.hermescompanion"
-    static let shared: UserDefaults = {
-        UserDefaults(suiteName: suiteName) ?? .standard
-    }()
+struct VoiceActivationControlWidget: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(
+            kind: VoiceActivationControlConstants.kind,
+            provider: VoiceActivationValueProvider()
+        ) { isEnabled in
+            ControlWidgetToggle(
+                "Voice Activated",
+                isOn: isEnabled,
+                action: ToggleVoiceActivationIntent()
+            ) { isOn in
+                Label(
+                    isOn ? "On" : "Off",
+                    systemImage: isOn ? "mic.fill" : "mic.slash"
+                )
+            }
+            .tint(.green)
+        }
+        .displayName("Voice Activated")
+        .description("Toggle Hey Hermes voice activation")
+    }
 }

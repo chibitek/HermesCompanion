@@ -90,7 +90,7 @@ struct VoiceSettingsView: View {
     @AppStorage("voice_speed") private var speed: Double = 0.5
     @AppStorage("voice_pitch") private var pitch: Double = 1.0
     @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
-    @AppStorage("hey_hermes_enabled") private var heyHermesEnabled = true
+    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = true
 
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @State private var filterQuality: Bool = true
