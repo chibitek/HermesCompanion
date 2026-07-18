@@ -174,6 +174,11 @@ struct ChatView: View {
             if heyHermesEnabled { wakePhraseListener.start() }
             Task { await store.refreshSkills() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openVoiceMode)) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showVoicePage = true
+            }
+        }
         .onDisappear {
             wakePhraseListener.stop()
         }
@@ -194,6 +199,12 @@ struct ChatView: View {
             switch phase {
             case .active:
                 wakePhraseListener.resumeFromBackground()
+                if SharedDefaults.shared.bool(forKey: "open_voice_page") {
+                    SharedDefaults.shared.set(false, forKey: "open_voice_page")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showVoicePage = true
+                    }
+                }
             case .background:
                 wakePhraseListener.startBackgroundMode()
             case .inactive:

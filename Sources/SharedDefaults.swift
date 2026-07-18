@@ -15,3 +15,7 @@ enum SharedDefaults {
 enum VoiceActivationControlConstants {
     static let kind = "com.chibitek.hermescompanion.voice-activation"
 }
+
+extension Notification.Name {
+    static let openVoiceMode = Notification.Name("com.chibitek.hermescompanion.openVoiceMode")
+}
