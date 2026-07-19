@@ -18,7 +18,7 @@ struct GlassInputBar: View {
     var availableModels: [String] = []
     var modelInfos: [String: ModelInfo] = [:]
     var favoriteModels: [String] = []
-    var onSelectModel: ((String) -> Void)? = nil
+    var onSelectModel: ((String, String?) -> Void)? = nil
     var onToggleFavorite: ((String) -> Void)? = nil
     var availableSkills: [Skill] = []
     var onRefreshSkills: (() async -> Void)? = nil
@@ -311,8 +311,8 @@ struct GlassInputBar: View {
                                 availableModels: availableModels,
                                 favoriteModels: favoriteModels,
                                 modelInfos: modelInfos,
-                                onSelect: { model in
-                                    onSelectModel?(model)
+                                onSelect: { model, provider in
+                                    onSelectModel?(model, provider)
                                     showModelPicker = false
                                 },
                                 onToggleFavorite: { model in
