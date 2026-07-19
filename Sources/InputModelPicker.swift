@@ -7,7 +7,7 @@ struct InputModelPicker: View {
     let availableModels: [String]
     let favoriteModels: [String]
     let modelInfos: [String: ModelInfo]
-    let onSelect: (String) -> Void
+    let onSelect: (String, String?) -> Void
     var onToggleFavorite: ((String) -> Void)? = nil
 
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -150,7 +150,7 @@ struct InputModelPicker: View {
                 ForEach(sources, id: \.id) { source in
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        onSelect(source.id)
+                        onSelect(source.id, modelInfos[source.id]?.provider ?? nil)
                         dismiss()
                     } label: {
                         HStack(spacing: 12) {
@@ -213,7 +213,7 @@ struct InputModelPicker: View {
         return Button {
             if sourceCount == 1 {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onSelect(entry.ids[0])
+                onSelect(entry.ids[0], modelInfos[entry.ids[0]]?.provider ?? nil)
                 dismiss()
             } else {
                 selectedModelName = entry.name

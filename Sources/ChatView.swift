@@ -55,8 +55,8 @@ struct ChatView: View {
                         availableModels: store.availableModels,
                         modelInfos: store.modelInfos,
                         favoriteModels: store.favoriteModels,
-                        onSelectModel: { model in
-                            store.selectPreferredModel(model)
+                        onSelectModel: { model, provider in
+                            store.selectPreferredModel(model, provider: provider)
                         },
                         onToggleFavorite: { model in
                             _ = store.toggleFavorite(model)

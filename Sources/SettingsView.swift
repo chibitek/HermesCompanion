@@ -252,7 +252,11 @@ struct SettingsView: View {
                 && !(model.ownedBy ?? "").isEmpty
                 && model.ownedBy?.lowercased() != "hermes"
         }
-        if providers.isEmpty && hasLegacyOpenRouterCatalog {
+        // ponytail fix: this used to require providers.isEmpty, but `current`
+        // is inserted above unconditionally, so the bucket never appeared and
+        // every unrouted (author-owned) row was invisible in Settings.
+        if hasLegacyOpenRouterCatalog,
+           !providers.contains(where: { $0.lowercased() == "openrouter" }) {
             providers.append("openrouter")
         }
         return providers.filter { !$0.isEmpty && seen.insert($0).inserted }
@@ -316,10 +320,11 @@ struct SettingsView: View {
                         subtitle: modelSubtitle,
                         onSelect: { model in
                             selectedModel = model.id
-                            // Only pass provider if it's from the model ID or explicit selection.
-                            // Don't send stale provider (e.g. "nous") for local Ollama models.
-                            let modelProvider = model.ownedBy?.isEmpty == false ? model.ownedBy : nil
-                            store.selectPreferredModel(model.id, provider: modelProvider)
+                            // Provider = inference service. ownedBy is the model
+                            // AUTHOR (e.g. "anthropic") — sending it as provider
+                            // broke switching for every OpenRouter model picked
+                            // here. The bucket the user drilled into is the source.
+                            store.selectPreferredModel(model.id, provider: model.provider ?? selectedProvider)
                         },
                         onToggleFavorite: { model in
                             _ = store.toggleFavorite(model.id)
