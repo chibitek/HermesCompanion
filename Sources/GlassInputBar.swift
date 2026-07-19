@@ -17,6 +17,7 @@ struct GlassInputBar: View {
     var currentModel: String = ""
     var availableModels: [String] = []
     var modelInfos: [String: ModelInfo] = [:]
+    var onRefreshModels: (() -> Void)? = nil
     var favoriteModels: [String] = []
     var onSelectModel: ((String, String?) -> Void)? = nil
     var onToggleFavorite: ((String) -> Void)? = nil
@@ -281,20 +282,19 @@ struct GlassInputBar: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("New session")
 
-                    if !currentModel.isEmpty {
-                        Button {
-                            showModelPicker = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                if let prov = ProviderUtils.providerOf(currentModel), !prov.isEmpty {
-                                    Text(prov.capitalized)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(theme.accent)
-                                }
-                                Text(ProviderUtils.shortModelName(currentModel))
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(theme.textPrimary)
+                    Button {
+                        showModelPicker = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            if let prov = ProviderUtils.providerOf(currentModel), !prov.isEmpty {
+                                Text(prov.capitalized)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(theme.accent)
                             }
+                            Text(currentModel.isEmpty ? "Choose Model" : ProviderUtils.shortModelName(currentModel))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(theme.textPrimary)
+                        }
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .minimumScaleFactor(0.85)
@@ -317,11 +317,11 @@ struct GlassInputBar: View {
                                 },
                                 onToggleFavorite: { model in
                                     onToggleFavorite?(model)
-                                }
+                                },
+                                onRefresh: onRefreshModels
                             )
                             .environmentObject(appearance)
                         }
-                    }
 
                     Spacer(minLength: 0)
 
