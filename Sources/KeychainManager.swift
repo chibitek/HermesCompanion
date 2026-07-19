@@ -81,11 +81,6 @@ final class KeychainManager: Sendable {
         try save(config)
     }
 
-    func deleteAll() {
-        delete(key: "active_config")
-        delete(key: "all_configs")
-    }
-
     // MARK: - Private Keychain Operations
 
     private func save(key: String, data: Data) throws {

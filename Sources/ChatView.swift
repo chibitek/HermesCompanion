@@ -2,37 +2,6 @@ import SwiftUI
 import PhotosUI
 import WidgetKit
 
-/// Manages voice timeouts using a flag-based approach.
-/// Task.sleep cancellation is unreliable on iOS, so we use a simple
-/// dictionary of timeout IDs with a "cancelled" flag. When the timeout
-/// fires, it checks the flag before doing anything.
-final class VoiceTimeoutManager {
-    static let shared = VoiceTimeoutManager()
-    private var timeouts: [UUID: Bool] = [:]
-    private let lock = NSLock()
-
-    func startTimeout(id: UUID, seconds: TimeInterval, action: @escaping () -> Void) {
-        lock.lock()
-        timeouts[id] = false
-        lock.unlock()
-
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds) { [weak self] in
-            guard let self else { return }
-            self.lock.lock()
-            let isCancelled = self.timeouts[id] ?? true
-            self.lock.unlock()
-            if isCancelled { return }
-            DispatchQueue.main.async { action() }
-        }
-    }
-
-    func cancelTimeout(id: UUID) {
-        lock.lock()
-        timeouts[id] = true
-        lock.unlock()
-    }
-}
-
 /// Main chat view with Liquid Glass design.
 /// Uses .glassEffect() throughout for translucent, depth-heavy UI.
 struct ChatView: View {
@@ -184,9 +153,7 @@ struct ChatView: View {
         }
         .onChange(of: heyHermesEnabled) { _, enabled in
             enabled ? wakePhraseListener.start() : wakePhraseListener.stop()
-            if #available(iOS 18.0, *) {
-                ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
-            }
+            ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
         }
         .onChange(of: showVoicePage) { _, isPresented in
             if isPresented {
@@ -445,10 +412,10 @@ struct ChatView: View {
         Task {
             // Hard timeout: if store.sendMessage doesn't return in 20 seconds,
             // bail out and surface an error so the UI doesn't freeze.
-            // Uses a flag instead of Task cancellation because iOS's Task.sleep
-            // doesn't reliably throw on cancellation in all cases.
-            let voiceTimeoutID = UUID()
-            VoiceTimeoutManager.shared.startTimeout(id: voiceTimeoutID, seconds: 20) {
+            // StreamWatchdogManager is flag-based (DispatchQueue.asyncAfter)
+            // because iOS's Task.sleep doesn't reliably fire when backgrounded.
+            let voiceWatchdog = StreamWatchdogManager()
+            voiceWatchdog.arm(after: 20) {
                 Task { @MainActor in
                     guard self.voiceConversation.isThinking else { return }
                     FileLogger.shared.log("ChatView: voice timeout fired (20s)")
@@ -489,7 +456,7 @@ struct ChatView: View {
             let voiceMessage = "[voice] \(transcription)"
             let responseMessage = await store.sendMessage(voiceMessage, skipPostReload: true)
             monitorTask.cancel()
-            VoiceTimeoutManager.shared.cancelTimeout(id: voiceTimeoutID)
+            voiceWatchdog.cancel()
             FileLogger.shared.log("ChatView: store.sendMessage returned \(String(describing: responseMessage?.content.prefix(80)))")
 
             guard let responseMessage = responseMessage else {

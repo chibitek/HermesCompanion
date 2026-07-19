@@ -15,10 +15,3 @@ enum ComposerSubmissionLogic {
         return canSend ? .send : .voice
     }
 }
-
-enum SkillPickerLayout {
-    /// Keeps the composer visible while giving the skill browser most of the screen.
-    static func maximumHeight(availableHeight: Double) -> Double {
-        max(280, min(600, availableHeight - 160))
-    }
-}

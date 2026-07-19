@@ -274,10 +274,18 @@ struct VoiceSettingsView: View {
                             min(AVSpeechUtteranceMaximumSpeechRate, Float(speed)))
         utterance.pitchMultiplier = Float(pitch)
 
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {}
+        // Don't hijack the shared session mid voice-conversation: switching
+        // .playAndRecord to .playback kills the mic. Preview plays fine under
+        // the conversation's existing session.
+        let session = AVAudioSession.sharedInstance()
+        if session.category != .playAndRecord {
+            do {
+                try session.setCategory(.playback, mode: .default)
+                try session.setActive(true)
+            } catch {
+                FileLogger.shared.log("VoiceSettings: preview audio session failed: \(error.localizedDescription)")
+            }
+        }
         previewSynthesizer.speak(utterance)
     }
 }

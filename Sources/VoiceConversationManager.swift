@@ -363,9 +363,7 @@ final class VoiceConversationManager: ObservableObject {
             return
         }
         recognitionRequest.shouldReportPartialResults = true
-        if #available(iOS 16, *) {
-            recognitionRequest.addsPunctuation = true
-        }
+        recognitionRequest.addsPunctuation = true
         // Force server-based recognition to free up the CPU for the Matrix rain
         // animation. On-device recognition runs a neural net on the CPU/GPU
         // which competes with the Canvas rendering and causes UI freezes.
@@ -753,23 +751,6 @@ final class VoiceConversationManager: ObservableObject {
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
         if voicePitch == 0 { voicePitch = 1.0 }
         voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
-    }
-
-    // MARK: - Network Connectivity
-    
-    /// Check if device has internet connectivity
-    func hasNetworkConnectivity() async -> Bool {
-        return await withCheckedContinuation { continuation in
-            let monitor = NWPathMonitor()
-            let queue = DispatchQueue(label: "NetworkMonitor")
-            
-            monitor.pathUpdateHandler = { path in
-                monitor.cancel()
-                continuation.resume(returning: path.status == .satisfied)
-            }
-            
-            monitor.start(queue: queue)
-        }
     }
 
     // MARK: - Private

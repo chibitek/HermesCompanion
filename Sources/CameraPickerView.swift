@@ -39,9 +39,7 @@ struct CameraPickerView: UIViewControllerRepresentable {
             if let image = info[.originalImage] as? UIImage {
                 // Convert to JPEG for LLM vision API compatibility.
                 let jpegData = image.jpegData(compressionQuality: 0.85) ?? Data()
-                let fileName = "camera_\(UUID().uuidString.prefix(8)).jpg"
                 parent.onCapture(jpegData)
-                _ = fileName // fileName handled by caller
             }
             parent.dismiss()
         }
