@@ -409,13 +409,17 @@ struct MatrixRainView: View {
                     let trailLength = 10
                     let start = Int(offset / charSize)
 
+                    // Easter egg: one wandering column spells チエうしお (Chie Ushio).
+                    let egg = Array("チエうしお")
+                    let eggCol = Int(t / 17) % columns
+
                     var i = 0
                     while i < trailLength {
                         let y = CGFloat(start - i) * charSize
                         guard y >= -charSize && y <= size.height else { i += 1; continue }
 
                         let charIdx = abs(Int((t * 3 + seed + Double(i) * 1.7))) % charset.count
-                        let char = charset[charIdx]
+                        let char = col == eggCol ? egg[i % egg.count] : charset[charIdx]
                         let pos = CGPoint(x: xPos + columnWidth / 2, y: y + charSize / 2)
 
                         // Pick precomputed color — no per-frame opacity math
