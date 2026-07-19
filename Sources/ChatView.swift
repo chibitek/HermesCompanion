@@ -35,51 +35,7 @@ struct ChatView: View {
                         toolEventsPanel
                     }
 
-                    GlassInputBar(
-                        text: $inputText,
-                        isStreaming: store.isStreaming,
-                        onSend: sendMessage,
-                        onQueue: queueMessage,
-                        onStop: { store.stopStreaming() },
-                        onCamera: { showPhotoPicker = true },
-                        onFilePick: { showFilePicker = true },
-                        onCameraCapture: { showCameraPicker = true },
-                        onNewSession: {
-                            inputText = ""
-                            attachments = []
-                            Task { await store.createSession(title: nil) }
-                        },
-                        attachments: attachments,
-                        onRemoveAttachment: removeAttachment,
-                        currentModel: store.effectiveCurrentModel,
-                        availableModels: store.availableModels,
-                        modelInfos: store.modelInfos,
-                        favoriteModels: store.favoriteModels,
-                        onSelectModel: { model, provider in
-                            store.selectPreferredModel(model, provider: provider)
-                        },
-                        onToggleFavorite: { model in
-                            _ = store.toggleFavorite(model)
-                        },
-                        availableSkills: store.skills,
-                        onRefreshSkills: {
-                            await store.refreshSkills()
-                        },
-                        onVoiceConversationTranscription: { transcription in
-                            handleVoiceTranscription(transcription)
-                        },
-                        onOpenVoicePage: {
-                            showVoicePage = true
-                        },
-                        onDictationStateChange: { isRecording in
-                            if isRecording {
-                                wakePhraseListener.pause()
-                            } else if scenePhase == .active, !showVoicePage {
-                                wakePhraseListener.resume()
-                            }
-                        },
-                        voiceConversation: voiceConversation
-                    )
+                    inputBar
                 }
 
                 // Full-screen voice conversation page
@@ -252,6 +208,57 @@ struct ChatView: View {
                 .foregroundStyle(appearance.activeTheme.textSecondary)
         }
         .tint(appearance.activeTheme.textSecondary)
+    }
+
+    private var inputBar: some View {
+        GlassInputBar(
+            text: $inputText,
+            isStreaming: store.isStreaming,
+            onSend: sendMessage,
+            onQueue: queueMessage,
+            onStop: { store.stopStreaming() },
+            onCamera: { showPhotoPicker = true },
+            onFilePick: { showFilePicker = true },
+            onCameraCapture: { showCameraPicker = true },
+            onNewSession: {
+                inputText = ""
+                attachments = []
+                Task { await store.createSession(title: nil) }
+            },
+            attachments: attachments,
+            onRemoveAttachment: removeAttachment,
+            currentModel: store.effectiveCurrentModel,
+            availableModels: store.availableModels,
+            modelInfos: store.modelInfos,
+            onRefreshModels: {
+                Task { await store.refreshCapabilities() }
+            },
+            favoriteModels: store.favoriteModels,
+            onSelectModel: { model, provider in
+                store.selectPreferredModel(model, provider: provider)
+            },
+            onToggleFavorite: { model in
+                _ = store.toggleFavorite(model)
+            },
+            availableSkills: store.skills,
+            onRefreshSkills: {
+                await store.refreshSkills()
+            },
+            onVoiceConversationTranscription: { transcription in
+                handleVoiceTranscription(transcription)
+            },
+            onOpenVoicePage: {
+                showVoicePage = true
+            },
+            onDictationStateChange: { isRecording in
+                if isRecording {
+                    wakePhraseListener.pause()
+                } else if scenePhase == .active, !showVoicePage {
+                    wakePhraseListener.resume()
+                }
+            },
+            voiceConversation: voiceConversation
+        )
     }
 
     private var messageList: some View {

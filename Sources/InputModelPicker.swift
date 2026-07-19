@@ -9,6 +9,7 @@ struct InputModelPicker: View {
     let modelInfos: [String: ModelInfo]
     let onSelect: (String, String?) -> Void
     var onToggleFavorite: ((String) -> Void)? = nil
+    var onRefresh: (() -> Void)? = nil
 
     @EnvironmentObject private var appearance: AppearanceSettings
     @Environment(\.dismiss) private var dismiss
@@ -75,6 +76,10 @@ struct InputModelPicker: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .task {
+            // Opened with an empty catalog (capabilities fetch failed earlier)? Retry once.
+            if availableModels.isEmpty { onRefresh?() }
+        }
     }
 
     // MARK: - Screen 1: Model list
