@@ -272,7 +272,8 @@ final class HermesAPIClient: Sendable {
     ///   - tool.progress, tool.started, tool.completed, tool.failed
     ///   - assistant.completed, run.completed
     ///   - error, done
-    func streamChat(sessionId: String, message: String, systemMessage: String? = nil, model: String? = nil) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
+    func streamChat(sessionId: String, message: String, systemMessage: String? = nil, model: String? = nil,
+                    onKeepalive: (@Sendable () -> Void)? = nil) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
         var req = URLRequest(url: try makeURL(path: "/api/sessions/\(sessionId)/chat/stream"))
         req.httpMethod = "POST"
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
@@ -338,9 +339,11 @@ final class HermesAPIClient: Sendable {
                             continue
                         }
 
-                        // SSE comment line (keepalive). Ignore — do NOT let it
-                        // clobber a partially-built frame.
+                        // SSE comment line (keepalive). Do NOT let it clobber a
+                        // partially-built frame — but count it as socket life so
+                        // the idle watchdog survives long event gaps.
                         if line.hasPrefix(":") {
+                            onKeepalive?()
                             continue
                         }
 
