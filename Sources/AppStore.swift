@@ -644,8 +644,9 @@ final class AppStore: ObservableObject {
         let watchdog = StreamWatchdogManager()
         // 180s initial grace: the server can take 30-60s to process a large
         // system prompt and emit the first SSE event, especially via Tailscale.
-        // Once events start arriving, recordActivity() resets to 90s intervals.
-        watchdog.arm(after: 180, initialTimeout: 180) { [weak self] in
+        // After that, 60s with no events AND no keepalives means a dead socket
+        // (keepalive comments reset the timer via onKeepalive).
+        watchdog.arm(after: 60, initialTimeout: 180) { [weak self] in
             guard let self, self.isStreaming else { return }
             self.streamTask?.cancel()
             self.isStreaming = false
@@ -750,7 +751,8 @@ final class AppStore: ObservableObject {
         var assistantMessage: ChatDisplayMessage?
         var receivedCompletion = false
         let stream = try await client.streamChat(
-            sessionId: session.id, message: text, model: effectiveCurrentModel
+            sessionId: session.id, message: text, model: effectiveCurrentModel,
+            onKeepalive: { watchdog.recordActivity() }
         )
         for try await event in stream {
             if Task.isCancelled { return (nil, false) }
