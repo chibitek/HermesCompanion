@@ -15,6 +15,9 @@ final class AppStore: ObservableObject {
     @Published var messages: [ChatDisplayMessage] = []
     @Published var isStreaming = false
     @Published var streamingText = ""
+    /// Live reasoning text (assistant.delta events tagged tool_name=_thinking).
+    /// Shown in a collapsible Thinking panel; cleared with streamingText.
+    @Published var streamingThinking = ""
     @Published var toolEvents: [ToolEvent] = []
     /// True while a voice conversation is active — prevents stopSilentAudio
     /// from deactivating the shared AVAudioSession mid-conversation.
@@ -279,6 +282,7 @@ final class AppStore: ObservableObject {
         messages = []
         toolEvents = []
         streamingText = ""
+        streamingThinking = ""
         skills = []
         toolsets = []
 
@@ -486,6 +490,7 @@ final class AppStore: ObservableObject {
         self.messages = []
         self.toolEvents = []
         self.streamingText = ""
+            self.streamingThinking = ""
         do {
             let history = try await client.getMessages(sessionId: session.id)
             self.messages = history
@@ -638,6 +643,7 @@ final class AppStore: ObservableObject {
 
         isStreaming = true
         streamingText = ""
+        streamingThinking = ""
         toolEvents = []
         beginBackgroundKeepAlive()
 
@@ -651,6 +657,7 @@ final class AppStore: ObservableObject {
             self.streamTask?.cancel()
             self.isStreaming = false
             self.streamingText = ""
+            self.streamingThinking = ""
             self.endBackgroundTask()
             self.error = AppError(message: "The response stream stopped sending updates. Please try again.")
         }
@@ -681,6 +688,7 @@ final class AppStore: ObservableObject {
                             assistantMessage = message
                         }
                         self.streamingText = ""
+            self.streamingThinking = ""
                     }
                 } else {
                     assistantMessage = try await self.sendWithAttachments(
@@ -710,6 +718,7 @@ final class AppStore: ObservableObject {
                 self.error = AppError(message: "Message failed: \(error.localizedDescription)")
             }
             self.streamingText = ""
+            self.streamingThinking = ""
             self.isStreaming = false
             self.endBackgroundTask()
             watchdog.cancel()
@@ -842,6 +851,9 @@ final class AppStore: ObservableObject {
             // internal reasoning must NOT be appended to streamingText or
             // it leaks raw JSON and agent thoughts into the chat UI.
             if let tname = event.toolName, !tname.isEmpty {
+                if (tname == "_thinking" || tname == "thinking"), let delta = event.delta {
+                    streamingThinking += delta
+                }
                 break
             }
             if let delta = event.delta {
@@ -906,12 +918,15 @@ final class AppStore: ObservableObject {
                 )
                 messages.append(message)
                 streamingText = ""
+                streamingThinking = ""
                 return message
             }
             streamingText = ""
+            streamingThinking = ""
 
         case "run.completed":
             streamingText = ""
+            streamingThinking = ""
             await refreshSessions()
 
         case "error":

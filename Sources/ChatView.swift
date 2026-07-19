@@ -238,6 +238,22 @@ struct ChatView: View {
 
     // MARK: - Message List
 
+    /// Collapsible live-reasoning panel (Claude-style "Thinking").
+    private var thinkingPanel: some View {
+        DisclosureGroup {
+            Text(store.streamingThinking)
+                .font(.caption)
+                .foregroundStyle(appearance.activeTheme.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+        } label: {
+            Label("Thinking", systemImage: "brain")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(appearance.activeTheme.textSecondary)
+        }
+        .tint(appearance.activeTheme.textSecondary)
+    }
+
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -258,6 +274,11 @@ struct ChatView: View {
                             images: msg.images
                         )
                             .id(msg.id)
+                    }
+
+                    if store.isStreaming && !store.streamingThinking.isEmpty {
+                        thinkingPanel
+                            .id("thinking-stream")
                     }
 
                     if store.isStreaming && !store.streamingText.isEmpty {
