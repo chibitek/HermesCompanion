@@ -310,7 +310,7 @@ final class HermesAPIClient: Sendable {
                                 delta: nil, content: nil, toolName: nil,
                                 preview: nil, args: nil,
                                 completed: nil, partial: nil, interrupted: nil,
-                                usage: nil, message: dataBuffer
+                                message: dataBuffer
                             )
                         } else {
                             return
@@ -483,6 +483,23 @@ final class HermesAPIClient: Sendable {
         default:
             throw APIError.unknown(status: http.statusCode)
         }
+    }
+}
+
+// MARK: - Timeout Helper
+
+/// Run an async operation with a hard timeout. Throws URLError.timedOut on expiry.
+/// Shared by autoConnect and ConnectionSetupView (replaces two hand-rolled copies).
+func withTimeout<T>(seconds: Double, operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask(operation: operation)
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw URLError(.timedOut)
+        }
+        guard let result = try await group.next() else { throw URLError(.timedOut) }
+        group.cancelAll()
+        return result
     }
 }
 

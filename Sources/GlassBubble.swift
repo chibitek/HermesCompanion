@@ -55,7 +55,7 @@ struct GlassBubble: View {
             }
             .padding(.horizontal, compact ? 12 : theme.spacingL)
             .padding(.vertical, compact ? 8 : theme.spacingM)
-            .frame(maxWidth: screenBoundsWidth * GlassTheme.bubbleMaxWidthRatio,
+            .frame(maxWidth: screenBoundsWidth * 0.94,
                    alignment: isUser ? .trailing : .leading)
             .background(bubbleBackground)
             .overlay(alignment: .leading) {

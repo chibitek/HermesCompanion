@@ -42,7 +42,6 @@
 		80E40DCA3AE420F927877943 /* SkillCommandLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */; };
 		8169CA68B0F068C4C454AA05 /* HermesCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */; };
 		848AF4A8EBE61688B4E15948 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E26F58E842815866FD9986 /* AppConfig.swift */; };
-		88DA1AED250A2CDB2759BEA7 /* SkillPickerLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEEC864AFC7E90082A8EDEA /* SkillPickerLayoutTests.swift */; };
 		8D8B6F1C677ED71BCAF05D0D /* VoiceActivationLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */; };
 		9033393557A808892DD39711 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2DD74C29509EC118F92BEA5 /* CameraPickerView.swift */; };
 		9326CB4014893810CB4C04B4 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13839144B0503760269527F6 /* Models.swift */; };
@@ -136,7 +135,6 @@
 		8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesTests.swift; sourceTree = "<group>"; };
 		90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		93E26F58E842815866FD9986 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
-		9FEEC864AFC7E90082A8EDEA /* SkillPickerLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillPickerLayoutTests.swift; sourceTree = "<group>"; };
 		A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSelectionView.swift; sourceTree = "<group>"; };
 		A2DD74C29509EC118F92BEA5 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		A64856389980D1D73A2DC3C3 /* HermesCompanion.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HermesCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -239,7 +237,6 @@
 				6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */,
 				8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */,
 				03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */,
-				9FEEC864AFC7E90082A8EDEA /* SkillPickerLayoutTests.swift */,
 				AD348F4EBB40BD3B6F3F2C74 /* StreamWatchdogTests.swift */,
 				15CE235401C5CF4AA8838394 /* VoiceActivationLogicTests.swift */,
 			);
@@ -375,7 +372,6 @@
 				D3508E86FEF84CE0FB3A2362 /* ProjectStoreTests.swift in Sources */,
 				149052C798A239F946342A23 /* ReleaseNotesTests.swift in Sources */,
 				80E40DCA3AE420F927877943 /* SkillCommandLogicTests.swift in Sources */,
-				88DA1AED250A2CDB2759BEA7 /* SkillPickerLayoutTests.swift in Sources */,
 				43DD09E6024E5D9B9C5968DF /* StreamWatchdogTests.swift in Sources */,
 				CFE8A23CD2204761B0C7F288 /* VoiceActivationLogicTests.swift in Sources */,
 			);
@@ -479,7 +475,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 99;
+				CURRENT_PROJECT_VERSION = 100;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -505,7 +501,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 99;
+				CURRENT_PROJECT_VERSION = 100;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -597,7 +593,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 99;
+				CURRENT_PROJECT_VERSION = 100;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -679,7 +675,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 99;
+				CURRENT_PROJECT_VERSION = 100;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

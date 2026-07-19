@@ -43,12 +43,6 @@ struct CyberpunkVoicePreset: Identifiable, CaseIterable, Equatable {
     )
 
     static var allCases: [CyberpunkVoicePreset] = [.matrix, .retroAmber, .neon, .blueHacker]
-
-    var next: CyberpunkVoicePreset {
-        let all = CyberpunkVoicePreset.allCases
-        let idx = all.firstIndex(of: self) ?? 0
-        return all[(idx + 1) % all.count]
-    }
 }
 
 // MARK: - Voice Conversation Page
@@ -60,7 +54,6 @@ struct VoiceConversationPage: View {
     var onClose: (() -> Void)? = nil
 
     @State private var preset: CyberpunkVoicePreset = .matrix
-    @State private var showSettings = false
 
     // Rain intensity changes with conversation state
     private var rainIntensity: Double {
@@ -82,7 +75,7 @@ struct VoiceConversationPage: View {
             .ignoresSafeArea()
 
             // 2. Scanlines
-            ScanlineOverlay(lineColor: preset.primary, lineOpacity: 0.05)
+            CRTScanlineOverlay(color: preset.primary, opacity: 0.05)
 
             // 3. Vignette + CRT glow
             VoiceCRTGlowOverlay(color: preset.primary, intensity: 0.06)
@@ -99,9 +92,6 @@ struct VoiceConversationPage: View {
             .padding()
         }
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showSettings) {
-            VoiceSettingsSheet(preset: preset)
-        }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
             // Sync voice settings from UserDefaults (Settings > Voice)
@@ -329,169 +319,6 @@ struct AudioVisualizerBar: View {
                     .animation(.easeInOut(duration: 0.12).repeatForever(autoreverses: true), value: isActive)
             }
         }
-    }
-}
-
-// MARK: - Voice Settings Sheet
-
-struct VoiceSettingsSheet: View {
-var preset: CyberpunkVoicePreset = .neon
-@AppStorage("voice_speed") private var speed: Double = 0.5
-@AppStorage("voice_pitch") private var pitch: Double = 1.0
-@AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
-@State private var availableVoices: [AVSpeechSynthesisVoice] = []
-@Environment(\.activeTheme) private var theme
-@Environment(\.dismiss) private var dismiss
-
-var body: some View {
-    NavigationStack {
-        ZStack {
-            theme.backgroundView.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: theme.spacingM) {
-                    speedSection
-                    pitchSection
-                    voiceSection
-                }
-                .padding(theme.spacingM)
-            }
-        }
-        .navigationTitle("Voice Settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { dismiss() }
-                    .foregroundStyle(theme.accent)
-            }
-        }
-    }
-    .onAppear {
-        availableVoices = VoiceDefaults.sortedVoices()
-            .filter { $0.quality == .enhanced || $0.quality == .premium }
-        selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
-    }
-}
-    
-private var cardBackground: some View {
-    AnyView(theme.glassCard(cornerRadius: 12))
-}
-    
-private var speedSection: some View {
-    VStack(alignment: .leading, spacing: theme.spacingS) {
-        Text("SPEED")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .foregroundStyle(theme.accent)
-        HStack {
-            Slider(value: $speed, in: 0.1...1.0, step: 0.05)
-                .tint(theme.accent)
-            Text(String(format: "%.2f", speed))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(theme.textBody)
-                .frame(width: 40)
-        }
-    }
-    .padding(theme.spacingM)
-    .background(cardBackground)
-}
-
-private var pitchSection: some View {
-    VStack(alignment: .leading, spacing: theme.spacingS) {
-        Text("PITCH")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .foregroundStyle(theme.accentSecondary)
-        HStack {
-            Slider(value: $pitch, in: 0.5...2.0, step: 0.1)
-                .tint(theme.accentSecondary)
-            Text(String(format: "%.1f", pitch))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(theme.textBody)
-                .frame(width: 40)
-        }
-    }
-    .padding(theme.spacingM)
-    .background(cardBackground)
-}
-
-private var voiceSection: some View {
-    VStack(alignment: .leading, spacing: theme.spacingS) {
-        Text("VOICE")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .foregroundStyle(theme.accent)
-        ForEach(availableVoices, id: \.identifier) { voice in
-            voiceRow(voice)
-        }
-    }
-    .padding(theme.spacingM)
-    .background(cardBackground)
-}
-    
-private func sliderRow(_ label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
-    VStack(alignment: .leading, spacing: theme.spacingXS) {
-        HStack {
-            Text(label)
-                .foregroundStyle(theme.textBody)
-            Spacer()
-            Text(String(format: step < 0.1 ? "%.2f" : "%.1f", value.wrappedValue))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(theme.textSecondary)
-        }
-        Slider(value: value, in: range, step: step)
-            .tint(theme.accent)
-    }
-}
-    
-private func rowLabel<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-    HStack {
-        Text(label)
-            .foregroundStyle(theme.textBody)
-        Spacer()
-        content()
-    }
-}
-
-private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
-    let isSelected = voice.identifier == selectedVoiceId
-    return Button {
-        selectedVoiceId = voice.identifier
-    } label: {
-        HStack {
-            Text(voice.name)
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundStyle(isSelected ? theme.accent : theme.textBody)
-            Spacer()
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .foregroundStyle(theme.accent)
-            }
-        }
-        .padding(.horizontal, theme.spacingS)
-        .padding(.vertical, theme.spacingXS)
-        .background(isSelected ? theme.accent.opacity(0.12) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-    .buttonStyle(.plain)
-}
-}
-
-// MARK: - Scanline Overlay
-
-struct ScanlineOverlay: View {
-    var lineColor: Color = .white
-    var lineSpacing: CGFloat = 3
-    var lineOpacity: Double = 0.07
-
-    var body: some View {
-        Canvas { context, size in
-            var y: CGFloat = 0
-            while y < size.height {
-                context.fill(
-                    Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
-                    with: .color(lineColor.opacity(lineOpacity))
-                )
-                y += lineSpacing
-            }
-        }
-        .allowsHitTesting(false)
     }
 }
 

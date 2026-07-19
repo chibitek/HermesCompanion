@@ -23,7 +23,9 @@ final class AppStore: ObservableObject {
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
     @Published var modelInfos: [String: ModelInfo] = [:]
-    @Published private(set) var queuedMessages: [String] = []
+    @Published private(set) var queuedMessages: [QueuedMessage] = [] {
+        didSet { saveQueue() }
+    }
     @Published var error: AppError?
     @Published var isLoading = false
     @Published var isLoadingConnection = false
@@ -65,11 +67,12 @@ final class AppStore: ObservableObject {
     private static let modelKey = "preferred_model"
     private static let thinkingKey = "preferred_thinking"
     private static let favModelsKey = "favorite_models"
+    private static let queueKey = "message_queue"
 
     var effectiveCurrentProvider: String {
         nonEmpty(preferredProvider)
             ?? nonEmpty(capabilities?.currentProvider)
-            ?? providerForModel(effectiveCurrentModel)
+            ?? ProviderUtils.providerOf(effectiveCurrentModel)
             ?? ""
     }
 
@@ -183,15 +186,8 @@ final class AppStore: ObservableObject {
         do {
             // Health check with a 10-second timeout so we don't hang forever
             // when Tailscale is down or the server is unreachable.
-            let health = try await withThrowingTaskGroup(of: HealthResponse.self) { group in
-                group.addTask { try await client.checkHealth() }
-                group.addTask {
-                    try await Task.sleep(nanoseconds: 10_000_000_000)
-                    throw URLError(.timedOut)
-                }
-                let result = try await group.next() ?? HealthResponse(status: "timeout", platform: nil, version: nil)
-                group.cancelAll()
-                return result
+            let health = try await withTimeout(seconds: 10) {
+                try await client.checkHealth()
             }
             guard health.status == "ok" else {
                 self.error = AppError(message: "Server returned status: \(health.status)")
@@ -215,6 +211,10 @@ final class AppStore: ObservableObject {
     func connect(config: ConnectionConfig) async -> Bool {
         let client = HermesAPIClient(config: config)
         self.apiClient = client
+        // An explicit (re)connect supersedes any pending background retry.
+        reconnectWorkItem?.cancel()
+        reconnectWorkItem = nil
+        reconnectRetryCount = 0
         do {
             let health = try await client.checkHealth()
             guard health.status == "ok" else {
@@ -349,7 +349,7 @@ final class AppStore: ObservableObject {
         // current state, not necessarily where this model lives. Sending a stale
         // provider (e.g. "nous") to switchGatewayModel breaks local Ollama models.
         let resolvedProvider = nonEmpty(provider)
-            ?? providerForModel(model)
+            ?? ProviderUtils.providerOf(model)
             ?? ""
         if !resolvedProvider.isEmpty {
             preferredProvider = resolvedProvider
@@ -375,11 +375,6 @@ final class AppStore: ObservableObject {
         return true
     }
 
-    private func providerForModel(_ model: String) -> String? {
-        guard let slash = model.firstIndex(of: "/"), slash > model.startIndex else { return nil }
-        return String(model[..<slash])
-    }
-
     private func modelsIncludingCurrent(_ models: [String]) -> [String] {
         let current = effectiveCurrentModel
         guard !current.isEmpty, !models.contains(current) else { return models }
@@ -401,6 +396,16 @@ final class AppStore: ObservableObject {
         preferredThinking = savedPreference(Self.thinkingKey, for: config)
         let savedFavs = savedPreference(Self.favModelsKey, for: config)
         favoriteModels = savedFavs.split(separator: "\n").map(String.init)
+        // Restore any messages queued while the app was force-quit (H2).
+        let defaults = UserDefaults.standard
+        let scoped = defaults.data(forKey: preferenceKey(Self.queueKey, for: config))
+            ?? defaults.data(forKey: Self.queueKey)
+        queuedMessages = scoped.flatMap { try? JSONDecoder().decode([QueuedMessage].self, from: $0) } ?? []
+    }
+
+    private func saveQueue() {
+        let data = try? JSONEncoder().encode(queuedMessages)
+        UserDefaults.standard.set(data, forKey: preferenceKey(Self.queueKey, for: connectionConfig))
     }
 
     private func savedPreference(_ key: String, for config: ConnectionConfig?) -> String {
@@ -575,7 +580,7 @@ final class AppStore: ObservableObject {
     }
 
     private func forkTitle(for session: HermesSession) -> String {
-        let base = (session.title?.isEmpty == false ? session.title! : "Untitled").trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = (session.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled").trimmingCharacters(in: .whitespacesAndNewlines)
         return "\(base) Fork"
     }
 
@@ -604,7 +609,7 @@ final class AppStore: ObservableObject {
     func queueMessage(_ text: String, displayText: String? = nil) {
         let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !payload.isEmpty else { return }
-        queuedMessages.append(payload)
+        queuedMessages.append(QueuedMessage(payload: payload, display: displayText ?? payload))
     }
 
     @discardableResult
@@ -710,12 +715,12 @@ final class AppStore: ObservableObject {
 
             if !self.queuedMessages.isEmpty {
                 let next = self.queuedMessages.removeFirst()
-                Task { await self.sendMessage(next) }
+                Task { await self.sendMessage(next.payload, displayText: next.display) }
             }
 
             if let assistantMessage,
                UIApplication.shared.applicationState != .active {
-                sendBackgroundNotification(text: assistantMessage.content)
+                sendBackgroundNotification()
             }
         }
         streamTask = task
@@ -937,14 +942,14 @@ final class AppStore: ObservableObject {
     static func stripRawArtifacts(_ text: String) -> String {
         var cleaned = text
 
-        // Strip reasoning/thinking blocks:  to  (inclusive)
-        while let startTag = cleaned.range(of: ""),
-              let endTag = cleaned.range(of: "", range: startTag.upperBound..<cleaned.endIndex) {
+        // Strip reasoning/thinking blocks: <think> to </think> (inclusive)
+        while let startTag = cleaned.range(of: "<think"),
+              let endTag = cleaned.range(of: "</think", range: startTag.upperBound..<cleaned.endIndex) {
             cleaned.removeSubrange(startTag.lowerBound..<endTag.upperBound)
         }
-        // Strip any leftover bare  or  tags (unclosed or mismatched)
-        cleaned = cleaned.replacingOccurrences(of: "", with: "")
-        cleaned = cleaned.replacingOccurrences(of: "", with: "")
+        // Strip any leftover bare <think> or </think> tags (unclosed or mismatched)
+        cleaned = cleaned.replacingOccurrences(of: "<think>", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "</think>", with: "")
 
         // Strip standalone JSON objects/arrays that aren't human text
         let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1023,6 +1028,7 @@ final class AppStore: ObservableObject {
     /// messages so the user doesn't lose context.
     private var isReconnecting = false
     private var reconnectRetryCount = 0
+    private var reconnectWorkItem: DispatchWorkItem?
     private let maxReconnectRetries = 10
 
     func reconnectIfNeeded() async {
@@ -1041,6 +1047,8 @@ final class AppStore: ObservableObject {
             }
             // Connection is alive. Reset retry count and refresh sessions.
             reconnectRetryCount = 0
+            reconnectWorkItem?.cancel()
+            reconnectWorkItem = nil
             await refreshCapabilities()
             await refreshSessions()
             // Also reload the active session's messages so replies that
@@ -1062,6 +1070,9 @@ final class AppStore: ObservableObject {
                     return
                 }
                 self.apiClient = newClient
+                reconnectWorkItem?.cancel()
+                reconnectWorkItem = nil
+                reconnectRetryCount = 0
                 await refreshCapabilities()
                 await refreshSessions()
                 // Restore the active session's messages if we had one.
@@ -1080,15 +1091,22 @@ final class AppStore: ObservableObject {
                     return
                 }
                 let delay = min(3.0 * pow(2.0, Double(reconnectRetryCount - 1)), 30.0)
-                Task {
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                    await MainActor.run {
+                // Flag-based delay (DispatchWorkItem): Task.sleep is unreliable
+                // when the app is backgrounded. Cancel any pending retry first so
+                // overlapping chains can't accumulate.
+                reconnectWorkItem?.cancel()
+                let item = DispatchWorkItem { [weak self] in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
                         // Verify the config hasn't changed since we started retrying.
                         // If the user switched servers, don't let a stale retry hijack the new connection.
                         guard let currentConfig = self.connectionConfig, currentConfig == config else { return }
+                        self.reconnectWorkItem = nil
                         Task { await self.reconnectIfNeeded() }
                     }
                 }
+                reconnectWorkItem = item
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
             }
         }
     }
@@ -1130,11 +1148,13 @@ final class AppStore: ObservableObject {
             // Generate a 0.5-second silent WAV file in memory
             let sampleRate = 44100.0
             let numSamples = Int(sampleRate * 0.5)
+            let dataSize = numSamples
             var wavData = Data()
             // WAV header
+            let riffSizeBytes = withUnsafeBytes(of: UInt32(36 + dataSize).littleEndian) { Data($0) }
             let header: [UInt8] = [
                 0x52, 0x49, 0x46, 0x46, // "RIFF"
-                0x24, 0x00, 0x00, 0x00, // chunk size (36 + data size)
+                riffSizeBytes[0], riffSizeBytes[1], riffSizeBytes[2], riffSizeBytes[3], // chunk size (36 + data size)
                 0x57, 0x41, 0x56, 0x45, // "WAVE"
                 0x66, 0x6D, 0x74, 0x20, // "fmt "
                 0x10, 0x00, 0x00, 0x00, // subchunk size (16)
@@ -1148,7 +1168,6 @@ final class AppStore: ObservableObject {
             ]
             wavData.append(contentsOf: header)
             // data size
-            let dataSize = numSamples
             let dataSizeBytes = withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Data($0) }
             wavData.append(dataSizeBytes)
             // Silent audio data (all zeros = silence for 8-bit PCM)
@@ -1211,9 +1230,10 @@ final class AppStore: ObservableObject {
     /// Send a local notification when a chat response arrives while the app
     /// is in the background. Lets the user know their message got a reply
     /// even if they switched to another app.
-    private func sendBackgroundNotification(text: String) {
+    private func sendBackgroundNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Hermes"
+        // Generic body on purpose — keep message content off the lock screen.
         content.body = "New response received"
         content.sound = nil  // silent — the app's TTS handles audio
         content.categoryIdentifier = "chat_response"
@@ -1228,6 +1248,13 @@ final class AppStore: ObservableObject {
 }
 
 // MARK: - Display Models
+
+/// A queued chat turn: the API payload plus the text the user actually saw.
+/// Persisted per-connection so a force-quit doesn't silently drop accepted input.
+struct QueuedMessage: Codable, Equatable {
+    let payload: String
+    let display: String
+}
 
 struct ChatDisplayMessage: Identifiable, Equatable {
     let id: String

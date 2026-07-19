@@ -279,9 +279,4 @@ struct InputModelPicker: View {
         }
         .buttonStyle(.plain)
     }
-
-    // MARK: - Helpers
-
-    private func providerIcon(_ provider: String) -> String { ProviderUtils.icon(for: provider) }
-    private func providerDisplayName(_ provider: String) -> String { ProviderUtils.displayName(for: provider) }
 }
