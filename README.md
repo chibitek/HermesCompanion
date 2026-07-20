@@ -123,7 +123,7 @@ Six built-in themes in a visual grid picker. Each one transforms the entire app 
 | **Skills command bar** | Type `/` in the input bar to search and invoke skills by name. Skill suggestions filter as you type. |
 | **Multiple servers** | Connect to unlimited Hermes gateways. Personal, work, team, or dedicated GPU agents — switch with one tap. Each server keeps its own sessions, models, skills, and preferences. |
 | **Project linking** | Link sessions to projects for organized context. Assign projects from the session picker. |
-| **Auto-login** | Keychain credential storage with auto-connect on launch, per-server active-chat restoration, and background/foreground reconnection with Tailscale awareness. |
+| **Auto-login** | Keychain credential storage with auto-connect on launch, per-server active-chat restoration, and background/foreground reconnection with Tailscale awareness. A 60-second liveness check runs while the app is open and silently reconnects if the socket drops (gateway restart, network switch, tunnel rekey). |
 | **Splash screen** | Logo fade-in on launch with smooth transition to chat or login. |
 | **What's New alerts** | After an app version changes, a one-time popup explains the release highlights. |
 | **Input bar** | Claude-style model picker pill, camera/photo/file attachments, voice-to-text mic, waveform button for Hermes Talk, skills command bar, and configurable enter-key-sends. |
