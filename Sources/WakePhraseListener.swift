@@ -175,8 +175,14 @@ final class WakePhraseListener: ObservableObject {
             try audioEngine.start()
         } catch {
             FileLogger.shared.log("WakePhraseListener: microphone failed: \(error.localizedDescription)")
-            isEnabled = false
+            // Transient failures happen on route changes (Bluetooth connect/drop).
+            // Don't kill the listener permanently — tear down and retry like the
+            // recognition-error path above.
             tearDown()
+            guard isEnabled, !isPaused else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.beginListeningIfPossible()
+            }
         }
     }
 

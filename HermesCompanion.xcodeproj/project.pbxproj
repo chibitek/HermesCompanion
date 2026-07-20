@@ -475,7 +475,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 108;
+				CURRENT_PROJECT_VERSION = 109;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -501,7 +501,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 108;
+				CURRENT_PROJECT_VERSION = 109;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -593,7 +593,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 108;
+				CURRENT_PROJECT_VERSION = 109;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -675,7 +675,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 108;
+				CURRENT_PROJECT_VERSION = 109;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
