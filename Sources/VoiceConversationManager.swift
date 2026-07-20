@@ -186,6 +186,7 @@ final class VoiceConversationManager: ObservableObject {
         isConversing = true
         voiceError = nil
         self.onTranscriptionComplete = onTranscription
+        FileLogger.shared.log("VoiceManager: startConversation -> startListening (hasPermission=\(hasPermission))")
         startListening()
     }
 
@@ -327,12 +328,12 @@ final class VoiceConversationManager: ObservableObject {
     // MARK: - Listening
 
     func startListening() {
-        guard isConversing else { return }
+        guard isConversing else { FileLogger.shared.log("VoiceManager: startListening bail — not conversing"); return }
         // If currently speaking, stop TTS first (barge-in by button tap)
         if isSpeaking {
             stopSpeaking()
         }
-        guard !isThinking else { return }
+        guard !isThinking else { FileLogger.shared.log("VoiceManager: startListening bail — isThinking stuck"); return }
         guard !isListening else { return }  // Prevent double-start
 
         // Stop any lingering engine state before setting up fresh.
@@ -345,6 +346,7 @@ final class VoiceConversationManager: ObservableObject {
         }
         removeInputTapIfNeeded()
         guard let speechRecognizer, speechRecognizer.isAvailable else {
+            FileLogger.shared.log("VoiceManager: startListening bail — recognizer unavailable (nil: \(speechRecognizer == nil))")
             voiceError = "Speech recognition is unavailable."
             return
         }
