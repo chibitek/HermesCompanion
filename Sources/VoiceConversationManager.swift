@@ -334,13 +334,16 @@ final class VoiceConversationManager: ObservableObject {
         }
         guard !isThinking else { return }
         guard !isListening else { return }  // Prevent double-start
-        // Re-entry guard: if the audio engine is already running with a tap
-        // installed, don't try to start again. This prevents the crash that
-        // happens when startListening is called from multiple async paths
-        // (e.g. TTS didFinish + barge-in) before the first call completes.
-        if audioEngine.isRunning && hasInstalledInputTap {
-            return
+
+        // Stop any lingering engine state before setting up fresh.
+        // A previous session or the WakePhraseListener may have left the
+        // engine running with a tap installed — the old guard checked
+        // isRunning+hasTap BEFORE the stop code, so it silently returned
+        // and the mic never activated.
+        if audioEngine.isRunning {
+            audioEngine.stop()
         }
+        removeInputTapIfNeeded()
         guard let speechRecognizer, speechRecognizer.isAvailable else {
             voiceError = "Speech recognition is unavailable."
             return
