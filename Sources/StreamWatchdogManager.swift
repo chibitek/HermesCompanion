@@ -1,20 +1,28 @@
 import Foundation
 
 /// An inactivity watchdog that resets whenever a stream event arrives.
+/// The initial timeout is longer (180s) to allow for server processing +
+/// Tailscale latency before the first event. Once events start, recordActivity()
+/// resets to the standard interval (90s).
 final class StreamWatchdogManager: @unchecked Sendable {
     private let lock = NSLock()
     private var generation = 0
     private var timeout: TimeInterval = 0
+    private var initialTimeout: TimeInterval = 0
+    private var hasReceivedFirstEvent = false
     private var action: (() -> Void)?
 
-    func arm(after timeout: TimeInterval, action: @escaping () -> Void) {
+    func arm(after timeout: TimeInterval, initialTimeout: TimeInterval? = nil, action: @escaping () -> Void) {
         lock.lock()
         self.timeout = timeout
+        self.initialTimeout = initialTimeout ?? timeout
+        self.hasReceivedFirstEvent = false
         self.action = action
         generation += 1
         let currentGeneration = generation
+        let useTimeout = self.initialTimeout
         lock.unlock()
-        schedule(generation: currentGeneration, after: timeout)
+        schedule(generation: currentGeneration, after: useTimeout)
     }
 
     func recordActivity() {
@@ -23,6 +31,7 @@ final class StreamWatchdogManager: @unchecked Sendable {
             lock.unlock()
             return
         }
+        hasReceivedFirstEvent = true
         generation += 1
         let currentGeneration = generation
         let currentTimeout = timeout
@@ -34,6 +43,7 @@ final class StreamWatchdogManager: @unchecked Sendable {
         lock.lock()
         generation += 1
         action = nil
+        hasReceivedFirstEvent = false
         lock.unlock()
     }
 

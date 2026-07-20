@@ -43,12 +43,6 @@ struct CyberpunkVoicePreset: Identifiable, CaseIterable, Equatable {
     )
 
     static var allCases: [CyberpunkVoicePreset] = [.matrix, .retroAmber, .neon, .blueHacker]
-
-    var next: CyberpunkVoicePreset {
-        let all = CyberpunkVoicePreset.allCases
-        let idx = all.firstIndex(of: self) ?? 0
-        return all[(idx + 1) % all.count]
-    }
 }
 
 // MARK: - Voice Conversation Page
@@ -60,7 +54,9 @@ struct VoiceConversationPage: View {
     var onClose: (() -> Void)? = nil
 
     @State private var preset: CyberpunkVoicePreset = .matrix
-    @State private var showSettings = false
+    // ponytail: eased intensity — stepping 0.5→1.0 teleports rain columns (offset ∝ intensity)
+    @State private var easedRain: Double = 0.5
+    @State private var rainEaseTimer: Timer?
 
     // Rain intensity changes with conversation state
     private var rainIntensity: Double {
@@ -77,12 +73,12 @@ struct VoiceConversationPage: View {
             MatrixRainView(
                 color: preset.primary,
                 secondaryColor: preset.secondary,
-                intensity: rainIntensity
+                intensity: easedRain
             )
             .ignoresSafeArea()
 
             // 2. Scanlines
-            ScanlineOverlay(lineColor: preset.primary, lineOpacity: 0.05)
+            CRTScanlineOverlay(color: preset.primary, opacity: 0.05)
 
             // 3. Vignette + CRT glow
             VoiceCRTGlowOverlay(color: preset.primary, intensity: 0.06)
@@ -99,15 +95,19 @@ struct VoiceConversationPage: View {
             .padding()
         }
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showSettings) {
-            VoiceSettingsSheet(preset: preset)
-        }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
             store?.isVoiceConversationActive = true
             startVoiceConversationIfNeeded()
+            rainEaseTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+                Task { @MainActor in
+                    let delta = rainIntensity - easedRain
+                    guard abs(delta) > 0.004 else { return }
+                    easedRain += delta * 0.12
+                }
+            }
 
             // Don't auto-pick a session. Use the active session from ChatView
             // (via the shared `store`). Auto-picking the most recent would
@@ -117,6 +117,8 @@ struct VoiceConversationPage: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            rainEaseTimer?.invalidate()
+            rainEaseTimer = nil
             store?.isVoiceConversationActive = false
             voiceConversation.stopConversation()
         }
@@ -332,169 +334,6 @@ struct AudioVisualizerBar: View {
     }
 }
 
-// MARK: - Voice Settings Sheet
-
-struct VoiceSettingsSheet: View {
-var preset: CyberpunkVoicePreset = .neon
-@AppStorage("voice_speed") private var speed: Double = 0.5
-@AppStorage("voice_pitch") private var pitch: Double = 1.0
-@AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
-@State private var availableVoices: [AVSpeechSynthesisVoice] = []
-@Environment(\.activeTheme) private var theme
-@Environment(\.dismiss) private var dismiss
-
-var body: some View {
-    NavigationStack {
-        ZStack {
-            theme.backgroundView.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: theme.spacingM) {
-                    speedSection
-                    pitchSection
-                    voiceSection
-                }
-                .padding(theme.spacingM)
-            }
-        }
-        .navigationTitle("Voice Settings")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { dismiss() }
-                    .foregroundStyle(theme.accent)
-            }
-        }
-    }
-    .onAppear {
-        availableVoices = VoiceDefaults.sortedVoices()
-            .filter { $0.quality == .enhanced || $0.quality == .premium }
-        selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
-    }
-}
-    
-private var cardBackground: some View {
-    AnyView(theme.glassCard(cornerRadius: 12))
-}
-    
-private var speedSection: some View {
-    VStack(alignment: .leading, spacing: theme.spacingS) {
-        Text("SPEED")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .foregroundStyle(theme.accent)
-        HStack {
-            Slider(value: $speed, in: 0.1...1.0, step: 0.05)
-                .tint(theme.accent)
-            Text(String(format: "%.2f", speed))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(theme.textBody)
-                .frame(width: 40)
-        }
-    }
-    .padding(theme.spacingM)
-    .background(cardBackground)
-}
-
-private var pitchSection: some View {
-    VStack(alignment: .leading, spacing: theme.spacingS) {
-        Text("PITCH")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .foregroundStyle(theme.accentSecondary)
-        HStack {
-            Slider(value: $pitch, in: 0.5...2.0, step: 0.1)
-                .tint(theme.accentSecondary)
-            Text(String(format: "%.1f", pitch))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(theme.textBody)
-                .frame(width: 40)
-        }
-    }
-    .padding(theme.spacingM)
-    .background(cardBackground)
-}
-
-private var voiceSection: some View {
-    VStack(alignment: .leading, spacing: theme.spacingS) {
-        Text("VOICE")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .foregroundStyle(theme.accent)
-        ForEach(availableVoices, id: \.identifier) { voice in
-            voiceRow(voice)
-        }
-    }
-    .padding(theme.spacingM)
-    .background(cardBackground)
-}
-    
-private func sliderRow(_ label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
-    VStack(alignment: .leading, spacing: theme.spacingXS) {
-        HStack {
-            Text(label)
-                .foregroundStyle(theme.textBody)
-            Spacer()
-            Text(String(format: step < 0.1 ? "%.2f" : "%.1f", value.wrappedValue))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(theme.textSecondary)
-        }
-        Slider(value: value, in: range, step: step)
-            .tint(theme.accent)
-    }
-}
-    
-private func rowLabel<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-    HStack {
-        Text(label)
-            .foregroundStyle(theme.textBody)
-        Spacer()
-        content()
-    }
-}
-
-private func voiceRow(_ voice: AVSpeechSynthesisVoice) -> some View {
-    let isSelected = voice.identifier == selectedVoiceId
-    return Button {
-        selectedVoiceId = voice.identifier
-    } label: {
-        HStack {
-            Text(voice.name)
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundStyle(isSelected ? theme.accent : theme.textBody)
-            Spacer()
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .foregroundStyle(theme.accent)
-            }
-        }
-        .padding(.horizontal, theme.spacingS)
-        .padding(.vertical, theme.spacingXS)
-        .background(isSelected ? theme.accent.opacity(0.12) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-    .buttonStyle(.plain)
-}
-}
-
-// MARK: - Scanline Overlay
-
-struct ScanlineOverlay: View {
-    var lineColor: Color = .white
-    var lineSpacing: CGFloat = 3
-    var lineOpacity: Double = 0.07
-
-    var body: some View {
-        Canvas { context, size in
-            var y: CGFloat = 0
-            while y < size.height {
-                context.fill(
-                    Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
-                    with: .color(lineColor.opacity(lineOpacity))
-                )
-                y += lineSpacing
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
 // MARK: - Voice CRT Glow Overlay
 
 struct VoiceCRTGlowOverlay: View {
@@ -552,10 +391,17 @@ struct GlitchAnimation: ViewModifier {
 
 // MARK: - Matrix Digital Rain
 
-struct MatrixRainView: View {
+struct MatrixRainView: View, Animatable {
     let color: Color
     let secondaryColor: Color
-    let intensity: Double  // 0.0 to 1.0, controls speed and brightness
+    var intensity: Double  // 0.0 to 1.0, controls speed and brightness
+
+    // Smooth intensity transitions — offset math multiplies absolute time by
+    // intensity, so a hard jump teleports every column (the "glitch").
+    var animatableData: Double {
+        get { intensity }
+        set { intensity = newValue }
+    }
 
     private let columns = 24
     private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789@#$%&*<>ABCDEF+=-/")
@@ -566,21 +412,32 @@ struct MatrixRainView: View {
     private var midColor: Color { color.opacity(0.6 * intensity + 0.1) }
     private var dimColor: Color { color.opacity(0.35 * intensity + 0.05) }
 
+    // Speed as a function of intensity. offset must be the *integral* of this —
+    // computing offset = t * speed(intensity) teleports every drop when intensity
+    // changes (t is seconds since 2001, so even tiny speed shifts jump position).
+    private func rate(_ i: Double) -> Double { (60 + 120 * i) * (0.5 + i) }
+    @State private var anchorT: TimeInterval = Date.timeIntervalSinceReferenceDate
+    @State private var accumulated: Double = 0
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // 25fps — sustainable
             Canvas { context, size in
                 let columnWidth = size.width / CGFloat(columns)
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                let speed = 60.0 + intensity * 120.0
+                let base = accumulated + rate(intensity) * (t - anchorT)
                 let charSize: CGFloat = 14
 
                 for col in 0..<columns {
                     let xPos = CGFloat(col) * columnWidth
                     let seed = Double(col) * 7.3
-                    let colSpeed = speed * (0.7 + abs(sin(seed)) * 0.6)
-                    let offset = (t * colSpeed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
+                    let colFactor = 0.7 + abs(sin(seed)) * 0.6
+                    let offset = (base * colFactor + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
                     let trailLength = 10
                     let start = Int(offset / charSize)
+
+                    // Easter egg: one wandering column spells チエうしお (Chie Ushio).
+                    let egg = Array("チエうしお")
+                    let eggCol = Int(t / 17) % columns
 
                     var i = 0
                     while i < trailLength {
@@ -588,7 +445,7 @@ struct MatrixRainView: View {
                         guard y >= -charSize && y <= size.height else { i += 1; continue }
 
                         let charIdx = abs(Int((t * 3 + seed + Double(i) * 1.7))) % charset.count
-                        let char = charset[charIdx]
+                        let char = col == eggCol ? egg[i % egg.count] : charset[charIdx]
                         let pos = CGPoint(x: xPos + columnWidth / 2, y: y + charSize / 2)
 
                         // Pick precomputed color — no per-frame opacity math
@@ -606,6 +463,13 @@ struct MatrixRainView: View {
                     }
                 }
             }
+        }
+        .onChange(of: intensity) { old, new in
+            // Fold elapsed motion into `accumulated` so the position is continuous
+            // across speed changes — drops keep flowing, only their pace changes.
+            let now = Date.timeIntervalSinceReferenceDate
+            accumulated += rate(old) * (now - anchorT)
+            anchorT = now
         }
         .allowsHitTesting(false)
     }

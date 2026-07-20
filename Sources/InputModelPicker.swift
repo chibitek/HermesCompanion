@@ -7,8 +7,9 @@ struct InputModelPicker: View {
     let availableModels: [String]
     let favoriteModels: [String]
     let modelInfos: [String: ModelInfo]
-    let onSelect: (String) -> Void
+    let onSelect: (String, String?) -> Void
     var onToggleFavorite: ((String) -> Void)? = nil
+    var onRefresh: (() -> Void)? = nil
 
     @EnvironmentObject private var appearance: AppearanceSettings
     @Environment(\.dismiss) private var dismiss
@@ -75,6 +76,10 @@ struct InputModelPicker: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .task {
+            // Opened with an empty catalog (capabilities fetch failed earlier)? Retry once.
+            if availableModels.isEmpty { onRefresh?() }
+        }
     }
 
     // MARK: - Screen 1: Model list
@@ -150,7 +155,7 @@ struct InputModelPicker: View {
                 ForEach(sources, id: \.id) { source in
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        onSelect(source.id)
+                        onSelect(source.id, modelInfos[source.id]?.provider ?? nil)
                         dismiss()
                     } label: {
                         HStack(spacing: 12) {
@@ -213,7 +218,7 @@ struct InputModelPicker: View {
         return Button {
             if sourceCount == 1 {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onSelect(entry.ids[0])
+                onSelect(entry.ids[0], modelInfos[entry.ids[0]]?.provider ?? nil)
                 dismiss()
             } else {
                 selectedModelName = entry.name
@@ -279,9 +284,4 @@ struct InputModelPicker: View {
         }
         .buttonStyle(.plain)
     }
-
-    // MARK: - Helpers
-
-    private func providerIcon(_ provider: String) -> String { ProviderUtils.icon(for: provider) }
-    private func providerDisplayName(_ provider: String) -> String { ProviderUtils.displayName(for: provider) }
 }

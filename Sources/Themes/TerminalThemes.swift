@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Reusable CRT scanline overlay for terminal themes.
 struct CRTScanlineOverlay: View {
+    var color: Color = .black
     var opacity: Double = 0.15
 
     var body: some View {
@@ -13,7 +14,7 @@ struct CRTScanlineOverlay: View {
             while y < size.height {
                 context.fill(
                     Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
-                    with: .color(.black.opacity(opacity))
+                    with: .color(color.opacity(opacity))
                 )
                 y += lineSpacing
             }

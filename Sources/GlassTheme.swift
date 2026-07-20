@@ -1,11 +1,5 @@
 import SwiftUI
 
-/// Legacy compatibility layer. `bubbleMaxWidthRatio` is the only remaining
-/// static — all other values now come from the active HermesTheme.
-enum GlassTheme {
-    static let bubbleMaxWidthRatio: CGFloat = 0.94
-}
-
 // MARK: - Theme Environment Key
 
 /// Allows passing the active theme through the SwiftUI environment.

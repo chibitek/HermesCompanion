@@ -1,36 +1,6 @@
 import SwiftUI
 import PhotosUI
-
-/// Manages voice timeouts using a flag-based approach.
-/// Task.sleep cancellation is unreliable on iOS, so we use a simple
-/// dictionary of timeout IDs with a "cancelled" flag. When the timeout
-/// fires, it checks the flag before doing anything.
-final class VoiceTimeoutManager {
-    static let shared = VoiceTimeoutManager()
-    private var timeouts: [UUID: Bool] = [:]
-    private let lock = NSLock()
-
-    func startTimeout(id: UUID, seconds: TimeInterval, action: @escaping () -> Void) {
-        lock.lock()
-        timeouts[id] = false
-        lock.unlock()
-
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds) { [weak self] in
-            guard let self else { return }
-            self.lock.lock()
-            let isCancelled = self.timeouts[id] ?? true
-            self.lock.unlock()
-            if isCancelled { return }
-            DispatchQueue.main.async { action() }
-        }
-    }
-
-    func cancelTimeout(id: UUID) {
-        lock.lock()
-        timeouts[id] = true
-        lock.unlock()
-    }
-}
+import WidgetKit
 
 /// Main chat view with Liquid Glass design.
 /// Uses .glassEffect() throughout for translucent, depth-heavy UI.
@@ -45,10 +15,11 @@ struct ChatView: View {
     @State private var showPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
     @State private var showFilePicker = false
+    @State private var showCameraPicker = false
     @StateObject private var voiceConversation = VoiceConversationManager()
     @State private var showVoicePage = false
     @StateObject private var wakePhraseListener = WakePhraseListener()
-    @AppStorage("hey_hermes_enabled") private var heyHermesEnabled = true
+    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = true
 
     var body: some View {
         NavigationStack {
@@ -64,45 +35,7 @@ struct ChatView: View {
                         toolEventsPanel
                     }
 
-                    GlassInputBar(
-                        text: $inputText,
-                        isStreaming: store.isStreaming,
-                        onSend: sendMessage,
-                        onQueue: queueMessage,
-                        onStop: { store.stopStreaming() },
-                        onCamera: { showPhotoPicker = true },
-                        onFilePick: { showFilePicker = true },
-                        attachments: attachments,
-                        onRemoveAttachment: removeAttachment,
-                        currentModel: store.effectiveCurrentModel,
-                        availableModels: store.availableModels,
-                        modelInfos: store.modelInfos,
-                        favoriteModels: store.favoriteModels,
-                        onSelectModel: { model in
-                            store.selectPreferredModel(model)
-                        },
-                        onToggleFavorite: { model in
-                            _ = store.toggleFavorite(model)
-                        },
-                        availableSkills: store.skills,
-                        onRefreshSkills: {
-                            await store.refreshSkills()
-                        },
-                        onVoiceConversationTranscription: { transcription in
-                            handleVoiceTranscription(transcription)
-                        },
-                        onOpenVoicePage: {
-                            showVoicePage = true
-                        },
-                        onDictationStateChange: { isRecording in
-                            if isRecording {
-                                wakePhraseListener.pause()
-                            } else if scenePhase == .active, !showVoicePage {
-                                wakePhraseListener.resume()
-                            }
-                        },
-                        voiceConversation: voiceConversation
-                    )
+                    inputBar
                 }
 
                 // Full-screen voice conversation page
@@ -166,11 +99,17 @@ struct ChatView: View {
             if heyHermesEnabled { wakePhraseListener.start() }
             Task { await store.refreshSkills() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openVoiceMode)) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showVoicePage = true
+            }
+        }
         .onDisappear {
             wakePhraseListener.stop()
         }
         .onChange(of: heyHermesEnabled) { _, enabled in
             enabled ? wakePhraseListener.start() : wakePhraseListener.stop()
+            ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
         }
         .onChange(of: showVoicePage) { _, isPresented in
             if isPresented {
@@ -183,6 +122,12 @@ struct ChatView: View {
             switch phase {
             case .active:
                 wakePhraseListener.resumeFromBackground()
+                if SharedDefaults.shared.bool(forKey: "open_voice_page") {
+                    SharedDefaults.shared.set(false, forKey: "open_voice_page")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showVoicePage = true
+                    }
+                }
             case .background:
                 wakePhraseListener.startBackgroundMode()
             case .inactive:
@@ -235,9 +180,86 @@ struct ChatView: View {
                 attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: mimeType))
             }
         }
+        // Camera picker sheet — take a photo directly
+        .sheet(isPresented: $showCameraPicker) {
+            CameraPickerView { data in
+                let fileName = "camera_\(UUID().uuidString.prefix(8)).jpg"
+                attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: "image/jpeg"))
+            }
+        }
+        .onChange(of: showCameraPicker) { _, presented in
+            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
+        }
     }
 
     // MARK: - Message List
+
+    /// Collapsible live-reasoning panel (Claude-style "Thinking").
+    private var thinkingPanel: some View {
+        DisclosureGroup {
+            Text(store.streamingThinking)
+                .font(.caption)
+                .foregroundStyle(appearance.activeTheme.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+        } label: {
+            Label("Thinking", systemImage: "brain")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(appearance.activeTheme.textSecondary)
+        }
+        .tint(appearance.activeTheme.textSecondary)
+    }
+
+    private var inputBar: some View {
+        GlassInputBar(
+            text: $inputText,
+            isStreaming: store.isStreaming,
+            onSend: sendMessage,
+            onQueue: queueMessage,
+            onStop: { store.stopStreaming() },
+            onCamera: { showPhotoPicker = true },
+            onFilePick: { showFilePicker = true },
+            onCameraCapture: { showCameraPicker = true },
+            onNewSession: {
+                inputText = ""
+                attachments = []
+                Task { await store.createSession(title: nil) }
+            },
+            attachments: attachments,
+            onRemoveAttachment: removeAttachment,
+            currentModel: store.effectiveCurrentModel,
+            availableModels: store.availableModels,
+            modelInfos: store.modelInfos,
+            onRefreshModels: {
+                Task { await store.refreshCapabilities() }
+            },
+            favoriteModels: store.favoriteModels,
+            onSelectModel: { model, provider in
+                store.selectPreferredModel(model, provider: provider)
+            },
+            onToggleFavorite: { model in
+                _ = store.toggleFavorite(model)
+            },
+            availableSkills: store.skills,
+            onRefreshSkills: {
+                await store.refreshSkills()
+            },
+            onVoiceConversationTranscription: { transcription in
+                handleVoiceTranscription(transcription)
+            },
+            onOpenVoicePage: {
+                showVoicePage = true
+            },
+            onDictationStateChange: { isRecording in
+                if isRecording {
+                    wakePhraseListener.pause()
+                } else if scenePhase == .active, !showVoicePage {
+                    wakePhraseListener.resume()
+                }
+            },
+            voiceConversation: voiceConversation
+        )
+    }
 
     private var messageList: some View {
         ScrollViewReader { proxy in
@@ -259,6 +281,11 @@ struct ChatView: View {
                             images: msg.images
                         )
                             .id(msg.id)
+                    }
+
+                    if store.isStreaming && !store.streamingThinking.isEmpty {
+                        thinkingPanel
+                            .id("thinking-stream")
                     }
 
                     if store.isStreaming && !store.streamingText.isEmpty {
@@ -413,10 +440,10 @@ struct ChatView: View {
         Task {
             // Hard timeout: if store.sendMessage doesn't return in 20 seconds,
             // bail out and surface an error so the UI doesn't freeze.
-            // Uses a flag instead of Task cancellation because iOS's Task.sleep
-            // doesn't reliably throw on cancellation in all cases.
-            let voiceTimeoutID = UUID()
-            VoiceTimeoutManager.shared.startTimeout(id: voiceTimeoutID, seconds: 20) {
+            // StreamWatchdogManager is flag-based (DispatchQueue.asyncAfter)
+            // because iOS's Task.sleep doesn't reliably fire when backgrounded.
+            let voiceWatchdog = StreamWatchdogManager()
+            voiceWatchdog.arm(after: 20) {
                 Task { @MainActor in
                     guard self.voiceConversation.isThinking else { return }
                     FileLogger.shared.log("ChatView: voice timeout fired (20s)")
@@ -457,11 +484,14 @@ struct ChatView: View {
             let voiceMessage = "[voice] \(transcription)"
             let responseMessage = await store.sendMessage(voiceMessage, skipPostReload: true)
             monitorTask.cancel()
-            VoiceTimeoutManager.shared.cancelTimeout(id: voiceTimeoutID)
+            voiceWatchdog.cancel()
             FileLogger.shared.log("ChatView: store.sendMessage returned \(String(describing: responseMessage?.content.prefix(80)))")
 
             guard let responseMessage = responseMessage else {
                 FileLogger.shared.log("ChatView: no response message")
+                // If thinking was already cleared (user cancelled / watchdog /
+                // a newer turn took over), stay quiet — don't fail a dead turn.
+                guard self.voiceConversation.isThinking else { return }
                 if let error = store.error, error.id != priorErrorID {
                     voiceConversation.failRemoteTurn(message: error.message)
                 } else {

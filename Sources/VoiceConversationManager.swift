@@ -59,6 +59,7 @@ final class VoiceConversationManager: ObservableObject {
     // Debounce for finalization
     private var isFinalizing = false
     private var pendingConversationStartID: UUID?
+    private var recognitionRetryCount = 0
 
     // Safety net: if thinking lasts too long, cancel and resume listening.
     // 20s — long enough for tool calls, short enough to not feel dead.
@@ -79,6 +80,30 @@ final class VoiceConversationManager: ObservableObject {
             name: AVAudioSession.interruptionNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+    }
+
+    /// Car Bluetooth / AirPods connect or drop mid-listen: the engine stays
+    /// bound to the old route and recognition errors out. Restart listening
+    /// on the new route instead of dying with an error.
+    @objc private func handleRouteChange(_ notification: Notification) {
+        guard isConversing, isListening else { return }
+        stopListening()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let self,
+                  self.isConversing,
+                  !self.isListening,
+                  !self.isSpeaking,
+                  !self.isThinking
+            else { return }
+            self.startListening()
+        }
     }
 
     @objc private func handleAudioSessionInterruption(_ notification: Notification) {
@@ -363,9 +388,7 @@ final class VoiceConversationManager: ObservableObject {
             return
         }
         recognitionRequest.shouldReportPartialResults = true
-        if #available(iOS 16, *) {
-            recognitionRequest.addsPunctuation = true
-        }
+        recognitionRequest.addsPunctuation = true
         // Force server-based recognition to free up the CPU for the Matrix rain
         // animation. On-device recognition runs a neural net on the CPU/GPU
         // which competes with the Canvas rendering and causes UI freezes.
@@ -398,10 +421,27 @@ final class VoiceConversationManager: ObservableObject {
                         return
                     }
 
-                    // Don't auto-restart on error -- this was causing infinite loops
-                    // and crashes. Just stop listening and let the user tap to resume.
+                    FileLogger.shared.log("VoiceManager: recognition error: \(error.localizedDescription)")
                     self.stopListening()
-                    self.voiceError = error.localizedDescription
+                    // Auto-recover transient errors (network blips with
+                    // server-based recognition, Bluetooth route changes)
+                    // instead of leaving the mic dead until a manual tap.
+                    self.recognitionRetryCount += 1
+                    if self.isConversing && self.recognitionRetryCount <= 3 {
+                        Task { @MainActor [weak self] in
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            guard let self,
+                                  self.isConversing,
+                                  !self.isListening,
+                                  !self.isSpeaking,
+                                  !self.isThinking
+                            else { return }
+                            self.startListening()
+                        }
+                    } else {
+                        self.recognitionRetryCount = 0
+                        self.voiceError = error.localizedDescription
+                    }
                     return
                 }
 
@@ -470,6 +510,8 @@ final class VoiceConversationManager: ObservableObject {
         return nil
     }
 
+    private var lastLevelPublish: TimeInterval = 0
+
     /// Calculate RMS audio level from an audio buffer for the visualizer.
     private func updateAudioLevel(from buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
@@ -484,6 +526,10 @@ final class VoiceConversationManager: ObservableObject {
         let rms = sqrt(sum / Float(frameLength))
         // Normalize to 0...1 range (typical mic RMS is 0...0.5)
         let level = min(1.0, rms * 3.0)
+        // ponytail: throttle @Published churn — tap fires ~43Hz, UI only needs ~15Hz
+        let now = CACurrentMediaTime()
+        guard now - lastLevelPublish > 0.06, abs(level - audioLevel) > 0.02 else { return }
+        lastLevelPublish = now
         audioLevel = level
     }
 
@@ -589,6 +635,7 @@ final class VoiceConversationManager: ObservableObject {
         }
 
         isFinalizing = true
+        recognitionRetryCount = 0
         voiceError = nil
         stopListening(resetFinalizing: false)
 
@@ -753,23 +800,6 @@ final class VoiceConversationManager: ObservableObject {
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
         if voicePitch == 0 { voicePitch = 1.0 }
         voiceIdentifier = VoiceDefaults.ensureBestVoiceSelected()
-    }
-
-    // MARK: - Network Connectivity
-    
-    /// Check if device has internet connectivity
-    func hasNetworkConnectivity() async -> Bool {
-        return await withCheckedContinuation { continuation in
-            let monitor = NWPathMonitor()
-            let queue = DispatchQueue(label: "NetworkMonitor")
-            
-            monitor.pathUpdateHandler = { path in
-                monitor.cancel()
-                continuation.resume(returning: path.status == .satisfied)
-            }
-            
-            monitor.start(queue: queue)
-        }
     }
 
     // MARK: - Private
