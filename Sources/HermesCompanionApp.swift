@@ -33,6 +33,15 @@ struct HermesCompanionApp: App {
                     // Request notification permission so we can alert the
                     // user when a chat response arrives while backgrounded.
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+
+                    // Foreground liveness: reconnectIfNeeded no-ops when healthy,
+                    // silently reconnects when the socket died while the app sat
+                    // open (Tailscale rekey, gateway restart, network switch).
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(60))
+                        guard scenePhase == .active, !store.isStreaming else { continue }
+                        await store.reconnectIfNeeded()
+                    }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                                     switch newPhase {
