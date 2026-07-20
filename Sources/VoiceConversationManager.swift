@@ -777,7 +777,23 @@ final class VoiceConversationManager: ObservableObject {
         isSpeaking = true
         voiceError = nil
 
-        speakWithSystemTTS(cleanText)
+        // Premium TTS when the selected provider is live; system TTS otherwise.
+        let provider = TTSProvider.selected
+        if provider == .elevenlabs, let key = TTSKeyStore.load(provider: .elevenlabs) {
+            startBargeInMonitoring()
+            ElevenLabsTTS.shared.speak(text: cleanText, apiKey: key) { [weak self] in
+                guard let self else { return }
+                self.isSpeaking = false
+                if self.isConversing {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                        self.startListening()
+                    }
+                }
+            }
+        } else {
+            speakWithSystemTTS(cleanText)
+        }
     }
     
     /// Speak using the system's built-in AVSpeechSynthesizer
@@ -818,6 +834,7 @@ final class VoiceConversationManager: ObservableObject {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        ElevenLabsTTS.shared.stop()
         isSpeaking = false
     }
 

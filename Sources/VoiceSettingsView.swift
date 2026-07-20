@@ -94,12 +94,74 @@ struct VoiceSettingsView: View {
 
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @State private var filterQuality: Bool = true
+    @State private var selectedProvider: TTSProvider = TTSProvider.selected
+    @State private var keyInput = ""
+    @State private var keyExistsForSelected = false
     @EnvironmentObject var appearance: AppearanceSettings
 
     private var accent: Color { appearance.accent }
 
+    private func saveKey() {
+        let key = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        TTSKeyStore.save(key, provider: selectedProvider)
+        keyInput = ""
+        keyExistsForSelected = true
+    }
+
     var body: some View {
         Form {
+            Section {
+                ForEach(TTSProvider.allCases) { provider in
+                    Button {
+                        TTSProvider.selected = provider
+                        selectedProvider = provider
+                        keyExistsForSelected = TTSKeyStore.load(provider: provider) != nil
+                    } label: {
+                        HStack {
+                            Circle()
+                                .fill(provider.hasKey ? Color.green : Color.gray.opacity(0.4))
+                                .frame(width: 8, height: 8)
+                            Text(provider.displayName)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if !provider.isImplemented {
+                                Text("soon")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if selectedProvider == provider {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(accent)
+                            }
+                        }
+                    }
+                }
+
+                if selectedProvider != .apple {
+                    SecureField("API key for \(selectedProvider.displayName)", text: $keyInput)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onSubmit { saveKey() }
+                    HStack {
+                        Button(keyExistsForSelected ? "Update Key" : "Save Key") { saveKey() }
+                            .disabled(keyInput.isEmpty)
+                        if keyExistsForSelected {
+                            Button("Remove Key", role: .destructive) {
+                                TTSKeyStore.delete(provider: selectedProvider)
+                                keyInput = ""
+                                keyExistsForSelected = false
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Voice Provider")
+            } footer: {
+                Text("Green dot = key stored on this device (Apple needs none). Providers without a key or marked \"soon\" fall back to Apple voices. Keys stay in the iOS Keychain.")
+            }
+
             Section {
                 Toggle("Hey Hermes", isOn: $heyHermesEnabled)
             } header: {
@@ -197,6 +259,7 @@ struct VoiceSettingsView: View {
         .onAppear {
             refreshVoices()
             selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
+            keyExistsForSelected = TTSKeyStore.load(provider: selectedProvider) != nil
         }
     }
 
