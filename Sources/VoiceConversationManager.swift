@@ -91,8 +91,18 @@ final class VoiceConversationManager: ObservableObject {
     /// Car Bluetooth / AirPods connect or drop mid-listen: the engine stays
     /// bound to the old route and recognition errors out. Restart listening
     /// on the new route instead of dying with an error.
+    /// ONLY react to real device changes — iOS also fires this notification
+    /// for our own setCategory/setActive (categoryChange, routeConfigurationChange),
+    /// and restarting on those kills every listen attempt at birth (Build 106 bug).
     @objc private func handleRouteChange(_ notification: Notification) {
         guard isConversing, isListening else { return }
+        let reason = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt)
+            .flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
+        guard reason == .newDeviceAvailable || reason == .oldDeviceUnavailable else {
+            FileLogger.shared.log("VoiceManager: route change ignored (reason=\(String(describing: reason)))")
+            return
+        }
+        FileLogger.shared.log("VoiceManager: route change \(reason == .newDeviceAvailable ? "device added" : "device removed") — restarting listen")
         stopListening()
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 300_000_000)
