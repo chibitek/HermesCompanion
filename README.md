@@ -80,7 +80,7 @@ Server connection, provider and model selection, capabilities toggles, skills br
 
 ### Model Selector
 
-Switch between any model your Hermes gateway supports. 300+ models from Nous, OpenRouter, Ollama, Huggingface, Sakana, and more. Models sync automatically from your server.
+Switch between any model your Hermes gateway can reach. The full provider catalog syncs from your server — every configured source (OpenRouter, xAI, OpenAI, Kimi, Ollama, Hugging Face, NVIDIA, and more), grouped by provider with live model counts. Star multiple favorites to pin them to the top, tap a model to pick between the sources that serve it. The same catalog powers the Settings drill-down: pick a Source, then browse every model that source reported.
 
 <p align="center">
 <img src="screenshots/model-picker.png" width="280" alt="Model selector showing available AI models including fugu-ultra, claude-sonnet, gemini" />
@@ -116,7 +116,7 @@ Six built-in themes in a visual grid picker. Each one transforms the entire app 
 | **Control Center toggle** | Toggle Hey Hermes voice activation directly from iOS Control Center. The toggle stays in sync with the in-app setting via App Group shared storage. |
 | **Six themes** | Liquid Glass, Matrix terminal, Retro Amber CRT, Neon, Blue Hacker, and Cyberpunk. Every theme transforms the entire app. |
 | **Session management** | Full history with rename, fork, search. Auto-scroll to most recent message. Foreground sync for cross-platform replies. |
-| **Provider-agnostic** | Connect to any Hermes gateway. Switch providers and models on the fly. 300+ models from Nous, OpenRouter, Ollama, Huggingface, and more. |
+| **Provider-agnostic** | Connect to any Hermes gateway. The complete provider catalog syncs from the server — every configured source and all its models, selectable on the fly. |
 | **Multi-favorite model picker** | Star multiple models to pin them to the top of the picker. Grouped by source (Ollama, Nous, Anthropic, etc.). Tap a star to favorite, tap again to remove. |
 | **Tool approvals** | Approve or deny tool executions before they run. See exactly what your agent is about to do. |
 | **Skills browser** | Search and browse all skills available on your Hermes server. 238+ skills at your fingertips. |

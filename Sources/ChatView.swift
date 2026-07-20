@@ -489,6 +489,9 @@ struct ChatView: View {
 
             guard let responseMessage = responseMessage else {
                 FileLogger.shared.log("ChatView: no response message")
+                // If thinking was already cleared (user cancelled / watchdog /
+                // a newer turn took over), stay quiet — don't fail a dead turn.
+                guard self.voiceConversation.isThinking else { return }
                 if let error = store.error, error.id != priorErrorID {
                     voiceConversation.failRemoteTurn(message: error.message)
                 } else {

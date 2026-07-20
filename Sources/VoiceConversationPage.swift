@@ -54,6 +54,9 @@ struct VoiceConversationPage: View {
     var onClose: (() -> Void)? = nil
 
     @State private var preset: CyberpunkVoicePreset = .matrix
+    // ponytail: eased intensity — stepping 0.5→1.0 teleports rain columns (offset ∝ intensity)
+    @State private var easedRain: Double = 0.5
+    @State private var rainEaseTimer: Timer?
 
     // Rain intensity changes with conversation state
     private var rainIntensity: Double {
@@ -70,7 +73,7 @@ struct VoiceConversationPage: View {
             MatrixRainView(
                 color: preset.primary,
                 secondaryColor: preset.secondary,
-                intensity: rainIntensity
+                intensity: easedRain
             )
             .ignoresSafeArea()
 
@@ -98,6 +101,13 @@ struct VoiceConversationPage: View {
             voiceConversation.syncVoiceSettings()
             store?.isVoiceConversationActive = true
             startVoiceConversationIfNeeded()
+            rainEaseTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+                Task { @MainActor in
+                    let delta = rainIntensity - easedRain
+                    guard abs(delta) > 0.004 else { return }
+                    easedRain += delta * 0.12
+                }
+            }
 
             // Don't auto-pick a session. Use the active session from ChatView
             // (via the shared `store`). Auto-picking the most recent would
@@ -107,6 +117,8 @@ struct VoiceConversationPage: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            rainEaseTimer?.invalidate()
+            rainEaseTimer = nil
             store?.isVoiceConversationActive = false
             voiceConversation.stopConversation()
         }
@@ -379,10 +391,17 @@ struct GlitchAnimation: ViewModifier {
 
 // MARK: - Matrix Digital Rain
 
-struct MatrixRainView: View {
+struct MatrixRainView: View, Animatable {
     let color: Color
     let secondaryColor: Color
-    let intensity: Double  // 0.0 to 1.0, controls speed and brightness
+    var intensity: Double  // 0.0 to 1.0, controls speed and brightness
+
+    // Smooth intensity transitions — offset math multiplies absolute time by
+    // intensity, so a hard jump teleports every column (the "glitch").
+    var animatableData: Double {
+        get { intensity }
+        set { intensity = newValue }
+    }
 
     private let columns = 24
     private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789@#$%&*<>ABCDEF+=-/")
@@ -393,19 +412,26 @@ struct MatrixRainView: View {
     private var midColor: Color { color.opacity(0.6 * intensity + 0.1) }
     private var dimColor: Color { color.opacity(0.35 * intensity + 0.05) }
 
+    // Speed as a function of intensity. offset must be the *integral* of this —
+    // computing offset = t * speed(intensity) teleports every drop when intensity
+    // changes (t is seconds since 2001, so even tiny speed shifts jump position).
+    private func rate(_ i: Double) -> Double { (60 + 120 * i) * (0.5 + i) }
+    @State private var anchorT: TimeInterval = Date.timeIntervalSinceReferenceDate
+    @State private var accumulated: Double = 0
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // 25fps — sustainable
             Canvas { context, size in
                 let columnWidth = size.width / CGFloat(columns)
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                let speed = 60.0 + intensity * 120.0
+                let base = accumulated + rate(intensity) * (t - anchorT)
                 let charSize: CGFloat = 14
 
                 for col in 0..<columns {
                     let xPos = CGFloat(col) * columnWidth
                     let seed = Double(col) * 7.3
-                    let colSpeed = speed * (0.7 + abs(sin(seed)) * 0.6)
-                    let offset = (t * colSpeed * (0.5 + Double(intensity)) + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
+                    let colFactor = 0.7 + abs(sin(seed)) * 0.6
+                    let offset = (base * colFactor + seed * 100).truncatingRemainder(dividingBy: size.height + 200)
                     let trailLength = 10
                     let start = Int(offset / charSize)
 
@@ -437,6 +463,13 @@ struct MatrixRainView: View {
                     }
                 }
             }
+        }
+        .onChange(of: intensity) { old, new in
+            // Fold elapsed motion into `accumulated` so the position is continuous
+            // across speed changes — drops keep flowing, only their pace changes.
+            let now = Date.timeIntervalSinceReferenceDate
+            accumulated += rate(old) * (now - anchorT)
+            anchorT = now
         }
         .allowsHitTesting(false)
     }

@@ -712,6 +712,9 @@ final class AppStore: ObservableObject {
                     receivedCompletion: receivedCompletion,
                     existingAssistantCount: existingAssistantCount
                 )
+            } catch is CancellationError {
+                // Cancelled on purpose (barge-in, stop tap, new turn superseding
+                // this one). Not an error — don't surface "Message failed".
             } catch let e as APIError {
                 self.error = AppError(message: e.errorDescription ?? "Message failed")
             } catch {
