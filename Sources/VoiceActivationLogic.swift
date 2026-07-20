@@ -3,7 +3,8 @@ import Foundation
 enum VoiceEndpointingPolicy {
     /// Natural conversation includes short thinking pauses. Anything below a
     /// second aggressively fragments speech into separate turns.
-    static let silenceTimeout: TimeInterval = 1.8
+    /// 1.5s is the floor of the natural-pause band (test asserts >= 1.5).
+    static let silenceTimeout: TimeInterval = 1.5
 }
 
 enum WakePhraseParser {
