@@ -484,6 +484,7 @@ final class VoiceConversationManager: ObservableObject {
         guard let recordingFormat else {
             isListening = false
             voiceError = "Microphone input is unavailable."
+            FileLogger.shared.log("VoiceManager: startListening bail — invalid recording format (sampleRate 0 / route stuck)")
             self.recognitionRequest = nil
             recognitionTask?.cancel()
             recognitionTask = nil
@@ -510,6 +511,7 @@ final class VoiceConversationManager: ObservableObject {
             }
             startLevelMonitoring()
         } catch {
+            FileLogger.shared.log("VoiceManager: audio engine start failed: \(error.localizedDescription)")
             voiceError = "Could not start microphone."
             stopListening()
         }
