@@ -35,6 +35,17 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            # Phone stays on the SwiftUI lifecycle (no delegate class).
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+            # CarPlay: voice-first template scene.
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneClassName: CPTemplateApplicationScene
+                UISceneConfigurationName: CarPlay Configuration
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
         NSAppTransportSecurity:
           # Tailscale uses 100.64.0.0/10 (CGNAT) which iOS does NOT treat as
           # local networking, so NSAllowsLocalNetworking alone blocks it.
@@ -48,8 +59,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion
-        MARKETING_VERSION: "1.8.37"
-        CURRENT_PROJECT_VERSION: 98
+        MARKETING_VERSION: "1.8.40"
+        CURRENT_PROJECT_VERSION: 114
         DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
@@ -80,8 +91,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion.controlwidget
-        MARKETING_VERSION: "1.8.37"
-        CURRENT_PROJECT_VERSION: 98
+        MARKETING_VERSION: "1.8.40"
+        CURRENT_PROJECT_VERSION: 114
         DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
