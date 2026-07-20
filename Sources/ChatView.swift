@@ -309,30 +309,13 @@ struct ChatView: View {
                 .padding(.horizontal, appearance.activeTheme.spacingL)
                 .padding(.vertical, appearance.activeTheme.spacingM)
             }
-            .onAppear {
-                // Scroll to the most recent message when the view first appears.
-                // Use a delay because messages load asynchronously after session selection.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    withAnimation(.none) {
-                        proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
-                    }
-                }
-            }
+            .defaultScrollAnchor(.bottom)
             .onChange(of: store.messages.count) { oldCount, newCount in
                 // Scroll to bottom whenever messages change.
                 // When oldCount is 0 and newCount > 0, messages just loaded from a session.
                 // When newCount > oldCount, a new message arrived.
                 withAnimation(.smooth) {
                     proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
-                }
-            }
-            .onChange(of: store.activeSession?.id) { _, _ in
-                // When switching sessions, messages get cleared then reloaded async.
-                // Scroll to bottom after a short delay to let messages populate.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    withAnimation(.none) {
-                        proxy.scrollTo(store.messages.last?.id ?? "streaming", anchor: .bottom)
-                    }
                 }
             }
             .onChange(of: store.streamingText) { _, _ in
@@ -471,7 +454,7 @@ struct ChatView: View {
                                     self.voiceConversation.startEarlySpeaking(text: firstSentence)
                                 }
                             }
-                        } else if wordCount >= 3 {
+                        } else if wordCount >= 2 {
                             hasStartedSpeaking = true
                             FileLogger.shared.log("ChatView: starting early TTS with \(wordCount) words: \(current.prefix(80))")
                             self.voiceConversation.startEarlySpeaking(text: current)
