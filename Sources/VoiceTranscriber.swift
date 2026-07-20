@@ -22,6 +22,7 @@ final class VoiceTranscriber: ObservableObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var hasInputTap = false
 
     func requestAuthorization() async {
         // Request microphone permission
@@ -80,13 +81,9 @@ final class VoiceTranscriber: ObservableObject {
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest else { return }
         recognitionRequest.shouldReportPartialResults = true
-        if #available(iOS 16, *) {
-            recognitionRequest.addsPunctuation = true
-        }
+        recognitionRequest.addsPunctuation = true
         // Prefer on-device recognition when available for lower latency
-        if #available(iOS 13, *) {
-            recognitionRequest.requiresOnDeviceRecognition = false
-        }
+        recognitionRequest.requiresOnDeviceRecognition = false
         recognitionRequest.taskHint = .dictation
 
         // Start recognition task
@@ -114,14 +111,18 @@ final class VoiceTranscriber: ObservableObject {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        // ponytail: guard against double installTap — ObjC exception is uncatchable
-        if audioEngine.isRunning {
+        // ponytail: guard against double installTap — ObjC exception is uncatchable.
+        // A tap can outlive the engine (iOS stops the engine in background), so
+        // track it with a flag instead of checking audioEngine.isRunning.
+        if hasInputTap {
             inputNode.removeTap(onBus: 0)
+            hasInputTap = false
         }
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
             recognitionRequest.append(buffer)
         }
+        hasInputTap = true
 
         do {
             audioEngine.prepare()
@@ -134,10 +135,14 @@ final class VoiceTranscriber: ObservableObject {
     func stopTranscription() {
         isRecording = false
 
-        // Remove tap BEFORE stopping engine — removeTap on stopped engine
-        // throws an uncatchable ObjC exception.
-        if audioEngine.isRunning {
+        // Remove the tap whenever one is installed (flag-tracked): a tap can
+        // outlive the engine when iOS stops it in the background, and a leaked
+        // tap makes the next installTap throw an uncatchable ObjC exception.
+        if hasInputTap {
             audioEngine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
+        if audioEngine.isRunning {
             audioEngine.stop()
         }
 

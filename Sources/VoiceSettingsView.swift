@@ -90,7 +90,7 @@ struct VoiceSettingsView: View {
     @AppStorage("voice_speed") private var speed: Double = 0.5
     @AppStorage("voice_pitch") private var pitch: Double = 1.0
     @AppStorage(VoiceDefaults.voiceIdentifierKey) private var selectedVoiceId: String = ""
-    @AppStorage("hey_hermes_enabled") private var heyHermesEnabled = true
+    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = true
 
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @State private var filterQuality: Bool = true
@@ -274,10 +274,18 @@ struct VoiceSettingsView: View {
                             min(AVSpeechUtteranceMaximumSpeechRate, Float(speed)))
         utterance.pitchMultiplier = Float(pitch)
 
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {}
+        // Don't hijack the shared session mid voice-conversation: switching
+        // .playAndRecord to .playback kills the mic. Preview plays fine under
+        // the conversation's existing session.
+        let session = AVAudioSession.sharedInstance()
+        if session.category != .playAndRecord {
+            do {
+                try session.setCategory(.playback, mode: .default)
+                try session.setActive(true)
+            } catch {
+                FileLogger.shared.log("VoiceSettings: preview audio session failed: \(error.localizedDescription)")
+            }
+        }
         previewSynthesizer.speak(utterance)
     }
 }

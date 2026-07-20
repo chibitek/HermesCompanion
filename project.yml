@@ -48,9 +48,9 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion
-        MARKETING_VERSION: "1.8.35"
-        CURRENT_PROJECT_VERSION: 95
-        DEVELOPMENT_TEAM: ""
+        MARKETING_VERSION: "1.8.37"
+        CURRENT_PROJECT_VERSION: 98
+        DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -59,6 +59,34 @@ targets:
         DEBUG_INFORMATION_FORMAT: dwarf
         LLVM_DEBUG_SYMBOLS: NO
         GCC_OPTIMIZATION_LEVEL: 0
+        CODE_SIGN_ENTITLEMENTS: HermesCompanion.entitlements
+    dependencies:
+      - target: HermesControlWidget
+        embed: true
+  HermesControlWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ControlWidget
+        excludes:
+          - "Info.plist"
+      - path: Sources/SharedDefaults.swift
+    info:
+      path: ControlWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Hermes Controls
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion.controlwidget
+        MARKETING_VERSION: "1.8.37"
+        CURRENT_PROJECT_VERSION: 98
+        DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+        CODE_SIGN_ENTITLEMENTS: ControlWidget/HermesControlWidgetExtension.entitlements
   HermesCompanionTests:
     type: bundle.unit-test
     platform: iOS

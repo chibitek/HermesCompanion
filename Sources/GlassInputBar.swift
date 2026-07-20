@@ -10,13 +10,16 @@ struct GlassInputBar: View {
     let onStop: () -> Void
     let onCamera: () -> Void
     let onFilePick: () -> Void
+    var onCameraCapture: (() -> Void)? = nil
+    var onNewSession: (() -> Void)? = nil
     let attachments: [AttachmentData]
     let onRemoveAttachment: (Int) -> Void
     var currentModel: String = ""
     var availableModels: [String] = []
     var modelInfos: [String: ModelInfo] = [:]
+    var onRefreshModels: (() -> Void)? = nil
     var favoriteModels: [String] = []
-    var onSelectModel: ((String) -> Void)? = nil
+    var onSelectModel: ((String, String?) -> Void)? = nil
     var onToggleFavorite: ((String) -> Void)? = nil
     var availableSkills: [Skill] = []
     var onRefreshSkills: (() async -> Void)? = nil
@@ -234,7 +237,7 @@ struct GlassInputBar: View {
                     Button {
                         showAttachmentMenu = true
                     } label: {
-                        Image(systemName: "plus")
+                        Image(systemName: "paperclip")
                             .font(.system(size: 21, weight: .regular))
                             .foregroundStyle(theme.textPrimary)
                             .frame(width: 44, height: 44)
@@ -243,25 +246,55 @@ struct GlassInputBar: View {
                     }
                     .buttonStyle(.plain)
                     .confirmationDialog("Attach", isPresented: $showAttachmentMenu, titleVisibility: .visible) {
-                        Button("Photo Library") { onCamera() }
-                        Button("Files") { onFilePick() }
+                        if onCameraCapture != nil {
+                            Button {
+                                showAttachmentMenu = false
+                                onCameraCapture?()
+                            } label: {
+                                Label("Camera", systemImage: "camera")
+                            }
+                        }
+                        Button {
+                            showAttachmentMenu = false
+                            onCamera()
+                        } label: {
+                            Label("Photo Library", systemImage: "photo.on.rectangle")
+                        }
+                        Button {
+                            showAttachmentMenu = false
+                            onFilePick()
+                        } label: {
+                            Label("Files", systemImage: "folder")
+                        }
                         Button("Cancel", role: .cancel) {}
                     }
 
-                    if !currentModel.isEmpty {
-                        Button {
-                            showModelPicker = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                if let prov = ProviderUtils.providerOf(currentModel), !prov.isEmpty {
-                                    Text(prov.capitalized)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(theme.accent)
-                                }
-                                Text(ProviderUtils.shortModelName(currentModel))
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(theme.textPrimary)
+                    Button {
+                        onNewSession?()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 21, weight: .regular))
+                            .foregroundStyle(theme.textPrimary)
+                            .frame(width: 44, height: 44)
+                            .background(controlBackground)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("New session")
+
+                    Button {
+                        showModelPicker = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            if let prov = ProviderUtils.providerOf(currentModel), !prov.isEmpty {
+                                Text(prov.capitalized)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(theme.accent)
                             }
+                            Text(currentModel.isEmpty ? "Choose Model" : ProviderUtils.shortModelName(currentModel))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(theme.textPrimary)
+                        }
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .minimumScaleFactor(0.85)
@@ -278,17 +311,17 @@ struct GlassInputBar: View {
                                 availableModels: availableModels,
                                 favoriteModels: favoriteModels,
                                 modelInfos: modelInfos,
-                                onSelect: { model in
-                                    onSelectModel?(model)
+                                onSelect: { model, provider in
+                                    onSelectModel?(model, provider)
                                     showModelPicker = false
                                 },
                                 onToggleFavorite: { model in
                                     onToggleFavorite?(model)
-                                }
+                                },
+                                onRefresh: onRefreshModels
                             )
                             .environmentObject(appearance)
                         }
-                    }
 
                     Spacer(minLength: 0)
 

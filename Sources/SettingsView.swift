@@ -252,7 +252,11 @@ struct SettingsView: View {
                 && !(model.ownedBy ?? "").isEmpty
                 && model.ownedBy?.lowercased() != "hermes"
         }
-        if providers.isEmpty && hasLegacyOpenRouterCatalog {
+        // ponytail fix: this used to require providers.isEmpty, but `current`
+        // is inserted above unconditionally, so the bucket never appeared and
+        // every unrouted (author-owned) row was invisible in Settings.
+        if hasLegacyOpenRouterCatalog,
+           !providers.contains(where: { $0.lowercased() == "openrouter" }) {
             providers.append("openrouter")
         }
         return providers.filter { !$0.isEmpty && seen.insert($0).inserted }
@@ -316,10 +320,11 @@ struct SettingsView: View {
                         subtitle: modelSubtitle,
                         onSelect: { model in
                             selectedModel = model.id
-                            // Only pass provider if it's from the model ID or explicit selection.
-                            // Don't send stale provider (e.g. "nous") for local Ollama models.
-                            let modelProvider = model.ownedBy?.isEmpty == false ? model.ownedBy : nil
-                            store.selectPreferredModel(model.id, provider: modelProvider)
+                            // Provider = inference service. ownedBy is the model
+                            // AUTHOR (e.g. "anthropic") — sending it as provider
+                            // broke switching for every OpenRouter model picked
+                            // here. The bucket the user drilled into is the source.
+                            store.selectPreferredModel(model.id, provider: model.provider ?? selectedProvider)
                         },
                         onToggleFavorite: { model in
                             _ = store.toggleFavorite(model.id)
@@ -403,7 +408,7 @@ struct SettingsView: View {
         if let owner = model.ownedBy, !owner.isEmpty {
             return displayName(for: owner)
         }
-        if let prefix = providerFromModelID(model.id) {
+        if let prefix = ProviderUtils.providerOf(model.id) {
             return displayName(for: prefix)
         }
         return model.id
@@ -749,7 +754,7 @@ struct SettingsView: View {
     /// OpenRouter model so selecting OpenRouter shows the complete catalog.
     private func modelBelongsToProvider(_ model: ModelInfo, provider: String) -> Bool {
         let id = model.id
-        let prefix = providerFromModelID(id)?.lowercased()
+        let prefix = ProviderUtils.providerOf(id)?.lowercased()
         let owner = model.ownedBy?.lowercased()
         let reportedProvider = model.provider?.lowercased()
 
@@ -819,17 +824,13 @@ struct SettingsView: View {
     private func addCurrentModelIfNeeded() {
         let model = store.effectiveCurrentModel
         guard !model.isEmpty, !availableModels.contains(where: { $0.id == model }) else { return }
-        let owner = store.capabilities?.currentProvider ?? providerFromModelID(model) ?? selectedProvider
+        let owner = store.capabilities?.currentProvider ?? ProviderUtils.providerOf(model) ?? selectedProvider
         availableModels.insert(ModelInfo(id: model, ownedBy: owner.isEmpty ? nil : owner), at: 0)
     }
 
-    private func providerFromModelID(_ id: String) -> String? {
-        guard let slash = id.firstIndex(of: "/"), slash > id.startIndex else { return nil }
-        return String(id[..<slash])
-    }
-
     /// Display name for a model. Strips the "provider/" prefix and falls back
-    /// to the raw id.
+    /// to the raw id. Keeps everything after the FIRST slash (unlike
+    /// ProviderUtils.shortModelName, which takes only the last segment).
     private func displayName(for model: ModelInfo) -> String {
         let id = model.id
         if let slash = id.firstIndex(of: "/") {

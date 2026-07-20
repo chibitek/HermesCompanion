@@ -26,8 +26,6 @@ struct ConnectionSetupView: View {
     
     @State private var testResult: TestResult?
     @State private var showChooseServer = false
-    @State private var selectedServerIndex: Int? = nil
-    @State private var addNewServer = false
     
     enum TestResult {
         case success(String)
@@ -64,6 +62,13 @@ struct ConnectionSetupView: View {
                         
                         VStack(spacing: 16) {
                             glassField(title: "Hermes URL", text: $baseURL, placeholder: "http://100.x.x.x:8642", icon: "globe", keyboardType: .URL)
+                            if let warning = Self.urlCaution(for: baseURL) {
+                                Label(warning, systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(Color(red: 0.96, green: 0.66, blue: 0.0))
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                             glassField(title: "API Key", text: $apiKey, placeholder: "API_SERVER_KEY", icon: "key.fill", isSecure: true)
                             glassField(title: "Label", text: $label, placeholder: "My Hermes", icon: "tag")
                         }
@@ -435,7 +440,6 @@ struct ConnectionSetupView: View {
                             apiKey = config.apiKey
                             label = config.label
                             testResult = nil
-                            selectedServerIndex = nil
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(config.label)
@@ -553,13 +557,17 @@ struct ConnectionSetupView: View {
     // MARK: - Actions
 
     private func testConnection() async {
+        if let issue = Self.urlHardIssue(for: baseURL) {
+            testResult = .failure(issue)
+            return
+        }
         isTesting = true
         testResult = nil
         let config = ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label)
         let client = HermesAPIClient(config: config)
         do {
             let result: (HealthResponse, CapabilitiesResponse)
-            result = try await Self.runWithTimeout(seconds: 10) {
+            result = try await withTimeout(seconds: 10) {
                 let health = try await client.checkHealth()
                 let caps = try await client.getCapabilities()
                 return (health, caps)
@@ -573,21 +581,47 @@ struct ConnectionSetupView: View {
         isTesting = false
     }
 
-    /// Run an async operation with a hard timeout.
-    private static func runWithTimeout<T>(seconds: Double, operation: @escaping @Sendable () async throws -> T) async throws -> T {
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask(operation: operation)
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw URLError(.cancelled)
-            }
-            guard let result = try await group.next() else { throw URLError(.cancelled) }
-            group.cancelAll()
-            return result
+    /// Trust-boundary validation for the server URL (H3): hard failure on
+    /// malformed input, checked before any network call.
+    static func urlHardIssue(for raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = url.host(), !host.isEmpty else {
+            return "Enter a full URL starting with http:// or https:// (e.g. http://100.x.x.x:8642)"
         }
+        return nil
+    }
+
+    /// Soft warning shown live: the API key would travel over plain HTTP to a
+    /// non-private host. Tailscale CGNAT (100.64.0.0/10), RFC 1918, and
+    /// loopback are treated as private.
+    static func urlCaution(for raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: trimmed),
+              url.scheme?.lowercased() == "http",
+              let host = url.host(), !host.isEmpty else { return nil }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        let isPrivate: Bool = {
+            if host == "localhost" { return true }
+            guard parts.count == 4 else { return false }
+            switch parts[0] {
+            case 10, 127: return true
+            case 100: return (64...127).contains(parts[1])
+            case 172: return (16...31).contains(parts[1])
+            case 192: return parts[1] == 168
+            default: return false
+            }
+        }()
+        return isPrivate ? nil : "Caution: http sends your API key unencrypted to a public address. Use https or Tailscale."
     }
 
     private func saveAndConnect() async {
+        if let issue = Self.urlHardIssue(for: baseURL) {
+            testResult = .failure(issue)
+            return
+        }
         isTesting = true
         testResult = nil
         let config = ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label)
@@ -598,7 +632,7 @@ struct ConnectionSetupView: View {
                 try KeychainManager.shared.addOrUpdate(config)
                 store.savedConnections = KeychainManager.shared.loadAll()
                 if store.connectionConfig?.baseURL == baseURL {
-                    let success = try await Self.runWithTimeout(seconds: 15) {
+                    let success = try await withTimeout(seconds: 15) {
                         await store.connect(config: config)
                     }
                     if success {
@@ -626,7 +660,7 @@ struct ConnectionSetupView: View {
         
         var success = false
         do {
-            success = try await Self.runWithTimeout(seconds: 15) {
+            success = try await withTimeout(seconds: 15) {
                 await store.connect(config: config)
             }
         } catch {

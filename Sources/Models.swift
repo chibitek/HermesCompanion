@@ -282,31 +282,17 @@ struct SessionChatResponse: Codable {
     let object: String
     let sessionId: String
     let message: ChatMessageContent
-    let usage: Usage?
 
     enum CodingKeys: String, CodingKey {
         case object
         case sessionId = "session_id"
         case message
-        case usage
     }
 }
 
 struct ChatMessageContent: Codable {
     let role: String
     let content: String
-}
-
-struct Usage: Codable {
-    let inputTokens: Int?
-    let outputTokens: Int?
-    let totalTokens: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case inputTokens = "input_tokens"
-        case outputTokens = "output_tokens"
-        case totalTokens = "total_tokens"
-    }
 }
 
 // MARK: - SSE Events (streaming)
@@ -324,7 +310,6 @@ struct SSEEventPayload: Codable, Sendable {
     let completed: Bool?
     let partial: Bool?
     let interrupted: Bool?
-    let usage: Usage?
     let message: String?  // error message
 
     enum CodingKeys: String, CodingKey {
@@ -340,7 +325,6 @@ struct SSEEventPayload: Codable, Sendable {
         case completed
         case partial
         case interrupted
-        case usage
         case message
     }
 
@@ -360,7 +344,6 @@ struct SSEEventPayload: Codable, Sendable {
         self.completed = try c.decodeIfPresent(Bool.self, forKey: .completed)
         self.partial = try c.decodeIfPresent(Bool.self, forKey: .partial)
         self.interrupted = try c.decodeIfPresent(Bool.self, forKey: .interrupted)
-        self.usage = try c.decodeIfPresent(Usage.self, forKey: .usage)
         // The `message` field is overloaded: in `message.started` events it's an
         // object ({"id": ..., "role": ...}), in `error` events it's a string.
         // Try string first; if that fails, decode as object and extract nothing
@@ -377,7 +360,7 @@ struct SSEEventPayload: Codable, Sendable {
     init(event: String, sessionId: String?, runId: String?, message_id: String?,
          delta: String?, content: String?, toolName: String?, preview: String?,
          args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
-         usage: Usage?, message: String?) {
+         message: String?) {
         self.event = event
         self.sessionId = sessionId
         self.runId = runId
@@ -390,7 +373,6 @@ struct SSEEventPayload: Codable, Sendable {
         self.completed = completed
         self.partial = partial
         self.interrupted = interrupted
-        self.usage = usage
         self.message = message
     }
 }
@@ -460,25 +442,19 @@ struct SkillsResponse: Codable {
 struct ModelInfo: Codable, Identifiable, Hashable {
     let id: String
     let object: String
-    let created: Int?
     let ownedBy: String?
     let provider: String?
-    let root: String?
-    let parent: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, object, created, provider, root, parent
+        case id, object, provider
         case ownedBy = "owned_by"
     }
 
-    init(id: String, object: String = "model", created: Int? = nil, ownedBy: String? = nil, provider: String? = nil, root: String? = nil, parent: String? = nil) {
+    init(id: String, object: String = "model", ownedBy: String? = nil, provider: String? = nil) {
         self.id = id
         self.object = object
-        self.created = created
         self.ownedBy = ownedBy
         self.provider = provider
-        self.root = root
-        self.parent = parent
     }
 }
 
@@ -526,50 +502,26 @@ struct ToolsetsResponse: Codable {
 struct SessionDetail: Codable, Identifiable, Hashable {
     let id: String
     let source: String?
-    let userId: String?
     let model: String?
     let title: String?
     let startedAt: Double?
-    let endedAt: Double?
-    let endReason: String?
     let messageCount: Int?
     let toolCallCount: Int?
     let inputTokens: Int?
     let outputTokens: Int?
-    let cacheReadTokens: Int?
-    let cacheWriteTokens: Int?
     let reasoningTokens: Int?
-    let estimatedCostUsd: Double?
-    let actualCostUsd: Double?
-    let apiCallCount: Int?
-    let parentSessionId: String?
     let lastActive: Double?
     let preview: String?
-    let lineageRootId: String?
-    let hasSystemPrompt: Bool?
-    let hasModelConfig: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, source, model, title, preview
-        case userId = "user_id"
         case startedAt = "started_at"
-        case endedAt = "ended_at"
-        case endReason = "end_reason"
         case messageCount = "message_count"
         case toolCallCount = "tool_call_count"
         case inputTokens = "input_tokens"
         case outputTokens = "output_tokens"
-        case cacheReadTokens = "cache_read_tokens"
-        case cacheWriteTokens = "cache_write_tokens"
         case reasoningTokens = "reasoning_tokens"
-        case estimatedCostUsd = "estimated_cost_usd"
-        case actualCostUsd = "actual_cost_usd"
-        case apiCallCount = "api_call_count"
-        case parentSessionId = "parent_session_id"
         case lastActive = "last_active"
-        case lineageRootId = "_lineage_root_id"
-        case hasSystemPrompt = "has_system_prompt"
-        case hasModelConfig = "has_model_config"
     }
 
     var date: Date? {

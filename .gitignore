@@ -35,3 +35,4 @@ certs/
 *.key
 *.p12
 *.mobileprovision
+.bug-hunter/
