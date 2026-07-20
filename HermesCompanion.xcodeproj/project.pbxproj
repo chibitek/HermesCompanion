@@ -16,6 +16,7 @@
 		1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */; };
 		1CEEEA7AA202CFB1EACF6FBA /* HermesThemes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A7E7C23745B5ED58953167 /* HermesThemes.swift */; };
 		1E7817CB4161ADFFE75D5B79 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A4E7B2B3C67580BB0A71C4C /* AppStore.swift */; };
+		24EF7BB4E0D20569A4457E32 /* ElevenLabsTTS.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9BD90F7E1A09A684F98D594 /* ElevenLabsTTS.swift */; };
 		25500519AB7EBEF810F3E7CC /* GlassAnimations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C65133D88E05ED712E002D1E /* GlassAnimations.swift */; };
 		2C03088CFC9E56596F6492CE /* ProviderSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */; };
 		38A7732AB4640EDD3102B363 /* ComposerCommandLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */; };
@@ -53,6 +54,7 @@
 		AA0469C11390A59867DA014C /* HermesControlWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE746186A15D314B390ECCF0 /* HermesControlWidgetBundle.swift */; };
 		C976F5D603BB2A2E0CBC38D6 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */; };
 		CB8F46D3AEFF5EB3E585BAE5 /* ToolsetsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B87A150E7A7EE2D29064C1E /* ToolsetsListView.swift */; };
+		CF434D0979D078532F24B72E /* TTSProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D30460C7C6F28D2359A8E8 /* TTSProvider.swift */; };
 		CFE8A23CD2204761B0C7F288 /* VoiceActivationLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15CE235401C5CF4AA8838394 /* VoiceActivationLogicTests.swift */; };
 		D3508E86FEF84CE0FB3A2362 /* ProjectStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */; };
 		D4C7C91D5436FF35E59DE880 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 406D0DC3A11F86B29F05F06A /* CarPlaySceneDelegate.swift */; };
@@ -131,6 +133,7 @@
 		661C9BE93899D1B3DF848273 /* ActiveSessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionPersistence.swift; sourceTree = "<group>"; };
 		66A7E7C23745B5ED58953167 /* HermesThemes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesThemes.swift; sourceTree = "<group>"; };
 		6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStoreTests.swift; sourceTree = "<group>"; };
+		72D30460C7C6F28D2359A8E8 /* TTSProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TTSProvider.swift; sourceTree = "<group>"; };
 		73744DD7755B96A455966F0B /* AppearanceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettings.swift; sourceTree = "<group>"; };
 		78F84C3E68E0066661BF529D /* SkillsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsListView.swift; sourceTree = "<group>"; };
 		7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSelectionView.swift; sourceTree = "<group>"; };
@@ -153,6 +156,7 @@
 		CE746186A15D314B390ECCF0 /* HermesControlWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesControlWidgetBundle.swift; sourceTree = "<group>"; };
 		EDDAD1C9B988CFE76287C44B /* GlassInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassInputBar.swift; sourceTree = "<group>"; };
 		F7A1BB077B5C9F7833608AA0 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
+		F9BD90F7E1A09A684F98D594 /* ElevenLabsTTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevenLabsTTS.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -192,6 +196,7 @@
 				607284F3E16CE64024116B5A /* ChatView.swift */,
 				35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */,
 				347A8180AE6F941EDF51CFEE /* ConnectionSetupView.swift */,
+				F9BD90F7E1A09A684F98D594 /* ElevenLabsTTS.swift */,
 				BE611F1C01056A05C20BC7AA /* FilePickerView.swift */,
 				C65133D88E05ED712E002D1E /* GlassAnimations.swift */,
 				0877A3D2AFE7F4721ADA17AF /* GlassBubble.swift */,
@@ -215,6 +220,7 @@
 				78F84C3E68E0066661BF529D /* SkillsListView.swift */,
 				B0462220C6A7891E8E42F07B /* StreamWatchdogManager.swift */,
 				1B87A150E7A7EE2D29064C1E /* ToolsetsListView.swift */,
+				72D30460C7C6F28D2359A8E8 /* TTSProvider.swift */,
 				0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */,
 				6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */,
 				86EA7AA684EE78863AEC2F0A /* VoiceConversationPage.swift */,
@@ -399,6 +405,7 @@
 				3C5B316A8C97FB0309855517 /* ChatView.swift in Sources */,
 				38A7732AB4640EDD3102B363 /* ComposerCommandLogic.swift in Sources */,
 				7ECDCA84AFB356E702178F2A /* ConnectionSetupView.swift in Sources */,
+				24EF7BB4E0D20569A4457E32 /* ElevenLabsTTS.swift in Sources */,
 				A7C964BA91BD19B6BE8FA0B9 /* FilePickerView.swift in Sources */,
 				25500519AB7EBEF810F3E7CC /* GlassAnimations.swift in Sources */,
 				F963F31C26FCEBF676C889CB /* GlassBubble.swift in Sources */,
@@ -422,6 +429,7 @@
 				3DA05CB84EEF6A3DA27B7C53 /* SkillCommandLogic.swift in Sources */,
 				A165F3FB03821E3B9E0EB15B /* SkillsListView.swift in Sources */,
 				4F5C3B8B82D3CF74CFCF1D47 /* StreamWatchdogManager.swift in Sources */,
+				CF434D0979D078532F24B72E /* TTSProvider.swift in Sources */,
 				DF0FB0C835B0C2295CADEA9F /* TerminalThemes.swift in Sources */,
 				CB8F46D3AEFF5EB3E585BAE5 /* ToolsetsListView.swift in Sources */,
 				8D8B6F1C677ED71BCAF05D0D /* VoiceActivationLogic.swift in Sources */,
@@ -483,7 +491,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 116;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -509,7 +517,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 116;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -601,7 +609,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 116;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -683,7 +691,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 115;
+				CURRENT_PROJECT_VERSION = 116;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
