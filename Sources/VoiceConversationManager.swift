@@ -380,7 +380,21 @@ final class VoiceConversationManager: ObservableObject {
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             isListening = false
-            voiceError = "Microphone unavailable."
+            FileLogger.shared.log("VoiceManager: audio session activation failed: \(error.localizedDescription)")
+            // Transient contention (route change, another session settling) —
+            // bounded retry, same pattern as recognition errors.
+            recognitionRetryCount += 1
+            if isConversing && recognitionRetryCount <= 3 {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard let self, self.isConversing, !self.isListening,
+                          !self.isSpeaking, !self.isThinking else { return }
+                    self.startListening()
+                }
+            } else {
+                recognitionRetryCount = 0
+                voiceError = "Microphone unavailable: \(error.localizedDescription)"
+            }
             return
         }
 
