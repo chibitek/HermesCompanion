@@ -331,8 +331,7 @@ final class AppStore: ObservableObject {
             modelsLoaded = true
         } catch {
             self.availableModels = modelsIncludingCurrent([])
-
-            // Non-fatal
+            self.error = AppError(message: "Failed to load models: \(error.localizedDescription)")
         }
         // Sync preferredModel to gateway's current model ONLY when models
         // loaded successfully. If getModels() failed, availableModels is stale
