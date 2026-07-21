@@ -91,8 +91,18 @@ final class VoiceConversationManager: ObservableObject {
     /// Car Bluetooth / AirPods connect or drop mid-listen: the engine stays
     /// bound to the old route and recognition errors out. Restart listening
     /// on the new route instead of dying with an error.
+    /// ONLY react to real device changes — iOS also fires this notification
+    /// for our own setCategory/setActive (categoryChange, routeConfigurationChange),
+    /// and restarting on those kills every listen attempt at birth (Build 106 bug).
     @objc private func handleRouteChange(_ notification: Notification) {
         guard isConversing, isListening else { return }
+        let reason = (notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt)
+            .flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
+        guard reason == .newDeviceAvailable || reason == .oldDeviceUnavailable else {
+            FileLogger.shared.log("VoiceManager: route change ignored (reason=\(String(describing: reason)))")
+            return
+        }
+        FileLogger.shared.log("VoiceManager: route change \(reason == .newDeviceAvailable ? "device added" : "device removed") — restarting listen")
         stopListening()
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 300_000_000)
@@ -186,6 +196,7 @@ final class VoiceConversationManager: ObservableObject {
         isConversing = true
         voiceError = nil
         self.onTranscriptionComplete = onTranscription
+        FileLogger.shared.log("VoiceManager: startConversation -> startListening (hasPermission=\(hasPermission))")
         startListening()
     }
 
@@ -327,21 +338,25 @@ final class VoiceConversationManager: ObservableObject {
     // MARK: - Listening
 
     func startListening() {
-        guard isConversing else { return }
+        guard isConversing else { FileLogger.shared.log("VoiceManager: startListening bail — not conversing"); return }
         // If currently speaking, stop TTS first (barge-in by button tap)
         if isSpeaking {
             stopSpeaking()
         }
-        guard !isThinking else { return }
+        guard !isThinking else { FileLogger.shared.log("VoiceManager: startListening bail — isThinking stuck"); return }
         guard !isListening else { return }  // Prevent double-start
-        // Re-entry guard: if the audio engine is already running with a tap
-        // installed, don't try to start again. This prevents the crash that
-        // happens when startListening is called from multiple async paths
-        // (e.g. TTS didFinish + barge-in) before the first call completes.
-        if audioEngine.isRunning && hasInstalledInputTap {
-            return
+
+        // Stop any lingering engine state before setting up fresh.
+        // A previous session or the WakePhraseListener may have left the
+        // engine running with a tap installed — the old guard checked
+        // isRunning+hasTap BEFORE the stop code, so it silently returned
+        // and the mic never activated.
+        if audioEngine.isRunning {
+            audioEngine.stop()
         }
+        removeInputTapIfNeeded()
         guard let speechRecognizer, speechRecognizer.isAvailable else {
+            FileLogger.shared.log("VoiceManager: startListening bail — recognizer unavailable (nil: \(speechRecognizer == nil))")
             voiceError = "Speech recognition is unavailable."
             return
         }
@@ -377,7 +392,21 @@ final class VoiceConversationManager: ObservableObject {
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             isListening = false
-            voiceError = "Microphone unavailable."
+            FileLogger.shared.log("VoiceManager: audio session activation failed: \(error.localizedDescription)")
+            // Transient contention (route change, another session settling) —
+            // bounded retry, same pattern as recognition errors.
+            recognitionRetryCount += 1
+            if isConversing && recognitionRetryCount <= 3 {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    guard let self, self.isConversing, !self.isListening,
+                          !self.isSpeaking, !self.isThinking else { return }
+                    self.startListening()
+                }
+            } else {
+                recognitionRetryCount = 0
+                voiceError = "Microphone unavailable: \(error.localizedDescription)"
+            }
             return
         }
 
@@ -465,6 +494,7 @@ final class VoiceConversationManager: ObservableObject {
         guard let recordingFormat else {
             isListening = false
             voiceError = "Microphone input is unavailable."
+            FileLogger.shared.log("VoiceManager: startListening bail — invalid recording format (sampleRate 0 / route stuck)")
             self.recognitionRequest = nil
             recognitionTask?.cancel()
             recognitionTask = nil
@@ -491,6 +521,7 @@ final class VoiceConversationManager: ObservableObject {
             }
             startLevelMonitoring()
         } catch {
+            FileLogger.shared.log("VoiceManager: audio engine start failed: \(error.localizedDescription)")
             voiceError = "Could not start microphone."
             stopListening()
         }
@@ -746,7 +777,23 @@ final class VoiceConversationManager: ObservableObject {
         isSpeaking = true
         voiceError = nil
 
-        speakWithSystemTTS(cleanText)
+        // Premium TTS when the selected provider is live; system TTS otherwise.
+        let provider = TTSProvider.selected
+        if provider == .elevenlabs, let key = TTSKeyStore.load(provider: .elevenlabs) {
+            startBargeInMonitoring()
+            ElevenLabsTTS.shared.speak(text: cleanText, apiKey: key) { [weak self] in
+                guard let self else { return }
+                self.isSpeaking = false
+                if self.isConversing {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                        self.startListening()
+                    }
+                }
+            }
+        } else {
+            speakWithSystemTTS(cleanText)
+        }
     }
     
     /// Speak using the system's built-in AVSpeechSynthesizer
@@ -787,6 +834,7 @@ final class VoiceConversationManager: ObservableObject {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        ElevenLabsTTS.shared.stop()
         isSpeaking = false
     }
 
