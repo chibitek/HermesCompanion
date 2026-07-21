@@ -46,10 +46,14 @@ struct InputModelPicker: View {
         if let info = modelInfos[model], let provider = info.provider, !provider.isEmpty {
             return provider
         }
+        // Try model ID prefix before ownedBy — ownedBy is often just "hermes"
+        if let prefix = ProviderUtils.providerOf(model) {
+            return prefix
+        }
         if let info = modelInfos[model], let owned = info.ownedBy, !owned.isEmpty {
             return owned
         }
-        return ProviderUtils.providerOf(model) ?? "Other"
+        return "Other"
     }
 
     // MARK: - Search
