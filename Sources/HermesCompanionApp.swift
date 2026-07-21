@@ -30,6 +30,8 @@ struct HermesCompanionApp: App {
                     if store.connectionConfig != nil && store.capabilities == nil {
                         await store.autoConnect()
                     }
+                    // CarPlay voice controller shares this store.
+                    CarPlayVoiceController.shared.attach(store: store)
                     // Request notification permission so we can alert the
                     // user when a chat response arrives while backgrounded.
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
