@@ -441,7 +441,7 @@ struct SkillsResponse: Codable {
 
 struct ModelInfo: Codable, Identifiable, Hashable {
     let id: String
-    let object: String
+    let object: String?
     let ownedBy: String?
     let provider: String?
 
@@ -459,7 +459,7 @@ struct ModelInfo: Codable, Identifiable, Hashable {
 }
 
 struct ModelsResponse: Codable {
-    let object: String
+    let object: String?
     let data: [ModelInfo]
     let providers: [ProviderInfo]?
 }
