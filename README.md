@@ -106,6 +106,8 @@ Six built-in themes in a visual grid picker. Each one transforms the entire app 
 | **Splash screen** | Logo fade-in on launch with smooth transition to chat or login. |
 | **What's New alerts** | After an app version changes, a one-time popup explains the release highlights. |
 | **Input bar** | Claude-style model picker pill, camera/photo/file attachments, voice-to-text mic, waveform button for Hermes Talk, skills command bar, and configurable enter-key-sends. |
+| **ElevenLabs TTS** | Premium text-to-speech with ElevenLabs integration. Configurable voice provider picker in Settings. |
+| **CarPlay voice mode** | Voice-first CarPlay support. Toggle Hermes Talk from your car's dashboard. |
 
 ---
 
@@ -288,15 +290,17 @@ For design contributions, see the [design handoff documents](#design) for the de
 
 ## Roadmap
 
-- [ ] TestFlight distribution
+- [x] App Store submission (pending review)
 - [ ] Push notifications for tool approval requests
 - [x] Control Center widget for voice activation toggle
+- [x] CarPlay voice mode
 - [ ] Siri Shortcuts integration
 - [ ] Apple Watch companion app
 - [ ] iPad layout with split-view sessions and chat
 - [ ] Offline message queue for unreliable connections
 - [ ] E2EE session notes export
 - [ ] Custom voice training for TTS
+- [ ] In-app subscriptions
 
 ---
 
