@@ -55,22 +55,27 @@ targets:
         UIBackgroundModes:
           - audio
           - fetch
-          - processing
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion
         MARKETING_VERSION: "1.8.40"
-        CURRENT_PROJECT_VERSION: 117
+        CURRENT_PROJECT_VERSION: 118
         DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         ENABLE_PREVIEWS: YES
-        DEBUG_INFORMATION_FORMAT: dwarf
-        LLVM_DEBUG_SYMBOLS: NO
-        GCC_OPTIMIZATION_LEVEL: 0
         CODE_SIGN_ENTITLEMENTS: HermesCompanion.entitlements
+      configs:
+        Debug:
+          DEBUG_INFORMATION_FORMAT: dwarf
+          LLVM_DEBUG_SYMBOLS: NO
+          GCC_OPTIMIZATION_LEVEL: 0
+        Release:
+          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+          LLVM_DEBUG_SYMBOLS: YES
+          GCC_OPTIMIZATION_LEVEL: s
     dependencies:
       - target: HermesControlWidget
         embed: true
@@ -92,7 +97,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion.controlwidget
         MARKETING_VERSION: "1.8.40"
-        CURRENT_PROJECT_VERSION: 117
+        CURRENT_PROJECT_VERSION: 118
         DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
