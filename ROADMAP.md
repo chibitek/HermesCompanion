@@ -468,6 +468,91 @@ The `GlassApprovalCard` exists but needs real wiring:
 
 ---
 
+## Feature Gap Plan: hermes-webui Parity (2026-08-05)
+
+Comparison against [nesquena/hermes-webui](https://github.com/nesquena/hermes-webui), the
+self-hosted web front-end for the same agent platform. hermes-webui has reached full CLI
+parity and has a much larger contributor base; the gaps below are the features it has that
+Hermes Companion does not. Hermes Companion is still ahead on native-mobile-only surfaces
+(Hermes Talk voice mode, wake phrase, CarPlay, Control Center widget, multi-server switcher,
+ElevenLabs TTS) — those are not in this list.
+
+Staged by implementation complexity, not by user priority. Complexity accounts for how much
+of the plumbing already exists in `HermesAPIClient.swift` / `AppStore.swift` today.
+
+### Stage 1 — Low complexity (client-side only, no new server contracts)
+
+Follows the existing `ProjectStore.swift` pattern: local `UserDefaults`-backed metadata,
+no gateway changes required.
+
+- **Session tags/hashtags** — local tag store keyed by session ID, chip UI, tap-to-filter
+  (mirrors `ProjectStore`).
+- **Session archive** — local boolean flag, hide from default session list, "Show Archived"
+  toggle.
+- **Session pin/star** — local boolean flag, sort pinned sessions to top.
+- **Session duplicate** — cosmetic only: expose the already-implemented `forkSession()` API
+  call as a "Duplicate" action in the session row menu.
+- **Session export (Markdown/JSON)** — format already-loaded `SessionMessage` history and
+  hand off to the iOS share sheet. No new endpoint.
+- **Markdown rendering (basic)** — replace plain `Text(content)` with
+  `AttributedString(markdown:)` for bold/italic/headers/inline code/links. Already scoped in
+  Phase 2.1 above; no third-party dependency needed.
+
+### Stage 2 — Medium complexity (wires already-partially-scoped endpoints into new UI)
+
+Follows the existing `SkillsListView.swift` / `ToolsetsListView.swift` pattern: new model,
+new API client method(s), new list view.
+
+- **Tool approvals (real wiring)** — `SSEEventPayload` already parses `run_id` from the
+  stream. Add handling for the approval-request event type, feed real data into the existing
+  `GlassApprovalCard`, and `POST /v1/runs/{id}/approval` with allow-once/allow-session/deny.
+  This was scoped as "High Priority" in the API inventory above and most of the UI already
+  exists — it just isn't connected.
+- **Cron job "Tasks" panel** — CRUD against `/api/jobs` (list, create, patch, delete) plus
+  `/api/jobs/{id}/pause`, `/resume`, `/run`. New `CronJob` model + `JobsListView`, same shape
+  as the skills/toolsets views.
+- **Async run visibility** — `GET /v1/runs/{id}`, `GET /v1/runs/{id}/events`,
+  `POST /v1/runs/{id}/stop`. Lets a long task be submitted and checked on later instead of
+  blocking the chat screen.
+- **Code block rendering** — monospaced font, tinted background, horizontal scroll, copy
+  button. Native SwiftUI, no WebView needed. Builds on Stage 1's markdown work.
+- **Session import (JSON)** — parse an exported JSON transcript and recreate a session.
+  Bounded by whatever the chat API allows for seeding history; needs a quick check against
+  the gateway for a bulk-message endpoint before committing to a design.
+
+### Stage 3 — High complexity (new subsystems, new endpoints, or a WebView dependency)
+
+- **Workspace/file browser** — directory tree, inline preview/edit, git branch + dirty-file
+  badge. Nothing in `HermesAPIClient.swift` touches files today; this is a new API surface
+  end to end. Needs confirmation the gateway exposes file read/write/list endpoints before
+  scoping further.
+- **Memory editing (MEMORY.md / USER.md)** — inline editor for the agent's persistent memory
+  files. Likely rides on the same endpoints as the workspace browser above, so sequence this
+  after Stage 3's file browser lands.
+- **Mermaid diagram rendering** — no native SwiftUI renderer exists; requires a `WKWebView`
+  bundling `mermaid.js`, or a native Swift Mermaid-to-Path renderer if one is found.
+- **Skills create/edit** — currently browse-only. Needs write endpoints on `/v1/skills`
+  (confirm they exist) plus a new editor view.
+- **Push notifications** — for approval requests and completed background runs. Needs APNs
+  registration in-app *and* a webhook/push relay on the gateway side — this is not iOS-only
+  work, coordinate with whoever maintains the Hermes Agent gateway.
+
+### Stage 4 — Needs a decision before scoping (backend-dependent or likely out of scope)
+
+- **Public read-only share links** — requires the gateway to host a public sanitized page.
+  Cannot be built from the iOS client alone; blocked on gateway support existing or being
+  added.
+- **Passkeys / OIDC auth** — high effort, low value for a single-user personal iOS client
+  that already stores credentials in Keychain. Recommend not pursuing unless the multi-user
+  story changes.
+- **i18n (multiple locales)** — mechanical but touches every string in the app. Better run as
+  an ongoing background task than a single stage; not worth blocking other work on.
+- **Extension system** — hermes-webui's extensions are JS/CSS injected into a web page; the
+  concept doesn't map to a native iOS app. Recommend explicitly descoping rather than
+  reinventing it.
+
+---
+
 ## Rules for This Branch
 
 1. Never break the working chat. Test send/receive after every change.
