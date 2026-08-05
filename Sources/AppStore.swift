@@ -1210,8 +1210,9 @@ final class AppStore: ObservableObject {
         isBackgroundAudioActive = false
         // Don't deactivate the shared session if a voice conversation is active —
         // VoiceConversationManager needs .playAndRecord active.
-        guard !isVoiceConversationActive else { return }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
     /// Public method to stop silent background audio before voice mode starts.

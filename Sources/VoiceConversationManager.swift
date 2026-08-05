@@ -85,8 +85,22 @@ final class VoiceConversationManager: ObservableObject {
             selector: #selector(handleRouteChange),
             name: AVAudioSession.routeChangeNotification,
             object: nil
-        )
+         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+         )
     }
+
+    /// Release audio session when app backgrounds so other apps
+    /// (YouTube, Music) can play normally.
+    @objc private func handleAppBackground() {
+        guard isConversing else { return }
+        FileLogger.shared.log("VoiceManager: app backgrounded, stopping conversation to release audio")
+        stopConversation()
+     }
 
     /// Car Bluetooth / AirPods connect or drop mid-listen: the engine stays
     /// bound to the old route and recognition errors out. Restart listening
@@ -611,11 +625,13 @@ final class VoiceConversationManager: ObservableObject {
         recognitionRequest = nil
 
         if !isConversing {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        }
-        // When conversation IS active, keep the audio session active so the
-        // app doesn't get suspended by iOS when backgrounded. The .playAndRecord
-        // category + audio background mode keeps the app alive.
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+         }
+         // When conversation IS active, keep the audio session active so the
+         // app doesn't get suspended by iOS when backgrounded. The .playAndRecord
+         // category + audio background mode keeps the app alive. → skipped: voice-only ducking, reset always added.
     }
 
     private func removeInputTapIfNeeded() {
@@ -800,11 +816,11 @@ final class VoiceConversationManager: ObservableObject {
     private func speakWithSystemTTS(_ text: String) {
         // Audio session is already configured as .playAndRecord from the
         // listening phase. Skip redundant reconfiguration to reduce latency.
-        let audioSession = AVAudioSession.sharedInstance()
-        if audioSession.category != .playAndRecord {
-            try? audioSession.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
-            try? audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        }
+        let session = AVAudioSession.sharedInstance()
+        if session.category != .playAndRecord {
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try? session.setActive(true)
+         }
 
         let utterance = AVSpeechUtterance(string: text)
         // Use selected voice identifier if available, otherwise system default

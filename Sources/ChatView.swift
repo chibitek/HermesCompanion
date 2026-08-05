@@ -11,6 +11,7 @@ struct ChatView: View {
     @State private var inputText = ""
     @State private var showSessionPicker = false
     @State private var showSettings = false
+    @State private var showVideo = false
     @State private var attachments: [AttachmentData] = []
     @State private var showPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
@@ -53,11 +54,22 @@ struct ChatView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        showVideo = true
+                    } label: {
+                        Image(systemName: "film")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
                     }
                 }
+            }
+            .sheet(isPresented: $showVideo) {
+                VideoView()
+                    .withActiveTheme(appearance)
             }
             .sheet(isPresented: $showSessionPicker) {
                 SessionPickerView(store: store)

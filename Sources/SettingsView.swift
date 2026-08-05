@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var modelSearch: String = ""
     @State private var modelRefreshMessage: String?
     @State private var modelRefreshFailed = false
+    @AppStorage("agent_os_server_url") private var agentOSServer = VideoStore.defaultServer
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -38,6 +39,7 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(spacing: theme.spacingM) {
                         serverCard
+                        agentOSCard
                         providerCard
                         modelCard
                         reasoningCard
@@ -226,6 +228,30 @@ struct SettingsView: View {
         editingServer = config
     }
 
+    // MARK: - Agent OS card
+
+    /// The Agent OS server drives the Video tab (presenter video generation).
+    /// Plain HTTP over Tailscale — no auth, so the URL lives in UserDefaults
+    /// rather than the Keychain (which holds the Hermes gateway API key).
+    private var agentOSCard: some View {
+        glassCard {
+            VStack(alignment: .leading, spacing: theme.spacingM) {
+                cardHeader("Agent OS", icon: "film")
+
+                TextField("http://100.81.23.33:3738", text: $agentOSServer)
+                    .textFieldStyle(.plain)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(theme.textPrimary)
+
+                Text("Server used by the Video tab. No auth — Tailscale is the security layer.")
+                    .font(.caption)
+                    .foregroundStyle(theme.textSecondary)
+            }
+        }
+    }
+
     // MARK: - Provider and model cards
 
     private var availableProviders: [String] {
@@ -237,7 +263,10 @@ struct SettingsView: View {
         // aggregator catalogs such as OpenRouter. In that case the live
         // capability provider is the inference service for the returned list.
         var seen = Set<String>()
-        var providers = availableModels.compactMap(\.provider)
+        var providers = availableModels.compactMap { model -> String? in
+            if let p = model.provider, !p.isEmpty { return p }
+            return ProviderUtils.providerOf(model.id)
+        }
         let current = store.capabilities?.currentProvider ?? store.effectiveCurrentProvider
         if !current.isEmpty {
             providers.insert(current, at: 0)
