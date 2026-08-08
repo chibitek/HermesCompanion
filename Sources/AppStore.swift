@@ -18,7 +18,9 @@ final class AppStore: ObservableObject {
     /// Live reasoning text (assistant.delta events tagged tool_name=_thinking).
     /// Shown in a collapsible Thinking panel; cleared with streamingText.
     @Published var streamingThinking = ""
-    @Published var toolEvents: [ToolEvent] = []
+    @Published private(set) var toolEvents: [ToolEvent] = [] {
+       didSet { if toolEvents.count > 50 { toolEvents.removeFirst(toolEvents.count - 50) } }
+    }
     /// True while a voice conversation is active — prevents stopSilentAudio
     /// from deactivating the shared AVAudioSession mid-conversation.
     @Published var isVoiceConversationActive = false
