@@ -58,8 +58,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion
-        MARKETING_VERSION: "1.8.41"
-        CURRENT_PROJECT_VERSION: 124
+        MARKETING_VERSION: "1.8.42"
+        CURRENT_PROJECT_VERSION: 125
         DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
@@ -96,8 +96,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.chibitek.hermescompanion.controlwidget
-        MARKETING_VERSION: "1.8.41"
-        CURRENT_PROJECT_VERSION: 124
+        MARKETING_VERSION: "1.8.42"
+        CURRENT_PROJECT_VERSION: 125
         DEVELOPMENT_TEAM: "$(CHIBITEK_TEAM_ID)"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic

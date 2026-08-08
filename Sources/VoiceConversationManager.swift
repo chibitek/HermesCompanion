@@ -86,21 +86,25 @@ final class VoiceConversationManager: ObservableObject {
             name: AVAudioSession.routeChangeNotification,
             object: nil
          )
+#if os(iOS)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleAppBackground),
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
-         )
+          )
+#endif
     }
 
+#if os(iOS)
     /// Release audio session when app backgrounds so other apps
     /// (YouTube, Music) can play normally.
     @objc private func handleAppBackground() {
         guard isConversing else { return }
         FileLogger.shared.log("VoiceManager: app backgrounded, stopping conversation to release audio")
         stopConversation()
-     }
+      }
+#endif
 
     /// Car Bluetooth / AirPods connect or drop mid-listen: the engine stays
     /// bound to the old route and recognition errors out. Restart listening
@@ -136,16 +140,11 @@ final class VoiceConversationManager: ObservableObject {
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
 
         switch type {
-        case .began:
-            // If we're in a voice conversation, don't fully stop — just pause.
-            // The audio background mode keeps the session alive.
-            if isConversing {
-                stopListening()
-            } else {
-                stopListening()
-                stopSpeaking()
-            }
-        case .ended:
+         case .began:
+              // Interruption started — pause listening, and if not in a voice convo, also stop speaking.
+             stopListening()
+             if !isConversing { stopSpeaking() }
+         case .ended:
             // Auto-resume if still in conversation mode
             if isConversing {
                 Task { @MainActor [weak self] in

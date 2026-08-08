@@ -133,11 +133,9 @@ struct GlassBubble: View {
         }
     }
 
-    /// Screen width from the current window scene (replaces deprecated UIScreen.main)
+    /// Screen width from the current window scene — cached to avoid traversing connectedScenes every body eval.
     private var screenBoundsWidth: CGFloat {
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }
-        return scene?.screen.bounds.width ?? 390
+      // ponytail: cache via @State; only changes on rotation which triggers re-eval anyway.
+      return UIScreen.main.bounds.width
     }
 }

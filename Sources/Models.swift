@@ -11,14 +11,21 @@ struct FileLogger {
     private let logURL: URL
     private let maxFileSize: Int64 = 512_000 // 512 KB cap
 
+    // ponytail: shared formatter — ISO8601DateFormatter allocates calendar/locale on init; creating per-call burns cycles
+    private static let formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+     }()
+
     init() {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
+             ?? FileManager.default.temporaryDirectory
         logURL = docs.appendingPathComponent("hermes-companion.log")
-    }
+     }
 
     func log(_ message: String) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = Self.formatter.string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
         queue.sync { [logURL, maxFileSize] in
             // Rotate if file exceeds size cap

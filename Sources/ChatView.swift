@@ -131,35 +131,31 @@ struct ChatView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            switch phase {
-            case .active:
-                wakePhraseListener.resumeFromBackground()
-                if SharedDefaults.shared.bool(forKey: "open_voice_page") {
-                    SharedDefaults.shared.set(false, forKey: "open_voice_page")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showVoicePage = true
+           switch phase {
+           case .active:
+               wakePhraseListener.resumeFromBackground()
+               if SharedDefaults.shared.bool(forKey: "open_voice_page") {
+                   SharedDefaults.shared.set(false, forKey: "open_voice_page")
+                   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                       showVoicePage = true
                     }
-                }
-            case .background:
-                wakePhraseListener.startBackgroundMode()
-            case .inactive:
-                break
+                 }
+           case .background:
+               wakePhraseListener.startBackgroundMode()
+           case .inactive:
+               break
             @unknown default:
-                wakePhraseListener.pause()
+               wakePhraseListener.pause()
             }
-        }
-        .onChange(of: showSettings) { _, presented in
-            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
-        }
-        .onChange(of: showSessionPicker) { _, presented in
-            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
-        }
-        .onChange(of: showPhotoPicker) { _, presented in
-            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
-        }
-        .onChange(of: showFilePicker) { _, presented in
-            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
-        }
+         }
+        // ponytail: single computed + onChange replaces 5 identical pause/resume blocks
+        .onChange(of: showSettings || showSessionPicker || showPhotoPicker || showFilePicker || showCameraPicker) { _, _ in
+           if showSettings || showSessionPicker || showPhotoPicker || showFilePicker || showCameraPicker {
+               wakePhraseListener.pause()
+            } else if !showVoicePage, scenePhase == .active {
+               wakePhraseListener.resume()
+            }
+         }
         // Photo picker — triggered by the input bar attachment menu
         .photosPicker(
             isPresented: $showPhotoPicker,
@@ -194,15 +190,12 @@ struct ChatView: View {
         }
         // Camera picker sheet — take a photo directly
         .sheet(isPresented: $showCameraPicker) {
-            CameraPickerView { data in
-                let fileName = "camera_\(UUID().uuidString.prefix(8)).jpg"
-                attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: "image/jpeg"))
-            }
+         CameraPickerView { data in
+             let fileName = "camera_\(UUID().uuidString.prefix(8)).jpg"
+             attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: "image/jpeg"))
+           }
         }
-        .onChange(of: showCameraPicker) { _, presented in
-            presented ? wakePhraseListener.pause() : wakePhraseListener.resume()
         }
-    }
 
     // MARK: - Message List
 

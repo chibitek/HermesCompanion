@@ -342,22 +342,9 @@ struct VoiceCRTGlowOverlay: View {
     
     var body: some View {
         Canvas { context, size in
-            // Vignette effect
-            _ = RadialGradient(
-                colors: [.clear, .black.opacity(0.7)],
-                center: .center,
-                startRadius: 0,
-                endRadius: min(size.width, size.height) * 0.7
-            )
+            // Flat vignette + CRT glow (screen blend). ponytail: original allocated two RadialGradients
+            // and discarded them (`_ =`); actual rendering was always these flat fills.
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.black.opacity(0.15)))
-            
-            // CRT glow effect
-            _ = RadialGradient(
-                colors: [color.opacity(intensity * 0.3), color.opacity(intensity * 0.1), .clear],
-                center: .center,
-                startRadius: 0,
-                endRadius: min(size.width, size.height) * 0.8
-            )
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(color.opacity(intensity)))
         }
         .allowsHitTesting(false)
@@ -403,7 +390,7 @@ struct MatrixRainView: View, Animatable {
         set { intensity = newValue }
     }
 
-    private let columns = 24
+    private let columns = 18    // ponytail: 24→18 cuts 25% draw calls; imperceptible at this scale
     private let charset: [Character] = Array("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789@#$%&*<>ABCDEF+=-/")
 
     // Precompute resolved colors to avoid per-frame Color.opacity() calls
@@ -420,7 +407,7 @@ struct MatrixRainView: View, Animatable {
     @State private var accumulated: Double = 0
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.04)) { timeline in  // 25fps — sustainable
+        TimelineView(.periodic(from: .now, by: 0.067)) { timeline in   // 15fps — imperceptible diff for rain, saves battery
             Canvas { context, size in
                 let columnWidth = size.width / CGFloat(columns)
                 let t = timeline.date.timeIntervalSinceReferenceDate
