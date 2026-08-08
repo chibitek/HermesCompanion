@@ -16,6 +16,7 @@
 		1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */; };
 		1CEEEA7AA202CFB1EACF6FBA /* HermesThemes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A7E7C23745B5ED58953167 /* HermesThemes.swift */; };
 		1E7817CB4161ADFFE75D5B79 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A4E7B2B3C67580BB0A71C4C /* AppStore.swift */; };
+		2448C7D9A618A8A8D68026C9 /* MarkdownBlocksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 413E29ABC281FB559F469790 /* MarkdownBlocksTests.swift */; };
 		24EF7BB4E0D20569A4457E32 /* ElevenLabsTTS.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9BD90F7E1A09A684F98D594 /* ElevenLabsTTS.swift */; };
 		25500519AB7EBEF810F3E7CC /* GlassAnimations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C65133D88E05ED712E002D1E /* GlassAnimations.swift */; };
 		270BFBAA224691C50C9604AD /* VideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113247E52B9898BC71C7EBAD /* VideoView.swift */; };
@@ -24,6 +25,7 @@
 		3A321980B7C573E252E73B94 /* KeychainManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E8118B694B0A64F91BE0369 /* KeychainManager.swift */; };
 		3C5B316A8C97FB0309855517 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607284F3E16CE64024116B5A /* ChatView.swift */; };
 		3DA05CB84EEF6A3DA27B7C53 /* SkillCommandLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260F94CE910541B9E482A59B /* SkillCommandLogic.swift */; };
+		4173455E2289D24EB1D3E6E4 /* MarkdownBlocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCEB9A18EB40AB50CD991B62 /* MarkdownBlocks.swift */; };
 		417C7F39149C64A1BF846BBE /* ActiveSessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661C9BE93899D1B3DF848273 /* ActiveSessionPersistence.swift */; };
 		43224DECC59BF70AD0C52574 /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A2B9FEF6B128A23C90B7CA5 /* SharedDefaults.swift */; };
 		43DD09E6024E5D9B9C5968DF /* StreamWatchdogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD348F4EBB40BD3B6F3F2C74 /* StreamWatchdogTests.swift */; };
@@ -45,6 +47,7 @@
 		80E40DCA3AE420F927877943 /* SkillCommandLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */; };
 		8169CA68B0F068C4C454AA05 /* HermesCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */; };
 		848AF4A8EBE61688B4E15948 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E26F58E842815866FD9986 /* AppConfig.swift */; };
+		8734D5CC0DEE94B2BFB017F5 /* MarkdownContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4B8756C4CB0CA6555D6816 /* MarkdownContentView.swift */; };
 		8D8B6F1C677ED71BCAF05D0D /* VoiceActivationLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */; };
 		9033393557A808892DD39711 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2DD74C29509EC118F92BEA5 /* CameraPickerView.swift */; };
 		9326CB4014893810CB4C04B4 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13839144B0503760269527F6 /* Models.swift */; };
@@ -115,12 +118,14 @@
 		2028A3E91C21B0A78D04F0BC /* TerminalThemes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemes.swift; sourceTree = "<group>"; };
 		260F94CE910541B9E482A59B /* SkillCommandLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCommandLogic.swift; sourceTree = "<group>"; };
 		29A06329B461E36625FB7949 /* ProviderUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderUtils.swift; sourceTree = "<group>"; };
+		2D4B8756C4CB0CA6555D6816 /* MarkdownContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownContentView.swift; sourceTree = "<group>"; };
 		323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		347A8180AE6F941EDF51CFEE /* ConnectionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSetupView.swift; sourceTree = "<group>"; };
 		35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerCommandLogic.swift; sourceTree = "<group>"; };
 		3A2B9FEF6B128A23C90B7CA5 /* SharedDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDefaults.swift; sourceTree = "<group>"; };
 		3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionPersistenceTests.swift; sourceTree = "<group>"; };
 		406D0DC3A11F86B29F05F06A /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
+		413E29ABC281FB559F469790 /* MarkdownBlocksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlocksTests.swift; sourceTree = "<group>"; };
 		416FCF6114F2020D743351BA /* HermesControlWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = HermesControlWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4712C7DBDC790F10EB108C21 /* GlassComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassComponents.swift; sourceTree = "<group>"; };
 		47B41AB784B26388253CB25A /* AttachmentData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentData.swift; sourceTree = "<group>"; };
@@ -159,6 +164,7 @@
 		EDDAD1C9B988CFE76287C44B /* GlassInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassInputBar.swift; sourceTree = "<group>"; };
 		F7A1BB077B5C9F7833608AA0 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		F9BD90F7E1A09A684F98D594 /* ElevenLabsTTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElevenLabsTTS.swift; sourceTree = "<group>"; };
+		FCEB9A18EB40AB50CD991B62 /* MarkdownBlocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlocks.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -209,6 +215,8 @@
 				12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */,
 				5CACEE629F1AD027D714EFB4 /* InputModelPicker.swift */,
 				5E8118B694B0A64F91BE0369 /* KeychainManager.swift */,
+				FCEB9A18EB40AB50CD991B62 /* MarkdownBlocks.swift */,
+				2D4B8756C4CB0CA6555D6816 /* MarkdownContentView.swift */,
 				13839144B0503760269527F6 /* Models.swift */,
 				7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */,
 				0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */,
@@ -249,6 +257,7 @@
 			children = (
 				3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */,
 				C6CC0110AB94C4C9331E73C4 /* ComposerSubmissionLogicTests.swift */,
+				413E29ABC281FB559F469790 /* MarkdownBlocksTests.swift */,
 				6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */,
 				8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */,
 				03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */,
@@ -384,6 +393,7 @@
 			files = (
 				A8FBD11A8D629EB4A29E5F40 /* ActiveSessionPersistenceTests.swift in Sources */,
 				447392FE56BF7B3443B7CBAF /* ComposerSubmissionLogicTests.swift in Sources */,
+				2448C7D9A618A8A8D68026C9 /* MarkdownBlocksTests.swift in Sources */,
 				D3508E86FEF84CE0FB3A2362 /* ProjectStoreTests.swift in Sources */,
 				149052C798A239F946342A23 /* ReleaseNotesTests.swift in Sources */,
 				80E40DCA3AE420F927877943 /* SkillCommandLogicTests.swift in Sources */,
@@ -420,6 +430,8 @@
 				1CEEEA7AA202CFB1EACF6FBA /* HermesThemes.swift in Sources */,
 				94E71C645906B47600BA858B /* InputModelPicker.swift in Sources */,
 				3A321980B7C573E252E73B94 /* KeychainManager.swift in Sources */,
+				4173455E2289D24EB1D3E6E4 /* MarkdownBlocks.swift in Sources */,
+				8734D5CC0DEE94B2BFB017F5 /* MarkdownContentView.swift in Sources */,
 				538D0CA3818BBDB92BB6A232 /* ModelSelectionView.swift in Sources */,
 				9326CB4014893810CB4C04B4 /* Models.swift in Sources */,
 				1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */,

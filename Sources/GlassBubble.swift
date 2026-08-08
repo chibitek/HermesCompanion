@@ -39,12 +39,7 @@ struct GlassBubble: View {
                 }
 
                 if !content.isEmpty {
-                    Text(renderedContent)
-                        .font(messageFont)
-                        .textSelection(.enabled)
-                        .foregroundStyle(isUser ? .white : theme.textPrimary)
-                        .lineSpacing(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    MarkdownContentView(content: content, isUser: isUser, font: messageFont)
                 }
 
                 if showTimestamp, let timestamp {
@@ -90,18 +85,6 @@ struct GlassBubble: View {
         // Dynamic Type: use system body font that respects user's text size preference.
         // fontScale still applies as a multiplier via .font() modifier downstream.
         return .system(size: 14 * fontScale, design: isUser ? .default : monospacedDesign)
-    }
-
-    private var renderedContent: AttributedString {
-        guard !isUser,
-              let attributed = try? AttributedString(
-                markdown: content,
-                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-              )
-        else {
-            return AttributedString(content)
-        }
-        return attributed
     }
 
     private var monospacedDesign: Font.Design {
