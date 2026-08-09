@@ -60,16 +60,37 @@ struct ConnectionConfig: Codable, Identifiable, Equatable {
     var baseURL: String
     var apiKey: String
     var label: String
+    var isDemoMode: Bool = false
 
     var id: String { baseURL }
 
     var isValid: Bool {
-        !baseURL.isEmpty && !apiKey.isEmpty && URL(string: baseURL) != nil
+        if isDemoMode { return true }
+        return !baseURL.isEmpty && !apiKey.isEmpty && URL(string: baseURL) != nil
     }
 
     /// Strip trailing slash for consistent URL joining
     var normalizedBaseURL: String {
         baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case baseURL, apiKey, label, isDemoMode
+    }
+
+    init(baseURL: String, apiKey: String, label: String, isDemoMode: Bool = false) {
+        self.baseURL = baseURL
+        self.apiKey = apiKey
+        self.label = label
+        self.isDemoMode = isDemoMode
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        baseURL = try c.decode(String.self, forKey: .baseURL)
+        apiKey = try c.decode(String.self, forKey: .apiKey)
+        label = try c.decode(String.self, forKey: .label)
+        isDemoMode = try c.decodeIfPresent(Bool.self, forKey: .isDemoMode) ?? false
     }
 }
 
