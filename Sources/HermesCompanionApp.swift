@@ -244,7 +244,7 @@ struct ServerPickerView: View {
 
                     // Add new server button
                     Button {
-                        onSelect(ConnectionConfig(baseURL: "", apiKey: "*** label: "New Server"))
+                        onSelect(ConnectionConfig(baseURL: "", apiKey: "", label: "New Server"))
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle.fill")
