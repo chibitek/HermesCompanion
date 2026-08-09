@@ -55,6 +55,9 @@ struct ConnectionSetupView: View {
                     VStack(spacing: 28) {
                         brandHeader
                         
+                        // Demo Mode card — for App Store review (Guideline 2.1a)
+                        demoModeCard
+                        
                         // Server picker section
                         if !store.savedConnections.isEmpty {
                             serverPickerSection
@@ -145,6 +148,54 @@ struct ConnectionSetupView: View {
         .padding(.top, 20)
     }
     
+    // MARK: - Demo Mode Card
+
+    private var demoModeCard: some View {
+        Button {
+            Task { await connectDemoMode() }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 28))
+                    .foregroundStyle(appearance.accent)
+                    .frame(width: 44)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Demo Mode")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.949, green: 0.965, blue: 0.988))
+                    Text("Explore all features without a server")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color(red: 0.494, green: 0.557, blue: 0.651))
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(appearance.accent.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+    }
+
+    private func connectDemoMode() async {
+        let config = ConnectionConfig(baseURL: "demo://local", apiKey: "demo", label: "Demo Mode", isDemoMode: true)
+        let success = await store.connect(config: config)
+        if success {
+            testResult = .success("Demo Mode activated")
+        } else {
+            testResult = .failure("Failed to start demo mode")
+        }
+    }
+
     // MARK: - Glass Field
     
     private func glassField(
