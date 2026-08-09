@@ -572,10 +572,12 @@ final class AppStore: ObservableObject {
     }
 
     func selectSession(_ session: HermesSession) async {
-        // ponytail: demo mode — just switch active session, no server reload.
+        // ponytail: demo mode — switch active session, keep seeded messages for first session.
         if connectionConfig?.isDemoMode == true {
+            if self.activeSession?.id != session.id {
+                self.messages = []
+            }
             self.activeSession = session
-            self.messages = []
             return
         }
         let client: HermesAPIClient

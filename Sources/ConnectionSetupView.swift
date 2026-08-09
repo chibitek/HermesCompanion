@@ -54,10 +54,7 @@ struct ConnectionSetupView: View {
                 ScrollView {
                     VStack(spacing: 28) {
                         brandHeader
-                        
-                        // Demo Mode card — for App Store review (Guideline 2.1a)
-                        demoModeCard
-                        
+
                         // Server picker section
                         if !store.savedConnections.isEmpty {
                             serverPickerSection
