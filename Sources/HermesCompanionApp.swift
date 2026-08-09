@@ -119,8 +119,16 @@ struct RootView: View {
             } else if showServerPicker {
                 ServerPickerView(store: store, appearance: appearance) { config in
                     Task {
-                        store.connectionConfig = config
-                        await store.autoConnect()
+                        if config.isDemoMode {
+                            // Demo mode: connect directly (seeds mock state)
+                            _ = await store.connect(config: config)
+                        } else if config.baseURL.isEmpty {
+                            // "Add New Server" — show full setup form
+                            showServerPicker = false
+                        } else {
+                            store.connectionConfig = config
+                            await store.autoConnect()
+                        }
                     }
                 }
             } else {
@@ -148,16 +156,17 @@ struct RootView: View {
                 if !store.savedConnections.isEmpty {
                     await store.checkAllServerHealth()
                 }
-                // Try auto-connecting to the last active server
-                if store.connectionConfig != nil {
+                // Auto-connect to last server if toggle is on and we have a config
+                let shouldAutoReconnect = UserDefaults.standard.bool(forKey: "auto_reconnect_last_server") ||
+                    SharedDefaults.shared.object(forKey: "auto_reconnect_last_server") == nil
+                if shouldAutoReconnect, store.connectionConfig != nil {
                     await store.autoConnect()
-                    // If auto-connect failed, show the server picker instead of
-                    // the full setup screen
+                    // If auto-connect failed, show the server picker
                     if !store.isConnected && !store.savedConnections.isEmpty {
                         showServerPicker = true
                     }
-                } else if !store.savedConnections.isEmpty {
-                    // No active config but we have saved servers — show picker
+                } else {
+                    // Always show server picker by default
                     showServerPicker = true
                 }
             }
@@ -196,6 +205,8 @@ struct ServerPickerView: View {
     var appearance: AppearanceSettings
     var onSelect: (ConnectionConfig) -> Void
 
+    @AppStorage("auto_reconnect_last_server", store: SharedDefaults.shared) private var autoReconnectLastServer = true
+
     private var theme: any HermesTheme { appearance.activeTheme }
 
     var body: some View {
@@ -223,6 +234,9 @@ struct ServerPickerView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
 
+                    // Demo Mode card — available for all users
+                    demoModeRow
+
                     // Server list
                     ForEach(store.savedConnections, id: \.baseURL) { config in
                         serverRow(config)
@@ -230,7 +244,7 @@ struct ServerPickerView: View {
 
                     // Add new server button
                     Button {
-                        onSelect(ConnectionConfig(baseURL: "", apiKey: "", label: "New Server"))
+                        onSelect(ConnectionConfig(baseURL: "", apiKey: "*** label: "New Server"))
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle.fill")
@@ -249,6 +263,9 @@ struct ServerPickerView: View {
                     }
                     .padding(.horizontal, 24)
 
+                    // Auto-reconnect toggle
+                    autoReconnectToggle
+
                     // Retry health check button
                     Button {
                         Task { await store.checkAllServerHealth() }
@@ -265,6 +282,85 @@ struct ServerPickerView: View {
                 .padding(.vertical, 24)
             }
         }
+    }
+
+    // MARK: - Demo Mode Row
+
+    private var demoModeRow: some View {
+        Button {
+            let config = ConnectionConfig(baseURL: "demo://local", apiKey: "demo", label: "Demo Mode", isDemoMode: true)
+            onSelect(config)
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(theme.accent.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18))
+                        .foregroundStyle(theme.accent)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Demo Mode")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
+                    Text("Explore all features without a server")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.textSecondary)
+                }
+
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(theme.textSecondary)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(theme.bgSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(theme.accent.opacity(0.3), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 24)
+    }
+
+    // MARK: - Auto-Reconnect Toggle
+
+    private var autoReconnectToggle: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.trianglehead.clockwise.icircle")
+                .font(.system(size: 16))
+                .foregroundStyle(theme.textSecondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Auto-connect to last server")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(theme.textPrimary)
+                Text("Skip this screen when launching")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.textSecondary)
+            }
+            Spacer()
+            Toggle("", isOn: $autoReconnectLastServer)
+                .tint(theme.accent)
+                .labelsHidden()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(theme.bgSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(theme.cardBorder, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 24)
     }
 
     private func serverRow(_ config: ConnectionConfig) -> some View {
