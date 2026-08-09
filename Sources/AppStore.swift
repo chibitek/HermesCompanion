@@ -168,7 +168,11 @@ final class AppStore: ObservableObject {
 
     // MARK: - Connection
 
-    var isConnected: Bool { connectionConfig != nil && !isLoadingConnection }
+    var isConnected: Bool { hasExplicitlyConnected && connectionConfig != nil && !isLoadingConnection }
+
+    // ponytail: tracks whether the user explicitly connected this session.
+    // Prevents auto-connecting from a stale Keychain config on launch.
+    private var hasExplicitlyConnected = false
 
     /// Returns the current API client, creating one from saved config if needed
     private func client() throws -> HermesAPIClient {
@@ -189,7 +193,7 @@ final class AppStore: ObservableObject {
     func autoConnect() async {
         guard let config = connectionConfig else { return }
         // ponytail: demo mode skips network entirely, seeds mock state.
-        if config.isDemoMode { await seedDemoState(); return }
+        if config.isDemoMode { await seedDemoState(); hasExplicitlyConnected = true; return }
         isLoadingConnection = true
         let client = HermesAPIClient(config: config)
         do {
@@ -208,6 +212,7 @@ final class AppStore: ObservableObject {
             await refreshCapabilities()
             await refreshSessions()
             self.isLoadingConnection = false
+            hasExplicitlyConnected = true
         } catch let e as APIError {
             self.error = AppError(message: e.errorDescription ?? "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
@@ -222,6 +227,7 @@ final class AppStore: ObservableObject {
         if config.isDemoMode {
             self.connectionConfig = config
             await seedDemoState()
+            hasExplicitlyConnected = true
             return true
         }
         let client = HermesAPIClient(config: config)
@@ -250,6 +256,7 @@ final class AppStore: ObservableObject {
             // Load capabilities
             await refreshCapabilities()
             await refreshSessions()
+            hasExplicitlyConnected = true
             return true
         } catch let e as APIError {
             self.error = AppError(message: e.errorDescription ?? "Connection failed")
@@ -264,6 +271,7 @@ final class AppStore: ObservableObject {
         streamTask?.cancel()
         apiClient = nil
         connectionConfig = nil
+        hasExplicitlyConnected = false
         loadPreferences(for: nil)
         capabilities = nil
         sessions = []
