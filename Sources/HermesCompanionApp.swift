@@ -157,8 +157,7 @@ struct RootView: View {
                     await store.checkAllServerHealth()
                 }
                 // Auto-connect to last server if toggle is on and we have a config
-                let shouldAutoReconnect = UserDefaults.standard.bool(forKey: "auto_reconnect_last_server") ||
-                    SharedDefaults.shared.object(forKey: "auto_reconnect_last_server") == nil
+                let shouldAutoReconnect = SharedDefaults.shared.bool(forKey: "auto_reconnect_last_server")
                 if shouldAutoReconnect, store.connectionConfig != nil {
                     await store.autoConnect()
                     // If auto-connect failed, show the server picker
