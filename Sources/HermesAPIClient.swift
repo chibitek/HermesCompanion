@@ -80,6 +80,21 @@ final class HermesAPIClient: Sendable {
         try await get(path: "/v1/capabilities", type: CapabilitiesResponse.self)
     }
 
+    func getDetailedHealth() async throws -> PlatformHealthResponse {
+        try await get(path: "/health/detailed", type: PlatformHealthResponse.self)
+    }
+
+    // MARK: - Scheduled Jobs
+
+    func listJobs(includeDisabled: Bool = true) async throws -> [HermesJob] {
+        let res = try await get(
+            path: "/api/jobs",
+            queryItems: [URLQueryItem(name: "include_disabled", value: includeDisabled ? "true" : "false")],
+            type: HermesJobsResponse.self
+        )
+        return res.jobs
+    }
+
     // MARK: - Sessions
 
     /// GET /api/sessions

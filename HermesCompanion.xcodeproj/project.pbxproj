@@ -48,6 +48,7 @@
 		8169CA68B0F068C4C454AA05 /* HermesCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C57FABBFF2052F11309F06 /* HermesCompanionApp.swift */; };
 		848AF4A8EBE61688B4E15948 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E26F58E842815866FD9986 /* AppConfig.swift */; };
 		8734D5CC0DEE94B2BFB017F5 /* MarkdownContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4B8756C4CB0CA6555D6816 /* MarkdownContentView.swift */; };
+		8B73E912F27AEA3506F3B397 /* PlatformHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50D921CF26AFC9D4546FDF2 /* PlatformHubView.swift */; };
 		8D8B6F1C677ED71BCAF05D0D /* VoiceActivationLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE61BF3E1316730281A5A38 /* VoiceActivationLogic.swift */; };
 		9033393557A808892DD39711 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2DD74C29509EC118F92BEA5 /* CameraPickerView.swift */; };
 		9326CB4014893810CB4C04B4 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13839144B0503760269527F6 /* Models.swift */; };
@@ -157,6 +158,7 @@
 		B0462220C6A7891E8E42F07B /* StreamWatchdogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamWatchdogManager.swift; sourceTree = "<group>"; };
 		B063172039210054C110721D /* CarPlayVoiceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayVoiceController.swift; sourceTree = "<group>"; };
 		B0DDD0EF00AE53B1CB6CE883 /* HermesModelContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesModelContractTests.swift; sourceTree = "<group>"; };
+		B50D921CF26AFC9D4546FDF2 /* PlatformHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformHubView.swift; sourceTree = "<group>"; };
 		BE611F1C01056A05C20BC7AA /* FilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePickerView.swift; sourceTree = "<group>"; };
 		C5DCE8A1000AFBDEFBF97D7E /* HermesControlWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HermesControlWidgetExtension.entitlements; sourceTree = "<group>"; };
 		C65133D88E05ED712E002D1E /* GlassAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassAnimations.swift; sourceTree = "<group>"; };
@@ -221,6 +223,7 @@
 				2D4B8756C4CB0CA6555D6816 /* MarkdownContentView.swift */,
 				13839144B0503760269527F6 /* Models.swift */,
 				7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */,
+				B50D921CF26AFC9D4546FDF2 /* PlatformHubView.swift */,
 				0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */,
 				A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */,
 				29A06329B461E36625FB7949 /* ProviderUtils.swift */,
@@ -438,6 +441,7 @@
 				8734D5CC0DEE94B2BFB017F5 /* MarkdownContentView.swift in Sources */,
 				538D0CA3818BBDB92BB6A232 /* ModelSelectionView.swift in Sources */,
 				9326CB4014893810CB4C04B4 /* Models.swift in Sources */,
+				8B73E912F27AEA3506F3B397 /* PlatformHubView.swift in Sources */,
 				1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */,
 				2C03088CFC9E56596F6492CE /* ProviderSelectionView.swift in Sources */,
 				EF598FC3F601152B1E4F52B5 /* ProviderUtils.swift in Sources */,
@@ -511,7 +515,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 136;
+				CURRENT_PROJECT_VERSION = 137;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -522,7 +526,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = YES;
-				MARKETING_VERSION = 1.8.50;
+				MARKETING_VERSION = 1.8.51;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -537,7 +541,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 136;
+				CURRENT_PROJECT_VERSION = 137;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -548,7 +552,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.8.50;
+				MARKETING_VERSION = 1.8.51;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -629,7 +633,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 136;
+				CURRENT_PROJECT_VERSION = 137;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -637,7 +641,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.50;
+				MARKETING_VERSION = 1.8.51;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -711,7 +715,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 136;
+				CURRENT_PROJECT_VERSION = 137;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -719,7 +723,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.50;
+				MARKETING_VERSION = 1.8.51;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

@@ -45,6 +45,7 @@ struct SettingsView: View {
                         reasoningCard
                         capabilitiesCard
                         toolsCard
+                        platformCard
                         appearanceCard
                         voiceCard
                         disconnectCard
@@ -559,6 +560,31 @@ struct SettingsView: View {
     }
 
     // MARK: - Appearance card
+
+    private var platformCard: some View {
+        glassCard {
+            NavigationLink {
+                PlatformHubView(store: store)
+            } label: {
+                HStack {
+                    Image(systemName: "square.grid.2x2")
+                        .foregroundStyle(theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Platform Hub")
+                            .foregroundStyle(theme.textPrimary)
+                        Text("Capabilities, history, models, jobs, messaging, artifacts, Kanban, and bots.")
+                            .font(.caption)
+                            .foregroundStyle(theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+        }
+    }
 
     private var appearanceCard: some View {
         glassCard {

@@ -127,6 +127,6 @@ This app is a thin client for the open-source Hermes Agent platform (github.com/
 
 | Field | Value |
 |---|---|
-| **Version** | 1.8.50 |
-| **Build** | 136 |
-| **What's New** | Accurate session and gateway model display, one-tap gateway default selection, server-backed chat pinning and archiving, and full gateway model catalogs |
+| **Version** | 1.8.51 |
+| **Build** | 137 |
+| **What's New** | Hermes Platform hub with live gateway health, history, model, job, messaging, artifact, Kanban, and bot sync |
