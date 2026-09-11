@@ -186,6 +186,8 @@ struct HermesSession: Codable, Identifiable, Hashable {
     let startedAt: Double?
     let lastActive: Double?
     let messageCount: Int?
+    let cwd: String?
+    let gitRepoRoot: String?
     var isPinned: Bool?
     var isArchived: Bool?
     var isHidden: Bool?
@@ -195,6 +197,7 @@ struct HermesSession: Codable, Identifiable, Hashable {
         case startedAt = "started_at"
         case lastActive = "last_active"
         case messageCount = "message_count"
+        case cwd, gitRepoRoot = "git_repo_root"
         case isPinned = "pinned"
         case isArchived = "archived"
         case isHidden = "hidden"
@@ -215,6 +218,7 @@ struct CreateSessionResponse: Codable {
 struct SessionListResponse: Codable {
     let object: String
     let data: [HermesSession]
+    let total: Int?
 }
 
 struct CreateSessionRequest: Codable {
@@ -637,6 +641,8 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     let lastActive: Double?
     let preview: String?
     let hasModelConfig: Bool?
+    let cwd: String?
+    let gitRepoRoot: String?
     let isPinned: Bool?
     let isArchived: Bool?
     let isHidden: Bool?
@@ -644,6 +650,7 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, source, model, title, preview
         case hasModelConfig = "has_model_config"
+        case cwd, gitRepoRoot = "git_repo_root"
         case isPinned = "pinned"
         case isArchived = "archived"
         case isHidden = "hidden"
@@ -826,6 +833,18 @@ struct HermesJob: Codable, Identifiable, Hashable {
 
 struct HermesJobsResponse: Codable {
     let jobs: [HermesJob]
+}
+
+struct HermesJobResponse: Codable {
+    let job: HermesJob
+}
+
+struct HermesJobWrite: Encodable, Hashable {
+    var name: String = ""
+    var schedule: String = ""
+    var prompt: String = ""
+    var deliver: String = "local"
+    var skills: [String] = []
 }
 
 struct HermesArtifactReceipt: Codable, Identifiable, Hashable {

@@ -100,6 +100,22 @@ final class HermesAPIClient: Sendable {
         return res.jobs
     }
 
+    func createJob(_ payload: HermesJobWrite) async throws -> HermesJob {
+        var req = try request(method: "POST", path: "/api/jobs")
+        req.httpBody = try JSONEncoder().encode(payload)
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(HermesJobResponse.self, from: data).job
+    }
+
+    func updateJob(jobId: String, updates: HermesJobWrite) async throws -> HermesJob {
+        var req = try request(method: "PATCH", path: "/api/jobs/\(jobId)")
+        req.httpBody = try JSONEncoder().encode(updates)
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(HermesJobResponse.self, from: data).job
+    }
+
     func pauseJob(jobId: String) async throws {
         try await sendEmpty(method: "POST", path: "/api/jobs/\(jobId)/pause")
     }
@@ -135,13 +151,34 @@ final class HermesAPIClient: Sendable {
 
     /// GET /api/sessions
     func listSessions(limit: Int = 200) async throws -> [HermesSession] {
-        let clampedLimit = max(1, min(limit, 200))
-        let res = try await get(
-            path: "/api/sessions",
-            queryItems: [URLQueryItem(name: "limit", value: String(clampedLimit))],
-            type: SessionListResponse.self
-        )
-        return res.data
+        var allSessions: [HermesSession] = []
+        var seenIDs = Set<String>()
+        let pageSize = 100
+        var offset = 0
+
+        while true {
+            let res = try await get(
+                path: "/api/sessions",
+                queryItems: [
+                    URLQueryItem(name: "limit", value: String(pageSize)),
+                    URLQueryItem(name: "offset", value: String(offset)),
+                    URLQueryItem(name: "archived", value: "include"),
+                    URLQueryItem(name: "order", value: "recent"),
+                    URLQueryItem(name: "include_hidden", value: "true")
+                ],
+                type: SessionListResponse.self
+            )
+            let fresh = res.data.filter { seenIDs.insert($0.id).inserted }
+            allSessions.append(contentsOf: fresh)
+
+            let knownTotal = res.total ?? allSessions.count
+            offset += res.data.count
+            if res.data.isEmpty || allSessions.count >= knownTotal || fresh.isEmpty {
+                break
+            }
+        }
+
+        return Array(allSessions.prefix(max(1, limit)))
     }
 
     /// POST /api/sessions

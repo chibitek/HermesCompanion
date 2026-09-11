@@ -6,6 +6,8 @@ struct PlatformHubView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var activeJobID: String?
+    @State private var editingJob: HermesJob?
+    @State private var showJobEditor = false
     @State private var isUploadingArtifact = false
     @State private var showArtifactPicker = false
 
@@ -43,6 +45,13 @@ struct PlatformHubView: View {
         store.toolsets.filter(\.enabled)
     }
 
+    private var workspaceProjects: [String] {
+        let paths = store.sessions.compactMap { session in
+            session.cwd ?? session.gitRepoRoot
+        }
+        return Array(Set(paths)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -58,6 +67,7 @@ struct PlatformHubView: View {
 
                     overviewSection
                     messagingSection
+                    projectsSection
                     sessionsSection
                     modelsSection
                     toolsetsSection
@@ -79,6 +89,10 @@ struct PlatformHubView: View {
                     }
                     .withActiveTheme(appearance)
                 }
+                .sheet(isPresented: $showJobEditor) {
+                    JobEditorView(store: store, existingJob: editingJob)
+                        .withActiveTheme(appearance)
+                }
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
             }
@@ -86,6 +100,16 @@ struct PlatformHubView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search platform")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        editingJob = nil
+                        showJobEditor = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .foregroundStyle(theme.accent)
+                    }
+                    .accessibilityLabel("Create Scheduled Job")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .foregroundStyle(theme.accent)
@@ -153,6 +177,34 @@ struct PlatformHubView: View {
         }
     }
 
+    private var projectsSection: some View {
+        Section("Projects") {
+            if workspaceProjects.isEmpty {
+                Text("No workspace folders are exposed by this gateway yet.")
+                    .foregroundStyle(theme.textSecondary)
+            } else {
+                ForEach(workspaceProjects.prefix(20), id: \.self) { path in
+                    let sessions = store.sessions.filter { $0.cwd == path || $0.gitRepoRoot == path }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(path)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(theme.textPrimary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        Text("\(sessions.count) sessions")
+                            .font(.caption2)
+                            .foregroundStyle(theme.textMuted)
+                    }
+                }
+                if workspaceProjects.count > 20 {
+                    Text("+ \(workspaceProjects.count - 20) more")
+                        .font(.caption)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+        }
+    }
+
     private var modelsSection: some View {
         Section("Models") {
             platformRow("Gateway Default", store.gatewayDefaultModel, icon: "cpu")
@@ -213,6 +265,16 @@ struct PlatformHubView: View {
                                 .foregroundStyle(theme.danger)
                                 .lineLimit(2)
                         }
+
+                        Button {
+                            editingJob = job
+                            showJobEditor = true
+                        } label: {
+                            Label("Edit Job", systemImage: "pencil")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(theme.accent)
+                        }
+                        .padding(.vertical, 4)
 
                         Menu {
                             if job.enabled == true {
@@ -376,5 +438,104 @@ struct PlatformHubView: View {
                 Capsule().fill((connected ? theme.accent : theme.danger).opacity(0.16))
             )
             .foregroundStyle(connected ? theme.accent : theme.danger)
+    }
+}
+
+private struct JobEditorView: View {
+    @ObservedObject var store: AppStore
+    @EnvironmentObject private var appearance: AppearanceSettings
+    @Environment(\.dismiss) private var dismiss
+
+    let existingJob: HermesJob?
+
+    @State private var name = ""
+    @State private var schedule = ""
+    @State private var prompt = ""
+    @State private var deliver = "local"
+    @State private var skillsText = ""
+    @State private var isSaving = false
+
+    private var theme: any HermesTheme { appearance.activeTheme }
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !schedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Job") {
+                    TextField("Name", text: $name)
+                    TextField("Schedule (cron or interval)", text: $schedule)
+                }
+
+                Section("Prompt") {
+                    TextEditor(text: $prompt)
+                        .frame(minHeight: 140)
+                        .accessibilityLabel("Prompt")
+                }
+
+                Section("Delivery") {
+                    TextField("local", text: $deliver)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+
+                Section("Skills") {
+                    TextField("Comma separated skill IDs", text: $skillsText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if !store.skills.isEmpty {
+                        Text("Available: \(store.skills.prefix(8).compactMap(\.name).joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(theme.textMuted)
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(theme.backgroundView.ignoresSafeArea())
+            .navigationTitle(existingJob == nil ? "New Job" : "Edit Job")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        Task { await save() }
+                    }
+                    .disabled(!canSave || isSaving)
+                }
+            }
+            .onAppear(perform: load)
+        }
+    }
+
+    private func load() {
+        guard let job = existingJob else { return }
+        name = job.name
+        schedule = job.scheduleDisplay ?? ""
+        prompt = job.prompt ?? ""
+        deliver = job.deliver ?? "local"
+        skillsText = (job.skills ?? []).joined(separator: ", ")
+    }
+
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        let skills = skillsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let payload = HermesJobWrite(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            schedule: schedule.trimmingCharacters(in: .whitespacesAndNewlines),
+            prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            deliver: deliver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "local" : deliver.trimmingCharacters(in: .whitespacesAndNewlines),
+            skills: skills
+        )
+        await store.saveJob(payload, jobId: existingJob?.id)
+        dismiss()
     }
 }

@@ -340,9 +340,9 @@ final class AppStore: ObservableObject {
     func seedDemoState() async {
         let now = Date().timeIntervalSince1970
         self.sessions = [
-            HermesSession(id: "demo-session-1", title: "Welcome to Hermes", source: "demo", startedAt: now - 3600, lastActive: now - 60, messageCount: 4),
-            HermesSession(id: "demo-session-2", title: "Project Planning", source: "demo", startedAt: now - 7200, lastActive: now - 3600, messageCount: 8),
-            HermesSession(id: "demo-session-3", title: "Code Review", source: "demo", startedAt: now - 86400, lastActive: now - 80000, messageCount: 12),
+            HermesSession(id: "demo-session-1", title: "Welcome to Hermes", source: "demo", startedAt: now - 3600, lastActive: now - 60, messageCount: 4, cwd: nil, gitRepoRoot: nil),
+            HermesSession(id: "demo-session-2", title: "Project Planning", source: "demo", startedAt: now - 7200, lastActive: now - 3600, messageCount: 8, cwd: nil, gitRepoRoot: nil),
+            HermesSession(id: "demo-session-3", title: "Code Review", source: "demo", startedAt: now - 86400, lastActive: now - 80000, messageCount: 12, cwd: nil, gitRepoRoot: nil),
         ]
         self.activeSession = self.sessions.first
         self.messages = [
@@ -933,6 +933,26 @@ final class AppStore: ObservableObject {
             await refreshJobsOnly()
         } catch {
             platformError = "Job \(action.rawValue) failed: \(error.localizedDescription)"
+        }
+    }
+
+    func saveJob(_ payload: HermesJobWrite, jobId: String? = nil) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        do {
+            if let jobId {
+                _ = try await client.updateJob(jobId: jobId, updates: payload)
+            } else {
+                _ = try await client.createJob(payload)
+            }
+            await refreshJobsOnly()
+        } catch {
+            platformError = "Could not save job: \(error.localizedDescription)"
         }
     }
 
