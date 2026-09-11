@@ -27,6 +27,10 @@ struct SessionPickerView: View {
 
     private var visibleSessions: [HermesSession] {
         var result = store.sessions
+        if mode == .chats {
+            result = store.sessions.filter { $0.isPinned == true } +
+                store.sessions.filter { $0.isPinned != true }
+        }
         if mode == .projects, let workspace = selectedWorkspaceProject {
             let ids = Set(workspace.sessions.map(\.id))
             result = result.filter { ids.contains($0.id) }

@@ -13,10 +13,10 @@ final class AppearanceSettings: ObservableObject {
     @AppStorage("accentColor") var accentColor: String = "teal"  // teal, blue, purple, green, orange, red
 
     // Font size multiplier (0.7 = smallest, 1.0 = normal)
-    @AppStorage("fontScale") var fontScale: Double = 0.7
+    @AppStorage("fontScale") var fontScale: Double = 0.45
 
     // Message font size (explicit override, 0 = use system Dynamic Type)
-    @AppStorage("messageFontSize") var messageFontSize: Double = 11  // 0 = auto, 10-18 = explicit
+    @AppStorage("messageFontSize") var messageFontSize: Double = 4  // 0 = auto, 4-18 = explicit
 
     // Bubble density (compact vs spacious)
     @AppStorage("compactMode") var compactMode: Bool = false

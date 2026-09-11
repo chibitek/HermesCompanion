@@ -69,7 +69,7 @@ struct SettingsView: View {
                     await store.refreshSkills()
                     await store.refreshToolsets()
                     primePickers()
-                    await loadModels(forProvider: selectedProvider)
+                    await loadModels(forProvider: selectedProvider, preferExistingSelection: true, forceRefresh: true)
                     // Re-prime only if the model list didn't contain the saved
                     // preference (loadModels may have selected a fallback).
                     if !store.preferredModel.isEmpty,

@@ -241,9 +241,9 @@ struct GlassInputBar: View {
                         showAttachmentMenu = true
                     } label: {
                         Image(systemName: "paperclip")
-                            .font(.system(size: 21, weight: .regular))
+                            .font(.system(size: 19, weight: .regular))
                             .foregroundStyle(theme.textPrimary)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(controlBackground)
                             .clipShape(Circle())
                     }
@@ -276,9 +276,9 @@ struct GlassInputBar: View {
                         onNewSession?()
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 21, weight: .regular))
+                            .font(.system(size: 19, weight: .regular))
                             .foregroundStyle(theme.textPrimary)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(controlBackground)
                             .clipShape(Circle())
                     }
@@ -341,9 +341,9 @@ struct GlassInputBar: View {
                             voiceTranscriber.startTranscription()
                         } label: {
                             Image(systemName: "mic.fill")
-                                .font(.system(size: 21, weight: .regular))
+                            .font(.system(size: 19, weight: .regular))
                                 .foregroundStyle(theme.textPrimary)
-                                .frame(width: 44, height: 44)
+                                .frame(width: 40, height: 40)
                                 .background(controlBackground)
                                 .clipShape(Circle())
                         }
@@ -364,9 +364,9 @@ struct GlassInputBar: View {
                         }
                     } label: {
                         Image(systemName: trailingActionIcon)
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(trailingActionForeground)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(trailingActionBackground)
                             .clipShape(Circle())
                     }
@@ -376,8 +376,8 @@ struct GlassInputBar: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 22)
-            .padding(.bottom, 14)
+            .padding(.top, 18)
+            .padding(.bottom, 12)
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
                     suppressNextSubmit = true
