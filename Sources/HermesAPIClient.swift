@@ -116,6 +116,21 @@ final class HermesAPIClient: Sendable {
         try await sendEmpty(method: "DELETE", path: "/api/jobs/\(jobId)")
     }
 
+    func uploadArtifact(
+        data: Data,
+        fileName: String,
+        mimeType: String
+    ) async throws -> HermesArtifactReceipt {
+        var req = try request(method: "POST", path: "/v1/artifacts/upload")
+        req.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+        req.setValue(fileName, forHTTPHeaderField: "X-Artifact-Filename")
+        req.httpBody = data
+
+        let (resp, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(HermesArtifactReceipt.self, from: resp)
+    }
+
     // MARK: - Sessions
 
     /// GET /api/sessions

@@ -127,6 +127,6 @@ This app is a thin client for the open-source Hermes Agent platform (github.com/
 
 | Field | Value |
 |---|---|
-| **Version** | 1.8.52 |
-| **Build** | 138 |
-| **What's New** | Hermes Platform hub sync plus interactive scheduled-job pause, resume, run, and delete controls |
+| **Version** | 1.8.53 |
+| **Build** | 139 |
+| **What's New** | Hermes Platform hub with interactive scheduled jobs and native artifact uploads when browser control is enabled |

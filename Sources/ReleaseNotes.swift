@@ -14,6 +14,11 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.53":
+            return [
+                "Platform Hub adds native artifact uploads when browser control is enabled.",
+                "Artifact uploads now show a provenance receipt with ID, hash, and expiry."
+            ]
         case "1.8.52":
             return [
                 "Scheduled jobs can now be paused, resumed, run immediately, or deleted from the iPhone.",

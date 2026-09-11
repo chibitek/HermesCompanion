@@ -36,6 +36,7 @@ final class AppStore: ObservableObject {
     @Published private(set) var sessionProviderOverride: String?
     @Published var platformHealth: PlatformHealthResponse?
     @Published var platformJobs: [HermesJob] = []
+    @Published var artifactReceipt: HermesArtifactReceipt?
     @Published var isLoadingPlatform = false
     @Published var platformError: String?
     @Published private(set) var queuedMessages: [QueuedMessage] = [] {
@@ -940,6 +941,24 @@ final class AppStore: ObservableObject {
             platformJobs = try await apiClient?.listJobs() ?? platformJobs
         } catch {
             platformError = "Could not refresh jobs: \(error.localizedDescription)"
+        }
+    }
+
+    func uploadArtifact(data: Data, fileName: String, mimeType: String) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        do {
+            artifactReceipt = try await client.uploadArtifact(
+                data: data, fileName: fileName, mimeType: mimeType
+            )
+            platformError = nil
+        } catch {
+            platformError = "Artifact upload failed: \(error.localizedDescription)"
         }
     }
 
