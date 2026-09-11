@@ -64,6 +64,7 @@ struct PlatformHubView: View {
 
                     overviewSection
                     capabilitiesSection
+                    endpointsSection
                     messagingSection
                     projectsSection
                     sessionsSection
@@ -206,6 +207,21 @@ struct PlatformHubView: View {
                 )
             } else {
                 Text("Capabilities are not exposed by this gateway yet.")
+                    .foregroundStyle(theme.textSecondary)
+            }
+        }
+    }
+
+    private var endpointsSection: some View {
+        Section("Endpoints") {
+            if let endpoints = store.capabilities?.endpoints, !endpoints.isEmpty {
+                ForEach(endpoints.keys.sorted(), id: \.self) { key in
+                    if let endpoint = endpoints[key] {
+                        platformRow(key, "\(endpoint.method) \(endpoint.path)", icon: "link")
+                    }
+                }
+            } else {
+                Text("Endpoints are not exposed by this gateway yet.")
                     .foregroundStyle(theme.textSecondary)
             }
         }
