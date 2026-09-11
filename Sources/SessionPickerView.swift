@@ -568,6 +568,19 @@ struct SessionRow: View {
                             .font(.system(.caption, design: .monospaced, weight: .medium))
                             .foregroundStyle(theme.accent)
                     }
+
+                    if let provider = session.provider, !provider.isEmpty {
+                        Text(provider.capitalized)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(theme.textMuted)
+                            .lineLimit(1)
+                    }
+                    if let provider = session.provider, !provider.isEmpty {
+                        Text(provider.capitalized)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(theme.textMuted)
+                            .lineLimit(1)
+                    }
                 }
 
                 Text(metadata)
@@ -608,7 +621,10 @@ struct SessionRow: View {
         let countText = count == 1 ? "1 message" : "\(count) messages"
         let end = session.lastActive ?? session.startedAt ?? Date().timeIntervalSince1970
         let start = session.startedAt ?? end
-        return "\(countText) · \(formatDuration(max(0, end - start)))"
+        var parts = [countText, formatDuration(max(0, end - start))]
+        if let model = session.model, !model.isEmpty { parts.append(model) }
+        if let provider = session.provider, !provider.isEmpty { parts.append(provider) }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -695,6 +711,7 @@ struct SessionDetailView: View {
                             row("ID", detail.id)
                             if let source = detail.source { row("Source", source) }
                             if let model = detail.model { row("Model", model) }
+                            if let provider = detail.provider { row("Provider", provider) }
                         }
                         Section("State") {
                             row("Pinned", detail.isPinned == true ? "Yes" : "No")
