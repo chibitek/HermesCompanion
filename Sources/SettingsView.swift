@@ -752,13 +752,13 @@ struct SettingsView: View {
     /// or fall back to the gateway's defaults if no preference is saved.
     private func primePickers() {
         selectedServerURL = store.connectionConfig?.baseURL ?? ""
+        let currentModel = store.effectiveCurrentModel
+        let currentProvider = store.effectiveCurrentProvider
 
-        if !store.preferredProvider.isEmpty {
-            selectedProvider = store.preferredProvider
+        if !currentProvider.isEmpty {
+            selectedProvider = currentProvider
         } else if let provider = store.capabilities?.currentProvider, !provider.isEmpty {
             selectedProvider = provider
-        } else if let owner = modelForSelection(store.preferredModel)?.ownedBy {
-            selectedProvider = owner
         } else if let owner = modelForSelection(store.effectiveCurrentModel)?.ownedBy {
             selectedProvider = owner
         }
@@ -768,8 +768,8 @@ struct SettingsView: View {
             selectedProvider = availableProviders.first ?? ""
         }
 
-        if !store.preferredModel.isEmpty && models(for: selectedProvider).contains(where: { $0.id == store.preferredModel }) {
-            selectedModel = store.preferredModel
+        if !currentModel.isEmpty && models(for: selectedProvider).contains(where: { $0.id == currentModel }) {
+            selectedModel = currentModel
         } else {
             selectCurrentModel(forProvider: selectedProvider, preferExistingSelection: true)
         }
@@ -830,19 +830,19 @@ struct SettingsView: View {
     private func selectCurrentModel(forProvider provider: String, preferExistingSelection: Bool) {
         let providerModels = models(for: provider)
 
-        // Always respect the store's saved preference first, even when
+        // Always respect the active session or gateway model first, even when
         // preferExistingSelection is false (e.g. provider changed but the
         // saved model is still valid for the new provider).
-        if !store.preferredModel.isEmpty,
-           providerModels.contains(where: { $0.id == store.preferredModel }) {
-            selectedModel = store.preferredModel
+        let activeModel = store.effectiveCurrentModel
+        if !activeModel.isEmpty,
+           providerModels.contains(where: { $0.id == activeModel }) {
+            selectedModel = activeModel
             return
         }
 
         if preferExistingSelection,
            !selectedModel.isEmpty,
            providerModels.contains(where: { $0.id == selectedModel }) {
-            store.preferredModel = selectedModel
             return
         }
 
@@ -856,10 +856,8 @@ struct SettingsView: View {
 
         if let first = providerModels.first {
             selectedModel = first.id
-            store.preferredModel = first.id
         } else {
             selectedModel = ""
-            store.preferredModel = ""
         }
     }
 
