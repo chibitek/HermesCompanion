@@ -183,21 +183,24 @@ struct HermesSession: Codable, Identifiable, Hashable {
     let title: String?
     let source: String?
     var model: String? = nil
+    var provider: String? = nil
     let startedAt: Double?
     let lastActive: Double?
     let messageCount: Int?
     let cwd: String?
     let gitRepoRoot: String?
+    var billingProvider: String? = nil
     var isPinned: Bool?
     var isArchived: Bool?
     var isHidden: Bool?
 
     enum CodingKeys: String, CodingKey {
-    case id, title, source, model
+    case id, title, source, model, provider
         case startedAt = "started_at"
         case lastActive = "last_active"
         case messageCount = "message_count"
         case cwd, gitRepoRoot = "git_repo_root"
+        case billingProvider = "billing_provider"
         case isPinned = "pinned"
         case isArchived = "archived"
         case isHidden = "hidden"
@@ -360,7 +363,7 @@ struct SessionRuntime: Codable, Hashable, Sendable {
 
 struct SessionModelLockRequest: Codable {
     let model: String
-    let provider: String?
+    var provider: String? = nil
     let requireModelLock: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -631,6 +634,7 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     let id: String
     let source: String?
     let model: String?
+    let provider: String?
     let title: String?
     let startedAt: Double?
     let messageCount: Int?
@@ -643,14 +647,16 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     let hasModelConfig: Bool?
     let cwd: String?
     let gitRepoRoot: String?
+    var billingProvider: String? = nil
     let isPinned: Bool?
     let isArchived: Bool?
     let isHidden: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, source, model, title, preview
+        case id, source, model, provider, title, preview
         case hasModelConfig = "has_model_config"
         case cwd, gitRepoRoot = "git_repo_root"
+        case billingProvider = "billing_provider"
         case isPinned = "pinned"
         case isArchived = "archived"
         case isHidden = "hidden"
