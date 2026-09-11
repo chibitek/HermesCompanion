@@ -14,6 +14,11 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.56":
+            return [
+                "Project folders now prefer Hermes-managed workspaces.",
+                "Session grouping stays stable while chats are added or archived."
+            ]
         case "1.8.55":
             return [
                 "Projects now show Hermes-managed workspaces and their live chat counts.",
