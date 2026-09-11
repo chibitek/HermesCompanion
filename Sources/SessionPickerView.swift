@@ -712,6 +712,9 @@ struct SessionDetailView: View {
                             if let source = detail.source { row("Source", source) }
                             if let model = detail.model { row("Model", model) }
                             if let provider = detail.provider { row("Provider", provider) }
+                            if let workspace = detail.cwd ?? detail.gitRepoRoot {
+                                row("Workspace", workspace)
+                            }
                         }
                         Section("State") {
                             row("Pinned", detail.isPinned == true ? "Yes" : "No")
