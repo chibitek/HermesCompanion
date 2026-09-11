@@ -267,7 +267,7 @@ struct PlatformHubView: View {
             )
             platformRow(
                 "Transport",
-                store.capabilities?.features.artifactTransport == true ? "Gateway Managed" : "Unavailable",
+                store.capabilities?.features.browserExtensionControl == true ? "Gateway Managed" : "Disabled",
                 icon: "externaldrive"
             )
         }
