@@ -63,6 +63,7 @@ struct PlatformHubView: View {
                     }
 
                     overviewSection
+                    capabilitiesSection
                     messagingSection
                     projectsSection
                     sessionsSection
@@ -135,6 +136,77 @@ struct PlatformHubView: View {
                     systemImage: "antenna.radiowaves.left.and.right.slash",
                     description: Text(store.platformError ?? "Connect to a Hermes gateway to sync platform state.")
                 )
+            }
+        }
+    }
+
+    private var capabilitiesSection: some View {
+        Section("Capabilities") {
+            if let features = store.capabilities?.features {
+                platformRow("Session Chat", features.sessionChat ? "Yes" : "No", icon: "bubble.left.and.bubble.right")
+                platformRow("Streaming Chat", features.sessionChatStreaming ? "Yes" : "No", icon: "waveform")
+                platformRow("Session Fork", features.sessionFork ? "Yes" : "No", icon: "arrow.triangle.branch")
+                platformRow("Model Lock", features.sessionModelLock == true ? "Yes" : "No", icon: "lock")
+                platformRow("Artifacts", features.artifactTransport == true ? "Yes" : "No", icon: "externaldrive")
+                platformRow("Skills API", features.skillsAPI ? "Yes" : "No", icon: "books.vertical")
+                platformRow(
+                    "Browser Control",
+                    features.browserExtensionControl == true ? "Enabled" : "Disabled",
+                    icon: "externaldrive.badge.icloud"
+                )
+                platformRow(
+                    "Tool Approvals",
+                    features.runApprovalResponse ? "Yes" : "No",
+                    icon: "checkmark.shield"
+                )
+                platformRow(
+                    "Tool Progress",
+                    features.toolProgressEvents ? "Yes" : "No",
+                    icon: "wrench.and.screwdriver"
+                )
+                platformRow(
+                    "Session Resources",
+                    features.sessionResources ? "Yes" : "No",
+                    icon: "folder"
+                )
+                platformRow(
+                    "Runs",
+                    features.runSubmission ? "Yes" : "No",
+                    icon: "arrow.right.circle"
+                )
+                platformRow(
+                    "Run Events",
+                    features.runEventsSSE ? "Yes" : "No",
+                    icon: "dot.radiowaves.left.and.right"
+                )
+                platformRow(
+                    "Run Stop",
+                    features.runStop ? "Yes" : "No",
+                    icon: "stop.circle"
+                )
+                platformRow(
+                    "Approval Events",
+                    features.approvalEvents ? "Yes" : "No",
+                    icon: "checkmark.circle"
+                )
+                platformRow(
+                    "Model Options",
+                    features.modelOptions == true ? "Yes" : "No",
+                    icon: "cpu"
+                )
+                platformRow(
+                    "Chat Completions",
+                    features.chatCompletions ? "Yes" : "No",
+                    icon: "bubble.left.and.bubble.right"
+                )
+                platformRow(
+                    "Chat Completions Streaming",
+                    features.chatCompletionsStreaming ? "Yes" : "No",
+                    icon: "waveform"
+                )
+            } else {
+                Text("Capabilities are not exposed by this gateway yet.")
+                    .foregroundStyle(theme.textSecondary)
             }
         }
     }
