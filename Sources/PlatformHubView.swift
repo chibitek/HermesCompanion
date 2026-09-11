@@ -46,10 +46,7 @@ struct PlatformHubView: View {
     }
 
     private var workspaceProjects: [String] {
-        let paths = store.sessions.compactMap { session in
-            session.cwd ?? session.gitRepoRoot
-        }
-        return Array(Set(paths)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        ProjectStore.workspacePaths(from: store.sessions)
     }
 
     var body: some View {

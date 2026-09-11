@@ -94,6 +94,23 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(store.project(for: "current")?.id, project.id)
     }
 
+    func testWorkspaceProjectsGroupSessionsByHermesFolder() {
+        let store = ProjectStore(defaults: isolatedDefaults())
+        let repo = "/Users/erick/repos/HermesCompanion"
+        let cwd = "/Users/erick/repos/Other"
+        let sessions = [
+            HermesSession(id: "repo-1", title: "Repo", source: "api", startedAt: 1, lastActive: 3, messageCount: 1, cwd: repo, gitRepoRoot: repo),
+            HermesSession(id: "repo-2", title: "Repo Two", source: "api", startedAt: 2, lastActive: 5, messageCount: 1, cwd: repo, gitRepoRoot: repo),
+            HermesSession(id: "cwd-1", title: "CWD", source: "api", startedAt: 3, lastActive: 4, messageCount: 1, cwd: cwd, gitRepoRoot: nil)
+        ]
+
+        let projects = store.workspaceProjects(from: sessions)
+
+        XCTAssertEqual(Set(projects.map(\.id)), Set([repo, cwd]))
+        XCTAssertEqual(projects.count, 2)
+        XCTAssertEqual(projects.first?.sessions.map(\.id), ["repo-2", "repo-1"])
+    }
+
     private func isolatedDefaults() -> UserDefaults {
         let suite = "ProjectStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -12,6 +12,37 @@ struct ChatProject: Codable, Identifiable, Hashable {
     }
 }
 
+struct WorkspaceProject: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let path: String
+    let sessions: [HermesSession]
+}
+
+@MainActor
+extension ProjectStore {
+    func workspaceProjects(from sessions: [HermesSession]) -> [WorkspaceProject] {
+        Dictionary(grouping: sessions) { session -> String in
+            session.gitRepoRoot ?? session.cwd ?? ""
+        }
+            .filter { !$0.key.isEmpty }
+            .map { path, sessions in
+                WorkspaceProject(
+                    id: path,
+                    name: URL(fileURLWithPath: path).lastPathComponent,
+                    path: path,
+                    sessions: sessions.sorted {
+                        ($0.lastActive ?? 0) > ($1.lastActive ?? 0)
+                    }
+                )
+            }
+            .sorted { lhs, rhs in
+                (lhs.sessions.map { $0.lastActive ?? 0 }.max() ?? 0) >
+                    (rhs.sessions.map { $0.lastActive ?? 0 }.max() ?? 0)
+            }
+    }
+}
+
 @MainActor
 final class ProjectStore: ObservableObject {
     @Published private(set) var projects: [ChatProject] = []
@@ -92,6 +123,12 @@ final class ProjectStore: ObservableObject {
 
     func sessionCount(in projectID: UUID) -> Int {
         sessionAssignments.values.filter { $0 == projectID }.count
+    }
+
+    static func workspacePaths(from sessions: [HermesSession]) -> [String] {
+        sessions
+            .compactMap { $0.gitRepoRoot ?? $0.cwd }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     private struct PersistedState: Codable {
