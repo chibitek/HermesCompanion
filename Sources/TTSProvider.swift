@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-/// TTS provider for voice replies. All providers are listed in Settings
-/// regardless of key availability; ones with a stored key show a green dot.
+/// TTS provider for voice replies. Remote providers are still supported by the
+/// internal API, but the UI is intentionally local-only for now.
 enum TTSProvider: String, CaseIterable, Identifiable {
     case apple
     case elevenlabs
@@ -38,6 +38,7 @@ enum TTSProvider: String, CaseIterable, Identifiable {
     var isLive: Bool { hasKey && isImplemented }
 
     static let selectedKey = "tts_provider"
+    static var visibleCases: [TTSProvider] { [.apple] }
     static var selected: TTSProvider {
         get {
             TTSProvider(rawValue: UserDefaults.standard.string(forKey: selectedKey) ?? "") ?? .apple

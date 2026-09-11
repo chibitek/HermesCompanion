@@ -15,12 +15,15 @@ struct GlassInputBar: View {
     let attachments: [AttachmentData]
     let onRemoveAttachment: (Int) -> Void
     var currentModel: String = ""
+    var currentProvider: String = ""
     var availableModels: [String] = []
     var modelInfos: [String: ModelInfo] = [:]
     var onRefreshModels: (() -> Void)? = nil
     var favoriteModels: [String] = []
     var onSelectModel: ((String, String?) -> Void)? = nil
     var onToggleFavorite: ((String) -> Void)? = nil
+    var gatewayDefaultModel: String = ""
+    var onUseGatewayDefault: (() -> Void)? = nil
     var availableSkills: [Skill] = []
     var onRefreshSkills: (() async -> Void)? = nil
 
@@ -238,9 +241,9 @@ struct GlassInputBar: View {
                         showAttachmentMenu = true
                     } label: {
                         Image(systemName: "paperclip")
-                            .font(.system(size: 21, weight: .regular))
+                            .font(.system(size: 19, weight: .regular))
                             .foregroundStyle(theme.textPrimary)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(controlBackground)
                             .clipShape(Circle())
                     }
@@ -273,9 +276,9 @@ struct GlassInputBar: View {
                         onNewSession?()
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 21, weight: .regular))
+                            .font(.system(size: 19, weight: .regular))
                             .foregroundStyle(theme.textPrimary)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(controlBackground)
                             .clipShape(Circle())
                     }
@@ -284,10 +287,13 @@ struct GlassInputBar: View {
 
                     Button {
                         showModelPicker = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            if let prov = ProviderUtils.providerOf(currentModel), !prov.isEmpty {
-                                Text(prov.capitalized)
+                        } label: {
+                            HStack(spacing: 4) {
+                            let provider = currentProvider.isEmpty
+                                ? modelInfos[currentModel]?.provider ?? ProviderUtils.providerOf(currentModel)
+                                : currentProvider
+                            if let provider, !provider.isEmpty {
+                                Text(provider.capitalized)
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(theme.accent)
                             }
@@ -318,6 +324,11 @@ struct GlassInputBar: View {
                                 onToggleFavorite: { model in
                                     onToggleFavorite?(model)
                                 },
+                                gatewayDefaultModel: gatewayDefaultModel,
+                                onUseGatewayDefault: {
+                                    onUseGatewayDefault?()
+                                    showModelPicker = false
+                                },
                                 onRefresh: onRefreshModels
                             )
                             .environmentObject(appearance)
@@ -330,9 +341,9 @@ struct GlassInputBar: View {
                             voiceTranscriber.startTranscription()
                         } label: {
                             Image(systemName: "mic.fill")
-                                .font(.system(size: 21, weight: .regular))
+                            .font(.system(size: 19, weight: .regular))
                                 .foregroundStyle(theme.textPrimary)
-                                .frame(width: 44, height: 44)
+                                .frame(width: 40, height: 40)
                                 .background(controlBackground)
                                 .clipShape(Circle())
                         }
@@ -353,9 +364,9 @@ struct GlassInputBar: View {
                         }
                     } label: {
                         Image(systemName: trailingActionIcon)
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(trailingActionForeground)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .background(trailingActionBackground)
                             .clipShape(Circle())
                     }
@@ -365,8 +376,8 @@ struct GlassInputBar: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 22)
-            .padding(.bottom, 14)
+            .padding(.top, 18)
+            .padding(.bottom, 12)
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
                     suppressNextSubmit = true

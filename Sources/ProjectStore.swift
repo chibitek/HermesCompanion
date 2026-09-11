@@ -12,17 +12,68 @@ struct ChatProject: Codable, Identifiable, Hashable {
     }
 }
 
+struct WorkspaceProject: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let path: String
+    let sessions: [HermesSession]
+}
+
+@MainActor
+extension ProjectStore {
+    func workspaceProjects(from sessions: [HermesSession]) -> [WorkspaceProject] {
+        Dictionary(grouping: sessions) { session -> String in
+            session.gitRepoRoot ?? session.cwd ?? ""
+        }
+            .filter { !$0.key.isEmpty }
+            .map { path, sessions in
+                WorkspaceProject(
+                    id: path,
+                    name: URL(fileURLWithPath: path).lastPathComponent,
+                    path: path,
+                    sessions: sessions.sorted {
+                        ($0.lastActive ?? 0) > ($1.lastActive ?? 0)
+                    }
+                )
+            }
+            .sorted { lhs, rhs in
+                (lhs.sessions.map { $0.lastActive ?? 0 }.max() ?? 0) >
+                    (rhs.sessions.map { $0.lastActive ?? 0 }.max() ?? 0)
+            }
+    }
+}
+
 @MainActor
 final class ProjectStore: ObservableObject {
     @Published private(set) var projects: [ChatProject] = []
     @Published private(set) var sessionAssignments: [String: UUID] = [:]
 
     private let defaults: UserDefaults
-    private let storageKey = "hermes_chat_projects_v1"
+    private let legacyStorageKey = "hermes_chat_projects_v1"
+    private var storageKey: String { "hermes_chat_projects_v2.\(activeServerKey)" }
+    private var activeServerKey = ""
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         load()
+    }
+
+    func configure(for baseURL: String) {
+        let serverKey = baseURL
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "?", with: "-")
+            .replacingOccurrences(of: "=", with: "-")
+        guard serverKey != activeServerKey else { return }
+        activeServerKey = serverKey
+        load()
+    }
+
+    func pruneSessions(_ currentSessionIDs: Set<String>) {
+        let removed = sessionAssignments.filter { !currentSessionIDs.contains($0.key) }
+        guard !removed.isEmpty else { return }
+        for key in removed.keys { sessionAssignments.removeValue(forKey: key) }
+        save()
     }
 
     @discardableResult
@@ -74,14 +125,26 @@ final class ProjectStore: ObservableObject {
         sessionAssignments.values.filter { $0 == projectID }.count
     }
 
+    static func workspacePaths(from sessions: [HermesSession]) -> [String] {
+        sessions
+            .compactMap { $0.gitRepoRoot ?? $0.cwd }
+            .reduce(into: Set<String>()) { $0.insert($1) }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     private struct PersistedState: Codable {
         var projects: [ChatProject]
         var assignments: [String: UUID]
     }
 
     private func load() {
-        guard let data = defaults.data(forKey: storageKey),
+        let serverData = defaults.data(forKey: storageKey)
+        let legacyData = activeServerKey.isEmpty ? nil : defaults.data(forKey: legacyStorageKey)
+        guard let data = serverData ?? legacyData,
               let state = try? JSONDecoder().decode(PersistedState.self, from: data) else { return }
+
+        // Legacy projects were global. Preserve them on the first server that
+        // loads after the update, then keep all later projects server-scoped.
         projects = state.projects
         sessionAssignments = state.assignments
         sortProjects()

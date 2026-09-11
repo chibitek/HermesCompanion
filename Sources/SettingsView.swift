@@ -45,6 +45,7 @@ struct SettingsView: View {
                         reasoningCard
                         capabilitiesCard
                         toolsCard
+                        platformCard
                         appearanceCard
                         voiceCard
                         disconnectCard
@@ -68,7 +69,7 @@ struct SettingsView: View {
                     await store.refreshSkills()
                     await store.refreshToolsets()
                     primePickers()
-                    await loadModels(forProvider: selectedProvider)
+                    await loadModels(forProvider: selectedProvider, preferExistingSelection: true, forceRefresh: true)
                     // Re-prime only if the model list didn't contain the saved
                     // preference (loadModels may have selected a fallback).
                     if !store.preferredModel.isEmpty,
@@ -353,7 +354,11 @@ struct SettingsView: View {
                             // AUTHOR (e.g. "anthropic") — sending it as provider
                             // broke switching for every OpenRouter model picked
                             // here. The bucket the user drilled into is the source.
-                            store.selectPreferredModel(model.id, provider: model.provider ?? selectedProvider)
+                            Task {
+                                await store.selectPreferredModel(
+                                    model.id, provider: model.provider ?? selectedProvider
+                                )
+                            }
                         },
                         onToggleFavorite: { model in
                             _ = store.toggleFavorite(model.id)
@@ -556,6 +561,31 @@ struct SettingsView: View {
 
     // MARK: - Appearance card
 
+    private var platformCard: some View {
+        glassCard {
+            NavigationLink {
+                PlatformHubView(store: store)
+            } label: {
+                HStack {
+                    Image(systemName: "square.grid.2x2")
+                        .foregroundStyle(theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Platform Hub")
+                            .foregroundStyle(theme.textPrimary)
+                        Text("Capabilities, history, models, jobs, messaging, artifacts, Kanban, and bots.")
+                            .font(.caption)
+                            .foregroundStyle(theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+        }
+    }
+
     private var appearanceCard: some View {
         glassCard {
             NavigationLink {
@@ -703,9 +733,17 @@ struct SettingsView: View {
         defer { isLoadingModels = false }
 
         do {
-            let catalog = try await client.getModelCatalog(refresh: forceRefresh)
-            availableModels = catalog.data
-            configuredProviders = catalog.providers ?? []
+            let options = try await client.getModelOptions(refresh: forceRefresh)
+            var infos: [ModelInfo] = []
+            for provider in options.providers {
+                infos += provider.models.map {
+                    ModelInfo(id: $0, object: "model", ownedBy: provider.name, provider: provider.slug)
+                }
+            }
+            configuredProviders = options.providers.map {
+                ProviderInfo(id: $0.slug, name: $0.name, modelCount: $0.models.count)
+            }
+            availableModels = infos
             // Only update the store's availableModels if we got a non-empty
             // list. Transient failures shouldn't replace the store's list
             // (which the compact picker reads) with an empty one.
@@ -723,14 +761,15 @@ struct SettingsView: View {
             selectCurrentModel(forProvider: resolvedProvider, preferExistingSelection: preferExistingSelection)
             modelRefreshFailed = false
         } catch {
+            do {
+                let catalog = try await client.getModelCatalog(refresh: forceRefresh)
+                availableModels = catalog.data
+                configuredProviders = catalog.providers ?? []
+            } catch {
             if forceRefresh {
                 modelRefreshFailed = true
                 modelRefreshMessage = "Refresh failed: \(error.localizedDescription)"
-            } else {
-                if availableModels.isEmpty {
-                    addCurrentModelIfNeeded()
-                    selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
-                }
+            }
             }
         }
     }
@@ -739,13 +778,13 @@ struct SettingsView: View {
     /// or fall back to the gateway's defaults if no preference is saved.
     private func primePickers() {
         selectedServerURL = store.connectionConfig?.baseURL ?? ""
+        let currentModel = store.effectiveCurrentModel
+        let currentProvider = store.effectiveCurrentProvider
 
-        if !store.preferredProvider.isEmpty {
-            selectedProvider = store.preferredProvider
+        if !currentProvider.isEmpty {
+            selectedProvider = currentProvider
         } else if let provider = store.capabilities?.currentProvider, !provider.isEmpty {
             selectedProvider = provider
-        } else if let owner = modelForSelection(store.preferredModel)?.ownedBy {
-            selectedProvider = owner
         } else if let owner = modelForSelection(store.effectiveCurrentModel)?.ownedBy {
             selectedProvider = owner
         }
@@ -755,8 +794,8 @@ struct SettingsView: View {
             selectedProvider = availableProviders.first ?? ""
         }
 
-        if !store.preferredModel.isEmpty && models(for: selectedProvider).contains(where: { $0.id == store.preferredModel }) {
-            selectedModel = store.preferredModel
+        if !currentModel.isEmpty && models(for: selectedProvider).contains(where: { $0.id == currentModel }) {
+            selectedModel = currentModel
         } else {
             selectCurrentModel(forProvider: selectedProvider, preferExistingSelection: true)
         }
@@ -817,19 +856,19 @@ struct SettingsView: View {
     private func selectCurrentModel(forProvider provider: String, preferExistingSelection: Bool) {
         let providerModels = models(for: provider)
 
-        // Always respect the store's saved preference first, even when
+        // Always respect the active session or gateway model first, even when
         // preferExistingSelection is false (e.g. provider changed but the
         // saved model is still valid for the new provider).
-        if !store.preferredModel.isEmpty,
-           providerModels.contains(where: { $0.id == store.preferredModel }) {
-            selectedModel = store.preferredModel
+        let activeModel = store.effectiveCurrentModel
+        if !activeModel.isEmpty,
+           providerModels.contains(where: { $0.id == activeModel }) {
+            selectedModel = activeModel
             return
         }
 
         if preferExistingSelection,
            !selectedModel.isEmpty,
            providerModels.contains(where: { $0.id == selectedModel }) {
-            store.preferredModel = selectedModel
             return
         }
 
@@ -843,10 +882,8 @@ struct SettingsView: View {
 
         if let first = providerModels.first {
             selectedModel = first.id
-            store.preferredModel = first.id
         } else {
             selectedModel = ""
-            store.preferredModel = ""
         }
     }
 

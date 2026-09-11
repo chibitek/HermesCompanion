@@ -9,6 +9,8 @@ struct InputModelPicker: View {
     let modelInfos: [String: ModelInfo]
     let onSelect: (String, String?) -> Void
     var onToggleFavorite: ((String) -> Void)? = nil
+    var gatewayDefaultModel: String = ""
+    var onUseGatewayDefault: (() -> Void)? = nil
     var onRefresh: (() -> Void)? = nil
 
     @EnvironmentObject private var appearance: AppearanceSettings
@@ -89,6 +91,46 @@ struct InputModelPicker: View {
 
     private var modelList: some View {
         List {
+            if !gatewayDefaultModel.isEmpty, let onUseGatewayDefault {
+                Section {
+                    Button {
+                        onUseGatewayDefault()
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "server.rack")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                                .frame(width: 34, height: 34)
+                                .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Use Gateway Default")
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(theme.textPrimary)
+                                Text(gatewayDefaultModel)
+                                    .font(.caption)
+                                    .foregroundStyle(theme.textMuted)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            if currentModel == gatewayDefaultModel {
+                                Image(systemName: "checkmark")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(theme.accent)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } header: {
+                    Text("Gateway")
+                        .foregroundStyle(theme.textSecondary)
+                }
+            }
+
             // Favorites — deduplicated by name, show first
             let favNames = filteredUnique.filter { name, ids in
                 ids.contains { favoriteSet.contains($0) }

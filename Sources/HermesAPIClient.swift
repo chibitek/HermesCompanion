@@ -10,34 +10,6 @@ final class HermesAPIClient: Sendable {
     private let session: URLSession
     private let config: ConnectionConfig
 
-    /// PUT /model on the model-switch helper (port 8643 on same host).
-    /// The explicit provider keeps aggregator model IDs from being misclassified by their author prefix.
-    func switchGatewayModel(_ modelId: String, provider: String? = nil) async {
-        var host = config.normalizedBaseURL
-        let usesHTTPS = host.hasPrefix("https://")
-        if host.hasPrefix("http://") { host = String(host.dropFirst(7)) }
-        if host.hasPrefix("https://") { host = String(host.dropFirst(8)) }
-        if let colon = host.firstIndex(of: ":") { host = String(host[..<colon]) }
-        let scheme = usesHTTPS ? "https" : "http"
-        guard let url = URL(string: "\(scheme)://\(host):8643/model") else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
-        var payload = ["model": modelId]
-        if let provider, !provider.isEmpty { payload["provider"] = provider }
-        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        req.timeoutInterval = 5
-        do {
-            let (resp, _) = try await session.data(for: req)
-            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                FileLogger.shared.log("switchGatewayModel HTTP \(http.statusCode) for model=\(modelId) provider=\(provider ?? "nil")")
-            }
-        } catch {
-            FileLogger.shared.log("switchGatewayModel failed: \(error.localizedDescription) for model=\(modelId)")
-        }
-    }
-
     init(config: ConnectionConfig) {
         self.config = config
         let cfg = URLSessionConfiguration.default
@@ -58,7 +30,7 @@ final class HermesAPIClient: Sendable {
          "Content-Type": "application/json"]
     }
 
-    private func makeURL(path: String) throws -> URL {
+    private func makeURL(path: String, queryItems: [URLQueryItem]? = nil) throws -> URL {
         let cleanPath = path.hasPrefix("/") ? path : "/\(path)"
         // URL-encode each path segment to handle special characters in IDs
         let encodedPath = cleanPath.split(separator: "/", omittingEmptySubsequences: false)
@@ -67,21 +39,35 @@ final class HermesAPIClient: Sendable {
         guard let url = URL(string: baseURL + encodedPath) else {
             throw APIError.invalidURL(baseURL + encodedPath)
         }
-        return url
+
+        guard let queryItems, !queryItems.isEmpty else { return url }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw APIError.invalidURL(url.absoluteString)
+        }
+        components.queryItems = queryItems
+        guard let urlWithQuery = components.url else {
+            throw APIError.invalidURL(url.absoluteString)
+        }
+        return urlWithQuery
     }
 
     // ponytail: collapsed 6-line makeRequest+forEach pattern into one helper; every GET endpoint below is now 2 lines.
-    private func request(method: String, path: String) throws -> URLRequest {
-        var req = URLRequest(url: try makeURL(path: path))
+    private func request(method: String, path: String, queryItems: [URLQueryItem]? = nil) throws -> URLRequest {
+        var req = URLRequest(url: try makeURL(path: path, queryItems: queryItems))
         req.httpMethod = method
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         return req
     }
 
-    private func get<T: Decodable>(path: String, type: T.Type) async throws -> T {
-        let (data, response) = try await session.data(for: try request(method: "GET", path: path))
+    private func get<T: Decodable>(path: String, queryItems: [URLQueryItem]? = nil, type: T.Type) async throws -> T {
+        let (data, response) = try await session.data(for: try request(method: "GET", path: path, queryItems: queryItems))
         try checkHTTPStatus(response)
         return try JSONDecoder().decode(type, from: data)
+    }
+
+    private func sendEmpty(method: String, path: String) async throws {
+        let (_, response) = try await session.data(for: try request(method: method, path: path))
+        try checkHTTPStatus(response)
     }
 
     // MARK: - Health
@@ -99,12 +85,100 @@ final class HermesAPIClient: Sendable {
         try await get(path: "/v1/capabilities", type: CapabilitiesResponse.self)
     }
 
+    func getDetailedHealth() async throws -> PlatformHealthResponse {
+        try await get(path: "/health/detailed", type: PlatformHealthResponse.self)
+    }
+
+    // MARK: - Scheduled Jobs
+
+    func listJobs(includeDisabled: Bool = true) async throws -> [HermesJob] {
+        let res = try await get(
+            path: "/api/jobs",
+            queryItems: [URLQueryItem(name: "include_disabled", value: includeDisabled ? "true" : "false")],
+            type: HermesJobsResponse.self
+        )
+        return res.jobs
+    }
+
+    func createJob(_ payload: HermesJobWrite) async throws -> HermesJob {
+        var req = try request(method: "POST", path: "/api/jobs")
+        req.httpBody = try JSONEncoder().encode(payload)
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(HermesJobResponse.self, from: data).job
+    }
+
+    func updateJob(jobId: String, updates: HermesJobWrite) async throws -> HermesJob {
+        var req = try request(method: "PATCH", path: "/api/jobs/\(jobId)")
+        req.httpBody = try JSONEncoder().encode(updates)
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(HermesJobResponse.self, from: data).job
+    }
+
+    func pauseJob(jobId: String) async throws {
+        try await sendEmpty(method: "POST", path: "/api/jobs/\(jobId)/pause")
+    }
+
+    func resumeJob(jobId: String) async throws {
+        try await sendEmpty(method: "POST", path: "/api/jobs/\(jobId)/resume")
+    }
+
+    func runJob(jobId: String) async throws {
+        try await sendEmpty(method: "POST", path: "/api/jobs/\(jobId)/run")
+    }
+
+    func deleteJob(jobId: String) async throws {
+        try await sendEmpty(method: "DELETE", path: "/api/jobs/\(jobId)")
+    }
+
+    func uploadArtifact(
+        data: Data,
+        fileName: String,
+        mimeType: String
+    ) async throws -> HermesArtifactReceipt {
+        var req = try request(method: "POST", path: "/v1/artifacts/upload")
+        req.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+        req.setValue(fileName, forHTTPHeaderField: "X-Artifact-Filename")
+        req.httpBody = data
+
+        let (resp, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(HermesArtifactReceipt.self, from: resp)
+    }
+
     // MARK: - Sessions
 
     /// GET /api/sessions
-    func listSessions() async throws -> [HermesSession] {
-        let res = try await get(path: "/api/sessions", type: SessionListResponse.self)
-        return res.data
+    func listSessions(limit: Int = 200) async throws -> [HermesSession] {
+        var allSessions: [HermesSession] = []
+        var seenIDs = Set<String>()
+        let pageSize = 100
+        var offset = 0
+
+        while true {
+            let res = try await get(
+                path: "/api/sessions",
+                queryItems: [
+                    URLQueryItem(name: "limit", value: String(pageSize)),
+                    URLQueryItem(name: "offset", value: String(offset)),
+                    URLQueryItem(name: "archived", value: "include"),
+                    URLQueryItem(name: "order", value: "recent"),
+                    URLQueryItem(name: "include_hidden", value: "true")
+                ],
+                type: SessionListResponse.self
+            )
+            let fresh = res.data.filter { seenIDs.insert($0.id).inserted }
+            allSessions.append(contentsOf: fresh)
+
+            let knownTotal = res.total ?? allSessions.count
+            offset += res.data.count
+            if res.data.isEmpty || allSessions.count >= knownTotal || fresh.isEmpty {
+                break
+            }
+        }
+
+        return Array(allSessions.prefix(max(1, limit)))
     }
 
     /// POST /api/sessions
@@ -154,6 +228,29 @@ final class HermesAPIClient: Sendable {
 
     func getModels(refresh: Bool = false) async throws -> [ModelInfo] {
         try await getModelCatalog(refresh: refresh).data
+    }
+
+    // MARK: - Full Provider Model Catalog (/api/model/options)
+
+    /// The gateway's full configured-provider catalog. This is the authoritative
+    /// picker inventory; /v1/models only exposes the virtual agent and aliases.
+    func getModelOptions(refresh: Bool = false) async throws -> ModelOptionsResponse {
+        let queryItems = refresh ? [URLQueryItem(name: "refresh", value: "1")] : nil
+        return try await get(path: "/api/model/options", queryItems: queryItems, type: ModelOptionsResponse.self)
+    }
+
+    // MARK: - Per-Session Model Lock
+
+    /// Persist a confirmed model lock on the session itself. Future turns use
+    /// this server-side lock rather than a client-global model preference.
+    func lockSessionModel(sessionId: String, model: String, provider: String?) async throws -> SessionRuntime {
+        var req = try request(method: "POST", path: "/api/sessions/\(sessionId)/model")
+        req.httpBody = try JSONEncoder().encode(
+            SessionModelLockRequest(model: model, provider: provider, requireModelLock: true)
+        )
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(SessionModelLockResponse.self, from: data).runtime
     }
 
     // MARK: - Toolsets (/v1/toolsets)
@@ -310,9 +407,19 @@ final class HermesAPIClient: Sendable {
 
     // MARK: - Session Rename (PATCH /api/sessions/{id})
 
-    func patchSession(sessionId: String, title: String?) async throws -> HermesSession {
+    func patchSession(
+        sessionId: String,
+        title: String? = nil,
+        isPinned: Bool? = nil,
+        isArchived: Bool? = nil,
+        isHidden: Bool? = nil
+    ) async throws -> HermesSession {
         var req = try request(method: "PATCH", path: "/api/sessions/\(sessionId)")
-        req.httpBody = try JSONEncoder().encode(PatchSessionRequest(title: title))
+        req.httpBody = try JSONEncoder().encode(
+            PatchSessionRequest(
+                title: title, isPinned: isPinned, isArchived: isArchived, isHidden: isHidden
+            )
+        )
         let (data, response) = try await session.data(for: req)
         try checkHTTPStatus(response)
         let result = try JSONDecoder().decode(CreateSessionResponse.self, from: data)
@@ -371,6 +478,7 @@ enum APIError: LocalizedError {
     case rateLimited
     case serverError(status: Int)
     case unknown(status: Int)
+    case invalidEndpoint(String)
     case sseParseError(String)
     case connectionRefused
 
@@ -383,6 +491,7 @@ enum APIError: LocalizedError {
         case .rateLimited: return "Rate limited — too many requests"
         case .serverError(let s): return "Server error (HTTP \(s))"
         case .unknown(let s): return "Unknown error (HTTP \(s))"
+        case .invalidEndpoint(let message): return message
         case .sseParseError(let d): return "Failed to parse SSE event: \(d)"
         case .connectionRefused: return "Cannot connect to Hermes. Check your URL and network (Tailscale connected?)"
         }

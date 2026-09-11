@@ -63,6 +63,54 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.project(for: "session-42")?.id, project.id)
     }
 
+    func testProjectsAreScopedPerServer() {
+        let defaults = isolatedDefaults()
+        let store = ProjectStore(defaults: defaults)
+        store.configure(for: "http://server-a:8642")
+        let project = store.createProject(name: "Server A")
+        store.assign(sessionID: "session-a", to: project.id)
+
+        let remote = ProjectStore(defaults: defaults)
+        remote.configure(for: "http://server-b:8642")
+        XCTAssertTrue(remote.projects.isEmpty)
+
+        let sameServer = ProjectStore(defaults: defaults)
+        sameServer.configure(for: "http://server-a:8642")
+        XCTAssertEqual(sameServer.projects.first?.id, project.id)
+        XCTAssertEqual(sameServer.project(for: "session-a")?.id, project.id)
+    }
+
+    func testPrunesAssignmentsForDeletedSessions() {
+        let defaults = isolatedDefaults()
+        let store = ProjectStore(defaults: defaults)
+        store.configure(for: "http://server-a:8642")
+        let project = store.createProject(name: "Archive")
+        store.assign(sessionID: "deleted", to: project.id)
+        store.assign(sessionID: "current", to: project.id)
+
+        store.pruneSessions(Set(["current"]))
+
+        XCTAssertNil(store.project(for: "deleted"))
+        XCTAssertEqual(store.project(for: "current")?.id, project.id)
+    }
+
+    func testWorkspaceProjectsGroupSessionsByHermesFolder() {
+        let store = ProjectStore(defaults: isolatedDefaults())
+        let repo = "/Users/erick/repos/HermesCompanion"
+        let cwd = "/Users/erick/repos/Other"
+        let sessions = [
+            HermesSession(id: "repo-1", title: "Repo", source: "api", startedAt: 1, lastActive: 3, messageCount: 1, cwd: repo, gitRepoRoot: repo),
+            HermesSession(id: "repo-2", title: "Repo Two", source: "api", startedAt: 2, lastActive: 5, messageCount: 1, cwd: repo, gitRepoRoot: repo),
+            HermesSession(id: "cwd-1", title: "CWD", source: "api", startedAt: 3, lastActive: 4, messageCount: 1, cwd: cwd, gitRepoRoot: nil)
+        ]
+
+        let projects = store.workspaceProjects(from: sessions)
+
+        XCTAssertEqual(Set(projects.map(\.id)), Set([repo, cwd]))
+        XCTAssertEqual(projects.count, 2)
+        XCTAssertEqual(projects.first?.sessions.map(\.id), ["repo-2", "repo-1"])
+    }
+
     private func isolatedDefaults() -> UserDefaults {
         let suite = "ProjectStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

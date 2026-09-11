@@ -108,16 +108,17 @@ struct AppearanceSettingsView: View {
                             .font(.headline)
 
                         Picker("Size", selection: $appearance.fontScale) {
-                            Text("XS").tag(0.7)
-                            Text("S").tag(0.85)
-                            Text("M").tag(1.0)
+                            Text("XS").tag(0.45)
+                            Text("S").tag(0.65)
+                            Text("M").tag(0.85)
+                            Text("L").tag(1.0)
                         }
                         .pickerStyle(.segmented)
 
                         HStack {
                             Text("A")
                                 .font(.system(size: 11))
-                            Slider(value: $appearance.fontScale, in: 0.7...1.0, step: 0.05)
+                            Slider(value: $appearance.fontScale, in: 0.4...1.0, step: 0.05)
                             Text("A")
                                 .font(.system(size: 16))
                         }
@@ -161,7 +162,7 @@ struct AppearanceSettingsView: View {
                                 Text("\(Int(appearance.messageFontSize))pt")
                                     .font(.subheadline)
                                     .monospacedDigit()
-                                Slider(value: $appearance.messageFontSize, in: 10...18, step: 1)
+                                Slider(value: $appearance.messageFontSize, in: 4...18, step: 1)
                             }
 
                             Text("Overrides Dynamic Type with a fixed size for message bubbles only.")

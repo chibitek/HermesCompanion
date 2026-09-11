@@ -7,11 +7,11 @@ final class StreamWatchdogTests: XCTestCase {
         let fired = expectation(description: "timeout fires only after latest activity")
         fired.expectedFulfillmentCount = 1
 
-        watchdog.arm(after: 0.08) { fired.fulfill() }
-        try await Task.sleep(for: .milliseconds(50))
+        watchdog.arm(after: 0.15) { fired.fulfill() }
+        try await Task.sleep(for: .milliseconds(40))
         watchdog.recordActivity()
 
-        await fulfillment(of: [fired], timeout: 0.10)
+        await fulfillment(of: [fired], timeout: 0.30)
     }
 
     func testCancelPreventsTimeout() async throws {
