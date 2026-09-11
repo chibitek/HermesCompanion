@@ -575,12 +575,6 @@ struct SessionRow: View {
                             .foregroundStyle(theme.textMuted)
                             .lineLimit(1)
                     }
-                    if let provider = session.provider, !provider.isEmpty {
-                        Text(provider.capitalized)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(theme.textMuted)
-                            .lineLimit(1)
-                    }
                 }
 
                 Text(metadata)
