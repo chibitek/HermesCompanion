@@ -5,6 +5,7 @@ struct PlatformHubView: View {
     @EnvironmentObject private var appearance: AppearanceSettings
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
+    @State private var activeJobID: String?
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -197,6 +198,53 @@ struct PlatformHubView: View {
                                 .font(.caption)
                                 .foregroundStyle(theme.danger)
                                 .lineLimit(2)
+                        }
+
+                        Menu {
+                            if job.enabled == true {
+                                Button {
+                                    activeJobID = job.id
+                                    Task { await store.controlJob(job, action: .pause) }
+                                } label: {
+                                    Label("Pause", systemImage: "pause.circle")
+                                }
+                            } else {
+                                Button {
+                                    activeJobID = job.id
+                                    Task { await store.controlJob(job, action: .resume) }
+                                } label: {
+                                    Label("Resume", systemImage: "play.circle")
+                                }
+                            }
+
+                            Button {
+                                activeJobID = job.id
+                                Task { await store.controlJob(job, action: .run) }
+                            } label: {
+                                Label("Run Now", systemImage: "bolt.circle")
+                            }
+
+                            Button(role: .destructive) {
+                                activeJobID = job.id
+                                Task { await store.controlJob(job, action: .delete) }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                if activeJobID == job.id {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                } else {
+                                    Image(systemName: "ellipsis.circle")
+                                }
+                                Text("Control")
+                                    .font(.caption.weight(.medium))
+                            }
+                            .foregroundStyle(theme.accent)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 10)
+                            .background(Capsule().fill(theme.accent.opacity(0.12)))
                         }
                     }
                     .padding(.vertical, 2)

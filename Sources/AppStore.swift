@@ -914,6 +914,35 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func controlJob(_ job: HermesJob, action: HermesJobAction) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        do {
+            switch action {
+            case .pause: try await client.pauseJob(jobId: job.id)
+            case .resume: try await client.resumeJob(jobId: job.id)
+            case .run: try await client.runJob(jobId: job.id)
+            case .delete: try await client.deleteJob(jobId: job.id)
+            }
+            await refreshJobsOnly()
+        } catch {
+            platformError = "Job \(action.rawValue) failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshJobsOnly() async {
+        do {
+            platformJobs = try await apiClient?.listJobs() ?? platformJobs
+        } catch {
+            platformError = "Could not refresh jobs: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Chat (streaming)
 
     func queueMessage(_ text: String, displayText: String? = nil) {

@@ -825,3 +825,10 @@ struct HermesJob: Codable, Identifiable, Hashable {
 struct HermesJobsResponse: Codable {
     let jobs: [HermesJob]
 }
+
+enum HermesJobAction: String {
+    case pause
+    case resume
+    case run
+    case delete
+}

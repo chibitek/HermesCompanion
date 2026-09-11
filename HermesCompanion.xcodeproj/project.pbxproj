@@ -515,7 +515,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 137;
+				CURRENT_PROJECT_VERSION = 138;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -526,7 +526,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = YES;
-				MARKETING_VERSION = 1.8.51;
+				MARKETING_VERSION = 1.8.52;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -541,7 +541,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 137;
+				CURRENT_PROJECT_VERSION = 138;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -552,7 +552,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.8.51;
+				MARKETING_VERSION = 1.8.52;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -633,7 +633,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 137;
+				CURRENT_PROJECT_VERSION = 138;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -641,7 +641,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.51;
+				MARKETING_VERSION = 1.8.52;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -715,7 +715,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 137;
+				CURRENT_PROJECT_VERSION = 138;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -723,7 +723,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.51;
+				MARKETING_VERSION = 1.8.52;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
