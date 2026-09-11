@@ -828,6 +828,34 @@ struct HermesJobsResponse: Codable {
     let jobs: [HermesJob]
 }
 
+struct HermesArtifactReceipt: Codable, Identifiable, Hashable {
+    let artifactId: String
+    let sha256: String
+    let sizeBytes: Int
+    let contentType: String
+    let filename: String
+    let createdAt: Double
+    let expiresAt: Double
+    let ttlSeconds: Double
+    let oneShot: Bool?
+    let downloadPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case artifactId = "artifact_id"
+        case sha256
+        case sizeBytes = "size_bytes"
+        case contentType = "content_type"
+        case filename
+        case createdAt = "created_at"
+        case expiresAt = "expires_at"
+        case ttlSeconds = "ttl_seconds"
+        case oneShot = "one_shot"
+        case downloadPath = "download_path"
+    }
+
+    var id: String { artifactId }
+}
+
 enum HermesJobAction: String {
     case pause
     case resume

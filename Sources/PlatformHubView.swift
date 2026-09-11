@@ -6,6 +6,8 @@ struct PlatformHubView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var activeJobID: String?
+    @State private var isUploadingArtifact = false
+    @State private var showArtifactPicker = false
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -64,6 +66,18 @@ struct PlatformHubView: View {
                     artifactsSection
                     kanbanSection
                     botsSection
+                }
+                .sheet(isPresented: $showArtifactPicker) {
+                    FilePickerView { data, fileName, mimeType in
+                        isUploadingArtifact = true
+                        Task {
+                            await store.uploadArtifact(
+                                data: data, fileName: fileName, mimeType: mimeType
+                            )
+                            isUploadingArtifact = false
+                        }
+                    }
+                    .withActiveTheme(appearance)
                 }
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
@@ -255,6 +269,25 @@ struct PlatformHubView: View {
 
     private var artifactsSection: some View {
         Section("Artifacts") {
+            if let receipt = store.artifactReceipt {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Uploaded \(receipt.filename)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(theme.textPrimary)
+                    Text("ID: \(receipt.artifactId)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(theme.textSecondary)
+                        .lineLimit(1)
+                    Text("SHA-256: \(receipt.sha256)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(theme.textMuted)
+                        .lineLimit(1)
+                    Text("Expires: \(Date(timeIntervalSince1970: receipt.expiresAt).formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+
             platformRow(
                 "Upload Endpoint",
                 store.capabilities?.endpoints["artifact_upload"]?.path ?? "Unavailable",
@@ -270,6 +303,28 @@ struct PlatformHubView: View {
                 store.capabilities?.features.browserExtensionControl == true ? "Gateway Managed" : "Disabled",
                 icon: "externaldrive"
             )
+
+            if store.capabilities?.features.browserExtensionControl == true {
+                Button {
+                    showArtifactPicker = true
+                } label: {
+                    HStack {
+                        if isUploadingArtifact {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        Text("Upload Artifact")
+                    }
+                    .foregroundStyle(theme.accent)
+                }
+                .disabled(isUploadingArtifact)
+            } else {
+                Text("Artifact transport is disabled because browser control is disabled on this Hermes gateway.")
+                    .font(.caption)
+                    .foregroundStyle(theme.textSecondary)
+            }
         }
     }
 
