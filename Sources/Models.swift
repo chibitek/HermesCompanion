@@ -131,6 +131,7 @@ struct CapabilitiesResponse: Codable {
     }
 
     struct Features: Codable {
+        let browserExtensionControl: Bool?
         let modelOptions: Bool?
         let sessionModelLock: Bool?
         let chatCompletions: Bool
@@ -150,6 +151,7 @@ struct CapabilitiesResponse: Codable {
 
         enum CodingKeys: String, CodingKey {
             case chatCompletions = "chat_completions"
+            case browserExtensionControl = "browser_extension_control"
             case chatCompletionsStreaming = "chat_completions_streaming"
             case sessionChat = "session_chat"
             case sessionChatStreaming = "session_chat_streaming"
