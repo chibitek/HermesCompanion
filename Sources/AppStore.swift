@@ -209,8 +209,12 @@ final class AppStore: ObservableObject {
                 try await client.checkHealth()
             }
             guard health.status == "ok", health.isHermesAPI else {
-                self.error = AppError(message: Self.invalidHealthMessage(health))
                 FileLogger.shared.log("AppStore: autoConnect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
+                if await fallbackToReachableServer(excluding: config.baseURL) {
+                    self.isLoadingConnection = false
+                    return
+                }
+                self.error = AppError(message: Self.invalidHealthMessage(health))
                 self.isLoadingConnection = false
                 return
             }
@@ -221,9 +225,17 @@ final class AppStore: ObservableObject {
             self.isLoadingConnection = false
             hasExplicitlyConnected = true
         } catch let e as APIError {
+            if await fallbackToReachableServer(excluding: config.baseURL) {
+                self.isLoadingConnection = false
+                return
+            }
             self.error = AppError(message: e.errorDescription ?? "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
         } catch {
+            if await fallbackToReachableServer(excluding: config.baseURL) {
+                self.isLoadingConnection = false
+                return
+            }
             self.error = AppError(message: "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
         }
@@ -268,11 +280,28 @@ final class AppStore: ObservableObject {
             return true
         } catch let e as APIError {
             self.error = AppError(message: e.errorDescription ?? "Connection failed")
+            self.apiClient = nil
             return false
         } catch {
             self.error = AppError(message: "Connection failed: \(error.localizedDescription)")
+            self.apiClient = nil
             return false
         }
+    }
+
+    private func fallbackToReachableServer(excluding baseURL: String) async -> Bool {
+        let candidates = savedConnections.filter {
+            !$0.isDemoMode && $0.baseURL != baseURL
+        }
+        for candidate in candidates {
+            FileLogger.shared.log("AppStore: autoConnect fallback trying \(candidate.baseURL)")
+            if await connect(config: candidate) {
+                FileLogger.shared.log("AppStore: autoConnect fallback connected \(candidate.baseURL)")
+                return true
+            }
+        }
+        FileLogger.shared.log("AppStore: autoConnect fallback found no reachable Hermes API gateway")
+        return false
     }
 
     func disconnect() {
@@ -572,6 +601,7 @@ final class AppStore: ObservableObject {
             await restoreActiveSessionIfAvailable()
         } catch {
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
+            FileLogger.shared.log("AppStore: refreshSessions failed for \(connectionConfig?.baseURL ?? "unknown") — \(error.localizedDescription)")
         }
     }
 

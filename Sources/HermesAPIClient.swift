@@ -30,7 +30,7 @@ final class HermesAPIClient: Sendable {
          "Content-Type": "application/json"]
     }
 
-    private func makeURL(path: String) throws -> URL {
+    private func makeURL(path: String, queryItems: [URLQueryItem]? = nil) throws -> URL {
         let cleanPath = path.hasPrefix("/") ? path : "/\(path)"
         // URL-encode each path segment to handle special characters in IDs
         let encodedPath = cleanPath.split(separator: "/", omittingEmptySubsequences: false)
@@ -39,19 +39,28 @@ final class HermesAPIClient: Sendable {
         guard let url = URL(string: baseURL + encodedPath) else {
             throw APIError.invalidURL(baseURL + encodedPath)
         }
-        return url
+
+        guard let queryItems, !queryItems.isEmpty else { return url }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw APIError.invalidURL(url.absoluteString)
+        }
+        components.queryItems = queryItems
+        guard let urlWithQuery = components.url else {
+            throw APIError.invalidURL(url.absoluteString)
+        }
+        return urlWithQuery
     }
 
     // ponytail: collapsed 6-line makeRequest+forEach pattern into one helper; every GET endpoint below is now 2 lines.
-    private func request(method: String, path: String) throws -> URLRequest {
-        var req = URLRequest(url: try makeURL(path: path))
+    private func request(method: String, path: String, queryItems: [URLQueryItem]? = nil) throws -> URLRequest {
+        var req = URLRequest(url: try makeURL(path: path, queryItems: queryItems))
         req.httpMethod = method
         authHeaders().forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
         return req
     }
 
-    private func get<T: Decodable>(path: String, type: T.Type) async throws -> T {
-        let (data, response) = try await session.data(for: try request(method: "GET", path: path))
+    private func get<T: Decodable>(path: String, queryItems: [URLQueryItem]? = nil, type: T.Type) async throws -> T {
+        let (data, response) = try await session.data(for: try request(method: "GET", path: path, queryItems: queryItems))
         try checkHTTPStatus(response)
         return try JSONDecoder().decode(type, from: data)
     }
@@ -77,7 +86,9 @@ final class HermesAPIClient: Sendable {
     func listSessions(limit: Int = 200) async throws -> [HermesSession] {
         let clampedLimit = max(1, min(limit, 200))
         let res = try await get(
-            path: "/api/sessions?limit=\(clampedLimit)", type: SessionListResponse.self
+            path: "/api/sessions",
+            queryItems: [URLQueryItem(name: "limit", value: String(clampedLimit))],
+            type: SessionListResponse.self
         )
         return res.data
     }
@@ -136,9 +147,8 @@ final class HermesAPIClient: Sendable {
     /// The gateway's full configured-provider catalog. This is the authoritative
     /// picker inventory; /v1/models only exposes the virtual agent and aliases.
     func getModelOptions(refresh: Bool = false) async throws -> ModelOptionsResponse {
-        var path = "/api/model/options"
-        if refresh { path += "?refresh=1" }
-        return try await get(path: path, type: ModelOptionsResponse.self)
+        let queryItems = refresh ? [URLQueryItem(name: "refresh", value: "1")] : nil
+        return try await get(path: "/api/model/options", queryItems: queryItems, type: ModelOptionsResponse.self)
     }
 
     // MARK: - Per-Session Model Lock
