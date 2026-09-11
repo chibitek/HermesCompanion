@@ -245,6 +245,7 @@ struct ChatView: View {
             attachments: attachments,
             onRemoveAttachment: removeAttachment,
             currentModel: store.effectiveCurrentModel,
+            currentProvider: store.effectiveCurrentProvider,
             availableModels: store.availableModels,
             modelInfos: store.modelInfos,
             onRefreshModels: {

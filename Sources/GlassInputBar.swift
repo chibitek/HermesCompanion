@@ -15,6 +15,7 @@ struct GlassInputBar: View {
     let attachments: [AttachmentData]
     let onRemoveAttachment: (Int) -> Void
     var currentModel: String = ""
+    var currentProvider: String = ""
     var availableModels: [String] = []
     var modelInfos: [String: ModelInfo] = [:]
     var onRefreshModels: (() -> Void)? = nil
@@ -288,8 +289,9 @@ struct GlassInputBar: View {
                         showModelPicker = true
                         } label: {
                             HStack(spacing: 4) {
-                            let provider = modelInfos[currentModel]?.provider
-                                ?? ProviderUtils.providerOf(currentModel)
+                            let provider = currentProvider.isEmpty
+                                ? modelInfos[currentModel]?.provider ?? ProviderUtils.providerOf(currentModel)
+                                : currentProvider
                             if let provider, !provider.isEmpty {
                                 Text(provider.capitalized)
                                     .font(.system(size: 10, weight: .semibold))

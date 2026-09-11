@@ -14,6 +14,11 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.55":
+            return [
+                "Projects now show Hermes-managed workspaces and their live chat counts.",
+                "Model pills use the active runtime provider instead of a stale session label."
+            ]
         case "1.8.54":
             return [
                 "Platform Hub now syncs the full Hermes history and project workspaces.",
