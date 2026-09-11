@@ -30,6 +30,10 @@ final class AppStore: ObservableObject {
     @Published var modelInfos: [String: ModelInfo] = [:]
     @Published var configuredProviders: [String] = []
     @Published var activeRuntime: SessionRuntime?
+    @Published private(set) var gatewayDefaultModel = ""
+    @Published private(set) var gatewayDefaultProvider = ""
+    @Published private(set) var sessionModelOverride: String?
+    @Published private(set) var sessionProviderOverride: String?
     @Published private(set) var queuedMessages: [QueuedMessage] = [] {
         didSet { saveQueue() }
     }
@@ -77,16 +81,21 @@ final class AppStore: ObservableObject {
     private static let queueKey = "message_queue"
 
     var effectiveCurrentProvider: String {
-        nonEmpty(preferredProvider)
+        nonEmpty(sessionProviderOverride)
+            ?? nonEmpty(activeRuntime?.effectiveProvider)
+            ?? modelInfos[effectiveCurrentModel]?.provider
             ?? nonEmpty(capabilities?.currentProvider)
-            ?? ProviderUtils.providerOf(effectiveCurrentModel)
+            ?? nonEmpty(gatewayDefaultProvider)
             ?? ""
     }
 
     var effectiveCurrentModel: String {
-        nonEmpty(preferredModel)
+        nonEmpty(sessionModelOverride)
+            ?? nonEmpty(activeRuntime?.effectiveModel)
+            ?? nonEmpty(activeSession?.model)
             ?? nonEmpty(capabilities?.currentModel)
             ?? nonEmpty(capabilities?.model)
+            ?? nonEmpty(gatewayDefaultModel)
             ?? ""
     }
 
@@ -470,6 +479,8 @@ final class AppStore: ObservableObject {
                 }
             }
             self.configuredProviders = options.providers.map(\.slug)
+            self.gatewayDefaultModel = options.model
+            self.gatewayDefaultProvider = options.provider ?? ""
             self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             let models = infos.map(\.id)
             self.availableModels = modelsIncludingCurrent(models)
@@ -483,10 +494,6 @@ final class AppStore: ObservableObject {
                 self.availableModels = modelsIncludingCurrent([])
                 self.error = AppError(message: "Failed to load models: \(error.localizedDescription)")
             }
-        }
-        if preferredModel.isEmpty {
-            let gwModel = self.capabilities?.currentModel ?? self.capabilities?.model ?? ""
-            preferredModel = gwModel
         }
     }
 
@@ -502,6 +509,8 @@ final class AppStore: ObservableObject {
         if !resolvedProvider.isEmpty {
             preferredProvider = resolvedProvider
         }
+        sessionModelOverride = model
+        sessionProviderOverride = resolvedProvider.isEmpty ? nil : resolvedProvider
         // Lock the model on the active Hermes session. This is the server-backed
         // equivalent of opening a chat in the desktop; it never rewrites the
         // gateway's global provider config.
@@ -514,6 +523,18 @@ final class AppStore: ObservableObject {
         } catch {
             self.error = AppError(message: "Could not lock this session's model: \(error.localizedDescription)")
         }
+    }
+
+    var hasGatewayDefaultModel: Bool {
+        !gatewayDefaultModel.isEmpty
+    }
+
+    func selectGatewayDefaultModel() async {
+        guard hasGatewayDefaultModel else { return }
+        await selectPreferredModel(
+            gatewayDefaultModel,
+            provider: gatewayDefaultProvider.isEmpty ? nil : gatewayDefaultProvider
+        )
     }
 
     /// Multi-favorite toggle: starring adds to favorites, tapping again removes.
@@ -663,6 +684,8 @@ final class AppStore: ObservableObject {
         self.toolEvents = []
         self.streamingText = ""
             self.streamingThinking = ""
+        sessionModelOverride = nil
+        sessionProviderOverride = nil
         do {
             let history = try await client.getMessages(sessionId: session.id)
             self.messages = history
@@ -860,12 +883,6 @@ final class AppStore: ObservableObject {
 
         let session = await ensureSession(client: client)
         guard let session else { return nil }
-        // Confirm the selected model belongs to this session before sending.
-        // A failure must stop the turn instead of silently using another model.
-        if await !lockPreferredModel(for: session, client: client) {
-            return nil
-        }
-
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
         let userMsg = ChatDisplayMessage(
@@ -992,30 +1009,6 @@ final class AppStore: ObservableObject {
         }
     }
 
-    private func lockPreferredModel(for session: HermesSession, client: HermesAPIClient) async -> Bool {
-        guard let model = nonEmpty(effectiveCurrentModel) else { return true }
-        if !sessionModelLockAvailable {
-            activeRuntime = SessionRuntime(
-                provider: modelInfos[model]?.provider,
-                model: model,
-                routeSource: "request",
-                requested: nil,
-                modelLock: nil
-            )
-            return true
-        }
-        let provider = nonEmpty(modelInfos[model]?.provider)
-        do {
-            activeRuntime = try await client.lockSessionModel(
-                sessionId: session.id, model: model, provider: provider
-            )
-            return true
-        } catch {
-            self.error = AppError(message: "Could not lock this session's model: \(error.localizedDescription)")
-            return false
-        }
-    }
-
     private func streamMessage(
         client: HermesAPIClient, session: HermesSession,
         text: String, watchdog: StreamWatchdogManager
@@ -1024,7 +1017,7 @@ final class AppStore: ObservableObject {
         var receivedCompletion = false
         let stream = try await client.streamChat(
             sessionId: session.id, message: text,
-            model: sessionModelLockAvailable ? nil : effectiveCurrentModel,
+            model: sessionModelLockAvailable ? nil : sessionModelOverride,
             onKeepalive: { watchdog.recordActivity() }
         )
         for try await event in stream {
@@ -1046,7 +1039,7 @@ final class AppStore: ObservableObject {
     ) async throws -> ChatDisplayMessage? {
         let response = try await client.sendChat(
             sessionId: session.id, message: text,
-            model: sessionModelLockAvailable ? nil : effectiveCurrentModel,
+            model: sessionModelLockAvailable ? nil : sessionModelOverride,
             images: images, attachments: attachments
         )
         if Task.isCancelled { return nil }

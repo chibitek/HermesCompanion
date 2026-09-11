@@ -245,6 +245,10 @@ struct ChatView: View {
             onToggleFavorite: { model in
                 _ = store.toggleFavorite(model)
             },
+            gatewayDefaultModel: store.gatewayDefaultModel,
+            onUseGatewayDefault: {
+                Task { await store.selectGatewayDefaultModel() }
+            },
             availableSkills: store.skills,
             onRefreshSkills: {
                 await store.refreshSkills()
