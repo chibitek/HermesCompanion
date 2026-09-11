@@ -14,6 +14,10 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.60":
+            return [
+                "Platform Hub now exposes the full Hermes capability surface."
+            ]
         case "1.8.59":
             return [
                 "Chat details now show the exact Hermes provider and workspace."
