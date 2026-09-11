@@ -95,19 +95,9 @@ struct VoiceSettingsView: View {
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @State private var filterQuality: Bool = true
     @State private var selectedProvider: TTSProvider = TTSProvider.selected
-    @State private var keyInput = ""
-    @State private var keyExistsForSelected = false
     @EnvironmentObject var appearance: AppearanceSettings
 
     private var accent: Color { appearance.accent }
-
-    private func saveKey() {
-        let key = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return }
-        TTSKeyStore.save(key, provider: selectedProvider)
-        keyInput = ""
-        keyExistsForSelected = true
-    }
 
     var body: some View {
         Form {
@@ -210,7 +200,6 @@ struct VoiceSettingsView: View {
             selectedProvider = .apple
             refreshVoices()
             selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
-            keyExistsForSelected = TTSKeyStore.load(provider: selectedProvider) != nil
         }
     }
 
