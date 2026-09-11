@@ -60,6 +60,5 @@ final class StreamWatchdogManager: @unchecked Sendable {
             action()
             return
         }
-        self.lock.unlock()
     }
 }
