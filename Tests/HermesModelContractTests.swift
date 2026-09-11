@@ -102,4 +102,21 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertEqual(decoded.model, "qwen3.8:27b-mlx")
         XCTAssertEqual(decoded.provider, "custom:local-(localhost:11434)")
     }
+
+    func testSessionProviderTakesPriorityOverStaleCatalog() throws {
+        let json = """
+        {
+          "id": "session-1",
+          "title": "Live provider",
+          "source": "api_server",
+          "model": "qwen3.8:27b-mlx",
+          "provider": "custom:local-(localhost:11434)",
+          "billing_provider": "custom:local-(localhost:11434)"
+        }
+        """.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(HermesSession.self, from: json)
+        XCTAssertEqual(session.provider, "custom:local-(localhost:11434)")
+        XCTAssertEqual(session.billingProvider, "custom:local-(localhost:11434)")
+    }
 }

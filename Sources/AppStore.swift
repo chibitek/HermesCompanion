@@ -88,8 +88,9 @@ final class AppStore: ObservableObject {
     var effectiveCurrentProvider: String {
         nonEmpty(sessionProviderOverride)
             ?? nonEmpty(activeRuntime?.effectiveProvider)
-            ?? modelInfos[effectiveCurrentModel]?.provider
+            ?? nonEmpty(activeSession?.provider)
             ?? nonEmpty(activeSession?.billingProvider)
+            ?? modelInfos[effectiveCurrentModel]?.provider
             ?? nonEmpty(capabilities?.currentProvider)
             ?? nonEmpty(gatewayDefaultProvider)
             ?? ""
