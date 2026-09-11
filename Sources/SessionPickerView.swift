@@ -28,7 +28,8 @@ struct SessionPickerView: View {
     private var visibleSessions: [HermesSession] {
         var result = store.sessions
         if mode == .projects, let workspace = selectedWorkspaceProject {
-            result = result.filter { $0.gitRepoRoot == workspace.path || $0.cwd == workspace.path }
+            let ids = Set(workspace.sessions.map(\.id))
+            result = result.filter { ids.contains($0.id) }
         } else if mode == .projects, let selectedProjectID {
             let ids = Set(projects.sessionIDs(in: selectedProjectID))
             result = result.filter { ids.contains($0.id) }
@@ -280,7 +281,7 @@ struct SessionPickerView: View {
                         }
                     }
 
-                    if !projects.projects.isEmpty {
+                    if workspaceProjects.isEmpty && !projects.projects.isEmpty {
                         Text("Manual Groups")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(theme.textSecondary)
