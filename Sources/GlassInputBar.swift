@@ -21,6 +21,8 @@ struct GlassInputBar: View {
     var favoriteModels: [String] = []
     var onSelectModel: ((String, String?) -> Void)? = nil
     var onToggleFavorite: ((String) -> Void)? = nil
+    var gatewayDefaultModel: String = ""
+    var onUseGatewayDefault: (() -> Void)? = nil
     var availableSkills: [Skill] = []
     var onRefreshSkills: (() async -> Void)? = nil
 
@@ -319,6 +321,11 @@ struct GlassInputBar: View {
                                 },
                                 onToggleFavorite: { model in
                                     onToggleFavorite?(model)
+                                },
+                                gatewayDefaultModel: gatewayDefaultModel,
+                                onUseGatewayDefault: {
+                                    onUseGatewayDefault?()
+                                    showModelPicker = false
                                 },
                                 onRefresh: onRefreshModels
                             )

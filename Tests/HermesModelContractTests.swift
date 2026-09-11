@@ -81,4 +81,25 @@ final class HermesModelContractTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(json as? [String: Bool], ["archived": true])
     }
+
+    func testFullCatalogCarriesGatewayDefaultRuntime() throws {
+        let json = """
+        {
+          "providers": [
+            {
+              "slug": "custom:local-(localhost:11434)",
+              "name": "Local (localhost:11434)",
+              "models": ["qwen3.8:27b-mlx"],
+              "is_current": true
+            }
+          ],
+          "model": "qwen3.8:27b-mlx",
+          "provider": "custom:local-(localhost:11434)"
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(ModelOptionsResponse.self, from: json)
+        XCTAssertEqual(decoded.model, "qwen3.8:27b-mlx")
+        XCTAssertEqual(decoded.provider, "custom:local-(localhost:11434)")
+    }
 }

@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.50":
+            return [
+                "Model display now follows the active session and gateway runtime.",
+                "Model picker adds a one-tap Use Gateway Default action.",
+                "Model switching no longer overrides an existing Hermes session automatically."
+            ]
         case "1.8.49":
             return [
                 "Chats now support server-backed pinning, archiving, and state details.",
