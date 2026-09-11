@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.51":
+            return [
+                "New Hermes Platform hub syncs gateway status, history, models, jobs, messaging, artifacts, Kanban, and bots.",
+                "Scheduled jobs now show status, schedule, delivery target, and errors.",
+                "The gateway view exposes readiness and connected platform health."
+            ]
         case "1.8.50":
             return [
                 "Model display now follows the active session and gateway runtime.",

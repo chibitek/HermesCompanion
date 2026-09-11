@@ -144,6 +144,7 @@ struct CapabilitiesResponse: Codable {
         let toolProgressEvents: Bool
         let approvalEvents: Bool
         let sessionResources: Bool
+        let artifactTransport: Bool?
         let sessionFork: Bool
         let skillsAPI: Bool
 
@@ -161,6 +162,7 @@ struct CapabilitiesResponse: Codable {
             case toolProgressEvents = "tool_progress_events"
             case approvalEvents = "approval_events"
             case sessionResources = "session_resources"
+            case artifactTransport = "artifact_transport"
             case sessionFork = "session_fork"
             case skillsAPI = "skills_api"
         }
@@ -704,4 +706,122 @@ struct ForkSessionRequest: Codable {
 struct ForkSessionResponse: Codable {
     let object: String
     let session: HermesSession
+}
+
+// MARK: - Platform Health
+
+struct PlatformHealthResponse: Codable {
+    let status: String
+    let platform: String?
+    let version: String?
+    let gatewayState: String?
+    let activeAgents: Int?
+    let gatewayBusy: Bool?
+    let gatewayDrainable: Bool?
+    let updatedAt: String?
+    let platforms: [String: HermesPlatformStatus]?
+    let readiness: HermesReadiness?
+
+    enum CodingKeys: String, CodingKey {
+        case status, platform, version, platforms, readiness
+        case gatewayState = "gateway_state"
+        case activeAgents = "active_agents"
+        case gatewayBusy = "gateway_busy"
+        case gatewayDrainable = "gateway_drainable"
+        case updatedAt = "updated_at"
+    }
+}
+
+struct HermesPlatformStatus: Codable, Identifiable, Hashable {
+    var id: String { name }
+    let name: String
+    let state: String?
+    let errorCode: String?
+    let errorMessage: String?
+    let needsAttention: Bool?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case state, name
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+        case needsAttention = "needs_attention"
+        case updatedAt = "updated_at"
+    }
+
+    init(name: String, state: String?, errorCode: String?, errorMessage: String?, needsAttention: Bool?, updatedAt: String?) {
+        self.name = name
+        self.state = state
+        self.errorCode = errorCode
+        self.errorMessage = errorMessage
+        self.needsAttention = needsAttention
+        self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        state = try container.decodeIfPresent(String.self, forKey: .state)
+        errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        needsAttention = try container.decodeIfPresent(Bool.self, forKey: .needsAttention)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
+}
+
+struct HermesReadiness: Codable, Hashable {
+    let status: String?
+    let checks: [String: HermesReadinessCheck]?
+
+    enum CodingKeys: String, CodingKey {
+        case status, checks
+    }
+}
+
+struct HermesReadinessCheck: Codable, Hashable {
+    let status: String?
+    let usedPercent: Double?
+    let freeBytes: Int?
+    let state: String?
+    let connectedPlatforms: Int?
+    let platforms: Int?
+    let activeAPIRuns: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case status, state, platforms
+        case usedPercent = "used_percent"
+        case freeBytes = "free_bytes"
+        case connectedPlatforms = "connected_platforms"
+        case activeAPIRuns = "active_api_runs"
+    }
+}
+
+// MARK: - Scheduled Jobs
+
+struct HermesJob: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let prompt: String?
+    let scheduleDisplay: String?
+    let enabled: Bool?
+    let state: String?
+    let nextRunAt: String?
+    let lastRunAt: String?
+    let lastStatus: String?
+    let lastError: String?
+    let deliver: String?
+    let skills: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, prompt, enabled, state, deliver, skills
+        case scheduleDisplay = "schedule_display"
+        case nextRunAt = "next_run_at"
+        case lastRunAt = "last_run_at"
+        case lastStatus = "last_status"
+        case lastError = "last_error"
+    }
+}
+
+struct HermesJobsResponse: Codable {
+    let jobs: [HermesJob]
 }

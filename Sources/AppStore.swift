@@ -34,6 +34,10 @@ final class AppStore: ObservableObject {
     @Published private(set) var gatewayDefaultProvider = ""
     @Published private(set) var sessionModelOverride: String?
     @Published private(set) var sessionProviderOverride: String?
+    @Published var platformHealth: PlatformHealthResponse?
+    @Published var platformJobs: [HermesJob] = []
+    @Published var isLoadingPlatform = false
+    @Published var platformError: String?
     @Published private(set) var queuedMessages: [QueuedMessage] = [] {
         didSet { saveQueue() }
     }
@@ -856,6 +860,57 @@ final class AppStore: ObservableObject {
             self.toolsets = try await client.getToolsets()
         } catch {
             // Non-fatal
+        }
+    }
+
+    func refreshPlatform() async {
+        guard connectionConfig?.isDemoMode != true else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        isLoadingPlatform = true
+        platformError = nil
+        defer { isLoadingPlatform = false }
+        async let health = client.getDetailedHealth()
+        async let jobs = client.listJobs()
+        async let capabilities = client.getCapabilities()
+        async let sessions = client.listSessions()
+        async let toolsets = client.getToolsets()
+        async let skills = client.listSkills()
+        do {
+            platformHealth = try await health
+        } catch {
+            platformError = error.localizedDescription
+        }
+        do {
+            platformJobs = try await jobs
+        } catch {
+            FileLogger.shared.log("AppStore: platform jobs failed — \(error.localizedDescription)")
+        }
+        do {
+            self.capabilities = try await capabilities
+        } catch {
+            // Keep the cached capabilities; they remain useful on transient errors.
+        }
+        do {
+            self.sessions = try await sessions
+            await restoreActiveSessionIfAvailable()
+        } catch {
+            FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
+        }
+        do {
+            self.toolsets = try await toolsets
+        } catch {
+            // Non-fatal.
+        }
+        do {
+            self.skills = try await skills
+        } catch {
+            // Non-fatal.
         }
     }
 
