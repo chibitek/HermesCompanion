@@ -14,6 +14,11 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.61":
+            return [
+                "Platform Hub now exposes the live Hermes endpoints.",
+                "Streaming watchdog timing is now more stable."
+            ]
         case "1.8.60":
             return [
                 "Platform Hub now exposes the full Hermes capability surface."
