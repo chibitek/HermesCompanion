@@ -617,6 +617,9 @@ struct ConnectionSetupView: View {
             let result: (HealthResponse, CapabilitiesResponse)
             result = try await withTimeout(seconds: 10) {
                 let health = try await client.checkHealth()
+                guard health.status == "ok", health.isHermesAPI else {
+                    throw APIError.invalidEndpoint(AppStore.invalidHealthMessage(health))
+                }
                 let caps = try await client.getCapabilities()
                 return (health, caps)
             }

@@ -39,6 +39,7 @@ enum ProviderUtils {
         case "lmstudio": return "LM Studio"
         case "zai": return "Z.AI / GLM"
         case "custom": return "Custom"
+        case let p where p.hasPrefix("custom:"): return "Local / Custom"
         case "other": return "Other"
         default: return provider.capitalized
         }

@@ -28,6 +28,17 @@ final class AppStore: ObservableObject {
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
     @Published var modelInfos: [String: ModelInfo] = [:]
+    @Published var configuredProviders: [String] = []
+    @Published var activeRuntime: SessionRuntime?
+    @Published private(set) var gatewayDefaultModel = ""
+    @Published private(set) var gatewayDefaultProvider = ""
+    @Published private(set) var sessionModelOverride: String?
+    @Published private(set) var sessionProviderOverride: String?
+    @Published var platformHealth: PlatformHealthResponse?
+    @Published var platformJobs: [HermesJob] = []
+    @Published var artifactReceipt: HermesArtifactReceipt?
+    @Published var isLoadingPlatform = false
+    @Published var platformError: String?
     @Published private(set) var queuedMessages: [QueuedMessage] = [] {
         didSet { saveQueue() }
     }
@@ -75,17 +86,28 @@ final class AppStore: ObservableObject {
     private static let queueKey = "message_queue"
 
     var effectiveCurrentProvider: String {
-        nonEmpty(preferredProvider)
+        nonEmpty(sessionProviderOverride)
+            ?? nonEmpty(activeRuntime?.effectiveProvider)
+            ?? nonEmpty(activeSession?.provider)
+            ?? nonEmpty(activeSession?.billingProvider)
+            ?? modelInfos[effectiveCurrentModel]?.provider
             ?? nonEmpty(capabilities?.currentProvider)
-            ?? ProviderUtils.providerOf(effectiveCurrentModel)
+            ?? nonEmpty(gatewayDefaultProvider)
             ?? ""
     }
 
     var effectiveCurrentModel: String {
-        nonEmpty(preferredModel)
+        nonEmpty(sessionModelOverride)
+            ?? nonEmpty(activeRuntime?.effectiveModel)
+            ?? nonEmpty(activeSession?.model)
             ?? nonEmpty(capabilities?.currentModel)
             ?? nonEmpty(capabilities?.model)
+            ?? nonEmpty(gatewayDefaultModel)
             ?? ""
+    }
+
+    var sessionModelLockAvailable: Bool {
+        capabilities?.features.sessionModelLock == true
     }
 
     // MARK: - Private
@@ -147,7 +169,7 @@ final class AppStore: ObservableObject {
                     do {
                         let health = try await client.checkHealth()
                         let latency = Int(Date().timeIntervalSince(start) * 1000)
-                        return (config.baseURL, health.status == "ok" ? .online : .offline, latency, health.version)
+                        return (config.baseURL, health.status == "ok" && health.isHermesAPI ? .online : .offline, latency, health.version)
                     } catch {
                         return (config.baseURL, .offline, nil, nil)
                     }
@@ -202,8 +224,13 @@ final class AppStore: ObservableObject {
             let health = try await withTimeout(seconds: 10) {
                 try await client.checkHealth()
             }
-            guard health.status == "ok" else {
-                self.error = AppError(message: "Server returned status: \(health.status)")
+            guard health.status == "ok", health.isHermesAPI else {
+                FileLogger.shared.log("AppStore: autoConnect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
+                if await fallbackToReachableServer(excluding: config.baseURL) {
+                    self.isLoadingConnection = false
+                    return
+                }
+                self.error = AppError(message: Self.invalidHealthMessage(health))
                 self.isLoadingConnection = false
                 return
             }
@@ -214,9 +241,17 @@ final class AppStore: ObservableObject {
             self.isLoadingConnection = false
             hasExplicitlyConnected = true
         } catch let e as APIError {
+            if await fallbackToReachableServer(excluding: config.baseURL) {
+                self.isLoadingConnection = false
+                return
+            }
             self.error = AppError(message: e.errorDescription ?? "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
         } catch {
+            if await fallbackToReachableServer(excluding: config.baseURL) {
+                self.isLoadingConnection = false
+                return
+            }
             self.error = AppError(message: "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
         }
@@ -238,8 +273,9 @@ final class AppStore: ObservableObject {
         reconnectRetryCount = 0
         do {
             let health = try await client.checkHealth()
-            guard health.status == "ok" else {
-                self.error = AppError(message: "Server returned status: \(health.status)")
+            guard health.status == "ok", health.isHermesAPI else {
+                self.error = AppError(message: Self.invalidHealthMessage(health))
+                FileLogger.shared.log("AppStore: connect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
                 return false
             }
             _ = try await client.getCapabilities()
@@ -260,11 +296,28 @@ final class AppStore: ObservableObject {
             return true
         } catch let e as APIError {
             self.error = AppError(message: e.errorDescription ?? "Connection failed")
+            self.apiClient = nil
             return false
         } catch {
             self.error = AppError(message: "Connection failed: \(error.localizedDescription)")
+            self.apiClient = nil
             return false
         }
+    }
+
+    private func fallbackToReachableServer(excluding baseURL: String) async -> Bool {
+        let candidates = savedConnections.filter {
+            !$0.isDemoMode && $0.baseURL != baseURL
+        }
+        for candidate in candidates {
+            FileLogger.shared.log("AppStore: autoConnect fallback trying \(candidate.baseURL)")
+            if await connect(config: candidate) {
+                FileLogger.shared.log("AppStore: autoConnect fallback connected \(candidate.baseURL)")
+                return true
+            }
+        }
+        FileLogger.shared.log("AppStore: autoConnect fallback found no reachable Hermes API gateway")
+        return false
     }
 
     func disconnect() {
@@ -289,9 +342,9 @@ final class AppStore: ObservableObject {
     func seedDemoState() async {
         let now = Date().timeIntervalSince1970
         self.sessions = [
-            HermesSession(id: "demo-session-1", title: "Welcome to Hermes", source: "demo", startedAt: now - 3600, lastActive: now - 60, messageCount: 4),
-            HermesSession(id: "demo-session-2", title: "Project Planning", source: "demo", startedAt: now - 7200, lastActive: now - 3600, messageCount: 8),
-            HermesSession(id: "demo-session-3", title: "Code Review", source: "demo", startedAt: now - 86400, lastActive: now - 80000, messageCount: 12),
+            HermesSession(id: "demo-session-1", title: "Welcome to Hermes", source: "demo", startedAt: now - 3600, lastActive: now - 60, messageCount: 4, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
+            HermesSession(id: "demo-session-2", title: "Project Planning", source: "demo", startedAt: now - 7200, lastActive: now - 3600, messageCount: 8, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
+            HermesSession(id: "demo-session-3", title: "Code Review", source: "demo", startedAt: now - 86400, lastActive: now - 80000, messageCount: 12, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
         ]
         self.activeSession = self.sessions.first
         self.messages = [
@@ -422,49 +475,73 @@ final class AppStore: ObservableObject {
         } catch {
             // Non-fatal — capabilities are optional
         }
-        // Load available models
-        var modelsLoaded = false
+        // Load the configured-provider catalog first. This is the full list the
+        // desktop sees; /v1/models is only a fallback for older gateways.
         do {
-            let infos = try await client.getModels()
+            let options = try await client.getModelOptions()
+            var infos: [ModelInfo] = []
+            for provider in options.providers {
+                infos += provider.models.map {
+                    ModelInfo(id: $0, object: "model", ownedBy: provider.name, provider: provider.slug)
+                }
+            }
+            self.configuredProviders = options.providers.map(\.slug)
+            self.gatewayDefaultModel = options.model
+            self.gatewayDefaultProvider = options.provider ?? ""
             self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            let models = infos.map { $0.id }
+            let models = infos.map(\.id)
             self.availableModels = modelsIncludingCurrent(models)
-            modelsLoaded = true
         } catch {
-            self.availableModels = modelsIncludingCurrent([])
-            self.error = AppError(message: "Failed to load models: \(error.localizedDescription)")
-        }
-        // Sync preferredModel to gateway's current model ONLY when models
-        // loaded successfully. If getModels() failed, availableModels is stale
-        // and we must not overwrite the user's saved preference.
-        if modelsLoaded {
-            let gwModel = self.capabilities?.currentModel ?? self.capabilities?.model ?? ""
-            if !gwModel.isEmpty,
-               preferredModel.isEmpty || !availableModels.contains(preferredModel) {
-                preferredModel = gwModel
+            do {
+                let infos = try await client.getModels()
+                self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                let models = infos.map(\.id)
+                self.availableModels = modelsIncludingCurrent(models)
+            } catch {
+                self.availableModels = modelsIncludingCurrent([])
+                self.error = AppError(message: "Failed to load models: \(error.localizedDescription)")
             }
         }
     }
 
-    func selectPreferredModel(_ model: String, provider: String? = nil) {
+    func selectPreferredModel(_ model: String, provider: String? = nil) async {
         preferredModel = model
         // Resolve provider ONLY from explicit arg or model ID prefix (e.g. "openai/gpt-4").
         // Do NOT fall back to capabilities.currentProvider — that's the gateway's
         // current state, not necessarily where this model lives. Sending a stale
-        // provider (e.g. "nous") to switchGatewayModel breaks local Ollama models.
         let resolvedProvider = nonEmpty(provider)
             ?? ProviderUtils.providerOf(model)
+            ?? nonEmpty(modelInfos[model]?.provider)
             ?? ""
         if !resolvedProvider.isEmpty {
             preferredProvider = resolvedProvider
         }
-        // Switch the gateway's active model. Only send provider when we know it
-        // from the model ID or explicit arg; otherwise let the gateway keep its
-        // current provider config.
-        let selectedProvider = resolvedProvider.isEmpty ? nil : resolvedProvider
-        Task {
-            await apiClient?.switchGatewayModel(model, provider: selectedProvider)
+        sessionModelOverride = model
+        sessionProviderOverride = resolvedProvider.isEmpty ? nil : resolvedProvider
+        // Lock the model on the active Hermes session. This is the server-backed
+        // equivalent of opening a chat in the desktop; it never rewrites the
+        // gateway's global provider config.
+        guard let sessionId = activeSession?.id else { return }
+        do {
+            activeRuntime = try await apiClient?.lockSessionModel(
+                sessionId: sessionId, model: model,
+                provider: resolvedProvider.isEmpty ? nil : resolvedProvider
+            )
+        } catch {
+            self.error = AppError(message: "Could not lock this session's model: \(error.localizedDescription)")
         }
+    }
+
+    var hasGatewayDefaultModel: Bool {
+        !gatewayDefaultModel.isEmpty
+    }
+
+    func selectGatewayDefaultModel() async {
+        guard hasGatewayDefaultModel else { return }
+        await selectPreferredModel(
+            gatewayDefaultModel,
+            provider: gatewayDefaultProvider.isEmpty ? nil : gatewayDefaultProvider
+        )
     }
 
     /// Multi-favorite toggle: starring adds to favorites, tapping again removes.
@@ -488,6 +565,16 @@ final class AppStore: ObservableObject {
     private func nonEmpty(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
         return value
+    }
+
+    nonisolated static func invalidHealthMessage(_ health: HealthResponse) -> String {
+        if health.platform == "webhook" {
+            return "That URL is the Hermes webhook endpoint. Use the API gateway on port 8642."
+        }
+        if health.status != "ok" {
+            return "Server returned status: \(health.status)"
+        }
+        return "That URL is not a Hermes API gateway."
     }
 
     private func savePreference(_ value: String, key: String) {
@@ -542,6 +629,7 @@ final class AppStore: ObservableObject {
             await restoreActiveSessionIfAvailable()
         } catch {
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
+            FileLogger.shared.log("AppStore: refreshSessions failed for \(connectionConfig?.baseURL ?? "unknown") — \(error.localizedDescription)")
         }
     }
 
@@ -603,6 +691,8 @@ final class AppStore: ObservableObject {
         self.toolEvents = []
         self.streamingText = ""
             self.streamingThinking = ""
+        sessionModelOverride = nil
+        sessionProviderOverride = nil
         do {
             let history = try await client.getMessages(sessionId: session.id)
             self.messages = history
@@ -610,6 +700,19 @@ final class AppStore: ObservableObject {
                 .map { ChatDisplayMessage(from: $0) }
         } catch {
             self.error = AppError(message: "Failed to load messages: \(error.localizedDescription)")
+        }
+        // Session model is the server's durable row value. Use it to show a
+        // sane current model even when Hermes is older and has no runtime lock.
+        if let model = session.model, !model.isEmpty {
+            activeRuntime = SessionRuntime(
+                provider: session.provider ?? session.billingProvider ?? modelInfos[model]?.provider,
+                model: model,
+                routeSource: "session",
+                requested: nil,
+                modelLock: nil
+            )
+        } else {
+            activeRuntime = nil
         }
     }
 
@@ -679,6 +782,48 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func updateSessionFlags(
+        _ session: HermesSession,
+        isPinned: Bool? = nil,
+        isArchived: Bool? = nil,
+        isHidden: Bool? = nil
+    ) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
+        do {
+            let updated = try await client.patchSession(
+                sessionId: session.id,
+                isPinned: isPinned,
+                isArchived: isArchived,
+                isHidden: isHidden
+            )
+            replaceSession(updated)
+        } catch {
+            self.error = AppError(message: "Could not update chat: \(error.localizedDescription)")
+        }
+    }
+
+    private func replaceSession(_ updated: HermesSession) {
+        if let index = sessions.firstIndex(where: { $0.id == updated.id }) {
+            sessions[index] = updated
+        }
+        if activeSession?.id == updated.id {
+            activeSession = updated
+        }
+        if updated.isArchived == true && activeSession?.id == updated.id {
+            activeSession = nil
+            messages = []
+            if let baseURL = connectionConfig?.normalizedBaseURL {
+                activeSessionPersistence.clear(for: baseURL)
+            }
+        }
+    }
+
     func forkSession(_ session: HermesSession) async {
         let client: HermesAPIClient
         do {
@@ -721,6 +866,124 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func refreshPlatform() async {
+        guard connectionConfig?.isDemoMode != true else { return }
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        isLoadingPlatform = true
+        platformError = nil
+        defer { isLoadingPlatform = false }
+        async let health = client.getDetailedHealth()
+        async let jobs = client.listJobs()
+        async let capabilities = client.getCapabilities()
+        async let sessions = client.listSessions()
+        async let toolsets = client.getToolsets()
+        async let skills = client.listSkills()
+        do {
+            platformHealth = try await health
+        } catch {
+            platformError = error.localizedDescription
+        }
+        do {
+            platformJobs = try await jobs
+        } catch {
+            FileLogger.shared.log("AppStore: platform jobs failed — \(error.localizedDescription)")
+        }
+        do {
+            self.capabilities = try await capabilities
+        } catch {
+            // Keep the cached capabilities; they remain useful on transient errors.
+        }
+        do {
+            self.sessions = try await sessions
+            await restoreActiveSessionIfAvailable()
+        } catch {
+            FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
+        }
+        do {
+            self.toolsets = try await toolsets
+        } catch {
+            // Non-fatal.
+        }
+        do {
+            self.skills = try await skills
+        } catch {
+            // Non-fatal.
+        }
+    }
+
+    func controlJob(_ job: HermesJob, action: HermesJobAction) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        do {
+            switch action {
+            case .pause: try await client.pauseJob(jobId: job.id)
+            case .resume: try await client.resumeJob(jobId: job.id)
+            case .run: try await client.runJob(jobId: job.id)
+            case .delete: try await client.deleteJob(jobId: job.id)
+            }
+            await refreshJobsOnly()
+        } catch {
+            platformError = "Job \(action.rawValue) failed: \(error.localizedDescription)"
+        }
+    }
+
+    func saveJob(_ payload: HermesJobWrite, jobId: String? = nil) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        do {
+            if let jobId {
+                _ = try await client.updateJob(jobId: jobId, updates: payload)
+            } else {
+                _ = try await client.createJob(payload)
+            }
+            await refreshJobsOnly()
+        } catch {
+            platformError = "Could not save job: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshJobsOnly() async {
+        do {
+            platformJobs = try await apiClient?.listJobs() ?? platformJobs
+        } catch {
+            platformError = "Could not refresh jobs: \(error.localizedDescription)"
+        }
+    }
+
+    func uploadArtifact(data: Data, fileName: String, mimeType: String) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            platformError = "Not connected"
+            return
+        }
+        do {
+            artifactReceipt = try await client.uploadArtifact(
+                data: data, fileName: fileName, mimeType: mimeType
+            )
+            platformError = nil
+        } catch {
+            platformError = "Artifact upload failed: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Chat (streaming)
 
     func queueMessage(_ text: String, displayText: String? = nil) {
@@ -745,7 +1008,6 @@ final class AppStore: ObservableObject {
 
         let session = await ensureSession(client: client)
         guard let session else { return nil }
-
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
         let userMsg = ChatDisplayMessage(
@@ -879,7 +1141,8 @@ final class AppStore: ObservableObject {
         var assistantMessage: ChatDisplayMessage?
         var receivedCompletion = false
         let stream = try await client.streamChat(
-            sessionId: session.id, message: text, model: effectiveCurrentModel,
+            sessionId: session.id, message: text,
+            model: sessionModelLockAvailable ? nil : sessionModelOverride,
             onKeepalive: { watchdog.recordActivity() }
         )
         for try await event in stream {
@@ -901,7 +1164,8 @@ final class AppStore: ObservableObject {
     ) async throws -> ChatDisplayMessage? {
         let response = try await client.sendChat(
             sessionId: session.id, message: text,
-            model: effectiveCurrentModel, images: images, attachments: attachments
+            model: sessionModelLockAvailable ? nil : sessionModelOverride,
+            images: images, attachments: attachments
         )
         if Task.isCancelled { return nil }
         let content = response.message.content
@@ -1026,6 +1290,9 @@ final class AppStore: ObservableObject {
             ))
 
         case "assistant.completed":
+            if let runtime = event.runtime {
+                activeRuntime = runtime
+            }
             let finalContent = Self.stripRawArtifacts(event.content ?? streamingText)
 
             if !finalContent.isEmpty {
@@ -1044,6 +1311,9 @@ final class AppStore: ObservableObject {
             streamingThinking = ""
 
         case "run.completed":
+            if let runtime = event.runtime {
+                activeRuntime = runtime
+            }
             streamingText = ""
             streamingThinking = ""
             await refreshSessions()

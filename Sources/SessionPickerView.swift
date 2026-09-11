@@ -9,6 +9,7 @@ struct SessionPickerView: View {
     @StateObject private var projects = ProjectStore()
     @State private var mode: HistoryMode = .chats
     @State private var selectedProjectID: UUID?
+    @State private var selectedWorkspaceProject: WorkspaceProject?
     @State private var isCreatingSession = false
     @State private var newSessionTitle = ""
     @State private var isCreatingProject = false
@@ -22,13 +23,22 @@ struct SessionPickerView: View {
     @State private var searchText = ""
     @State private var sortMode: SessionSortMode = .lastActive
     @State private var showSortOptions = false
+    @State private var showArchived = false
 
     private var visibleSessions: [HermesSession] {
         var result = store.sessions
-        if mode == .projects, let selectedProjectID {
+        if mode == .chats {
+            result = store.sessions.filter { $0.isPinned == true } +
+                store.sessions.filter { $0.isPinned != true }
+        }
+        if mode == .projects, let workspace = selectedWorkspaceProject {
+            let ids = Set(workspace.sessions.map(\.id))
+            result = result.filter { ids.contains($0.id) }
+        } else if mode == .projects, let selectedProjectID {
             let ids = Set(projects.sessionIDs(in: selectedProjectID))
             result = result.filter { ids.contains($0.id) }
         }
+        result = result.filter { showArchived ? $0.isArchived == true : $0.isArchived != true }
         if !searchText.isEmpty {
             result = result.filter {
                 ($0.title ?? "").localizedCaseInsensitiveContains(searchText) ||
@@ -37,22 +47,33 @@ struct SessionPickerView: View {
                 (projects.project(for: $0.id)?.name.localizedCaseInsensitiveContains(searchText) ?? false)
             }
         }
-        switch sortMode {
-        case .lastActive:
-            return result.sorted { ($0.lastActive ?? $0.startedAt ?? 0) > ($1.lastActive ?? $1.startedAt ?? 0) }
-        case .title:
-            return result.sorted { ($0.title ?? "Untitled").localizedCaseInsensitiveCompare($1.title ?? "Untitled") == .orderedAscending }
-        case .messageCount:
-            return result.sorted { ($0.messageCount ?? 0) > ($1.messageCount ?? 0) }
+        return result.sorted { lhs, rhs in
+            if lhs.isPinned != rhs.isPinned { return lhs.isPinned == true }
+            switch sortMode {
+            case .lastActive:
+                return (lhs.lastActive ?? lhs.startedAt ?? 0) > (rhs.lastActive ?? rhs.startedAt ?? 0)
+            case .title:
+                return (lhs.title ?? "Untitled").localizedCaseInsensitiveCompare(rhs.title ?? "Untitled") == .orderedAscending
+            case .messageCount:
+                return (lhs.messageCount ?? 0) > (rhs.messageCount ?? 0)
+            }
         }
     }
 
     private var title: String {
+        if mode == .projects, let workspace = selectedWorkspaceProject {
+            return workspace.name
+        }
         if mode == .projects, let selectedProjectID,
            let project = projects.projects.first(where: { $0.id == selectedProjectID }) {
             return project.name
         }
+        if mode == .chats, showArchived { return "Archived Chats" }
         return mode == .chats ? "History" : "Projects"
+    }
+
+    private var workspaceProjects: [WorkspaceProject] {
+        projects.workspaceProjects(from: store.sessions)
     }
 
     var body: some View {
@@ -63,14 +84,14 @@ struct SessionPickerView: View {
                 header
                 Divider().background(theme.cardBorder)
 
-                if mode == .projects && selectedProjectID == nil {
+                if mode == .projects && selectedProjectID == nil && selectedWorkspaceProject == nil {
                     projectsOverview
                 } else {
                     chatsView
                 }
             }
 
-            if !(mode == .projects && selectedProjectID == nil) {
+            if !(mode == .projects && selectedProjectID == nil && selectedWorkspaceProject == nil) {
                 searchBar
             }
         }
@@ -130,6 +151,12 @@ struct SessionPickerView: View {
             ProjectAssignmentSheet(projects: projects, session: session)
                 .withActiveTheme(appearance)
         }
+        .task(id: store.connectionConfig?.normalizedBaseURL) {
+            projects.configure(for: store.connectionConfig?.normalizedBaseURL ?? "")
+        }
+        .task(id: store.sessions.map(\.id).hashValue) {
+            projects.pruneSessions(Set(store.sessions.map(\.id)))
+        }
         .confirmationDialog("Sort Chats", isPresented: $showSortOptions, titleVisibility: .visible) {
             ForEach(SessionSortMode.allCases) { sortMode in
                 Button { self.sortMode = sortMode } label: {
@@ -144,13 +171,15 @@ struct SessionPickerView: View {
         VStack(spacing: theme.spacingS) {
             HStack {
                 Button {
-                    if selectedProjectID != nil {
+                    if selectedWorkspaceProject != nil {
+                        selectedWorkspaceProject = nil
+                    } else if selectedProjectID != nil {
                         selectedProjectID = nil
                     } else {
                         dismiss()
                     }
                 } label: {
-                    Image(systemName: selectedProjectID == nil ? "xmark" : "chevron.left")
+                    Image(systemName: selectedProjectID == nil && selectedWorkspaceProject == nil ? "xmark" : "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(theme.textPrimary)
                         .frame(width: 38, height: 34)
@@ -169,10 +198,10 @@ struct SessionPickerView: View {
 
                 HStack(spacing: theme.spacingXS) {
                     Button {
-                        if mode == .projects && selectedProjectID == nil {
-                            isCreatingProject = true
-                        } else {
-                            isCreatingSession = true
+                    if mode == .projects && selectedProjectID == nil && selectedWorkspaceProject == nil {
+                        isCreatingProject = true
+                    } else {
+                        isCreatingSession = true
                         }
                     } label: {
                         Image(systemName: "plus")
@@ -183,7 +212,17 @@ struct SessionPickerView: View {
                     }
                     .buttonStyle(.plain)
 
-                    if !(mode == .projects && selectedProjectID == nil) {
+                    if !(mode == .projects && selectedProjectID == nil && selectedWorkspaceProject == nil) {
+                        Button { showArchived.toggle() } label: {
+                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                                .frame(width: 38, height: 34)
+                                .background(AnyView(theme.glassCard(cornerRadius: theme.controlRadius)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showArchived ? "Show active chats" : "Show archived chats")
+
                         Button { showSortOptions = true } label: {
                             Image(systemName: "arrow.up.arrow.down")
                                 .font(.system(size: 15, weight: .semibold))
@@ -196,7 +235,7 @@ struct SessionPickerView: View {
                 }
             }
 
-            if selectedProjectID == nil {
+            if selectedProjectID == nil && selectedWorkspaceProject == nil {
                 Picker("History View", selection: $mode) {
                     ForEach(HistoryMode.allCases) { mode in
                         Label(mode.label, systemImage: mode.icon).tag(mode)
@@ -213,7 +252,7 @@ struct SessionPickerView: View {
 
     @ViewBuilder
     private var projectsOverview: some View {
-        if projects.projects.isEmpty {
+        if workspaceProjects.isEmpty && projects.projects.isEmpty {
             Spacer()
             ContentUnavailableView(
                 "No Projects",
@@ -228,22 +267,50 @@ struct SessionPickerView: View {
         } else {
             ScrollView {
                 LazyVStack(spacing: theme.spacingS) {
-                    ForEach(projects.projects) { project in
-                        Button { selectedProjectID = project.id } label: {
-                            projectRow(project)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
+                    if !workspaceProjects.isEmpty {
+                        Text("Hermes Workspaces")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(theme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, theme.spacingS)
+
+                        ForEach(workspaceProjects) { project in
                             Button {
-                                renamingProject = project
-                                projectRenameText = project.name
+                                selectedProjectID = nil
+                                selectedWorkspaceProject = project
                             } label: {
-                                Label("Rename Project", systemImage: "pencil")
+                                workspaceProjectRow(project)
                             }
-                            Button(role: .destructive) {
-                                projects.deleteProject(project.id)
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    if workspaceProjects.isEmpty && !projects.projects.isEmpty {
+                        Text("Manual Groups")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(theme.textSecondary)
+                            .padding(.horizontal, theme.spacingS)
+
+                        ForEach(projects.projects) { project in
+                            Button {
+                                selectedWorkspaceProject = nil
+                                selectedProjectID = project.id
                             } label: {
-                                Label("Delete Project", systemImage: "trash")
+                                projectRow(project)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button {
+                                    renamingProject = project
+                                    projectRenameText = project.name
+                                } label: {
+                                    Label("Rename Project", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    projects.deleteProject(project.id)
+                                } label: {
+                                    Label("Delete Project", systemImage: "trash")
+                                }
                             }
                         }
                     }
@@ -251,6 +318,40 @@ struct SessionPickerView: View {
                 .padding(theme.spacingM)
             }
         }
+    }
+
+    private func workspaceProjectRow(_ project: WorkspaceProject) -> some View {
+        HStack(spacing: theme.spacingM) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(theme.accent.opacity(0.14))
+                Image(systemName: "externaldrive.badge.icloud")
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(theme.accent)
+            }
+            .frame(width: 48, height: 48)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(project.name)
+                    .font(theme.uiFont.weight(.semibold))
+                    .foregroundStyle(theme.textPrimary)
+                Text(project.path)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(theme.textMuted)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                let count = project.sessions.count
+                Text(count == 1 ? "1 chat" : "\(count) chats")
+                    .font(.caption)
+                    .foregroundStyle(theme.textSecondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(theme.textMuted)
+        }
+        .padding(theme.spacingM)
+        .background(AnyView(theme.glassCard(cornerRadius: theme.radiusM)))
     }
 
     private func projectRow(_ project: ChatProject) -> some View {
@@ -317,6 +418,20 @@ struct SessionPickerView: View {
                                 Task {
                                     await store.forkSession(session)
                                     dismiss()
+                                }
+                            },
+                            onTogglePin: {
+                                Task {
+                                    await store.updateSessionFlags(
+                                        session, isPinned: session.isPinned != true
+                                    )
+                                }
+                            },
+                            onToggleArchive: {
+                                Task {
+                                    await store.updateSessionFlags(
+                                        session, isArchived: session.isArchived != true
+                                    )
                                 }
                             },
                             onDelete: {
@@ -392,6 +507,8 @@ private struct SessionRowButton: View {
     let onRename: () -> Void
     let onDetails: () -> Void
     let onFork: () -> Void
+    let onTogglePin: () -> Void
+    let onToggleArchive: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -406,6 +523,18 @@ private struct SessionRowButton: View {
             Button(action: onRename) { Label("Rename", systemImage: "pencil") }
             Button(action: onDetails) { Label("Details", systemImage: "info.circle") }
             Button(action: onFork) { Label("Fork", systemImage: "arrow.triangle.branch") }
+            Button(action: onTogglePin) {
+                Label(
+                    session.isPinned == true ? "Unpin" : "Pin",
+                    systemImage: session.isPinned == true ? "pin.slash" : "pin"
+                )
+            }
+            Button(action: onToggleArchive) {
+                Label(
+                    session.isArchived == true ? "Unarchive" : "Archive",
+                    systemImage: session.isArchived == true ? "tray.and.arrow.up" : "archivebox"
+                )
+            }
             Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
         }
     }
@@ -420,10 +549,17 @@ struct SessionRow: View {
     var body: some View {
         HStack(spacing: theme.spacingS) {
             VStack(alignment: .leading, spacing: theme.spacingXS) {
-                Text(session.title ?? "Untitled")
-                    .font(theme.uiFont.weight(.semibold))
-                    .foregroundStyle(theme.textPrimary)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if session.isPinned == true {
+                        Image(systemName: "pin.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(theme.accent)
+                    }
+                    Text(session.title ?? "Untitled")
+                        .font(theme.uiFont.weight(.semibold))
+                        .foregroundStyle(theme.textPrimary)
+                        .lineLimit(2)
+                }
 
                 HStack(spacing: 6) {
                     if let projectName {
@@ -436,11 +572,23 @@ struct SessionRow: View {
                             .font(.system(.caption, design: .monospaced, weight: .medium))
                             .foregroundStyle(theme.accent)
                     }
+
+                    if let provider = session.provider, !provider.isEmpty {
+                        Text(provider.capitalized)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(theme.textMuted)
+                            .lineLimit(1)
+                    }
                 }
 
                 Text(metadata)
                     .font(.caption)
                     .foregroundStyle(theme.textSecondary)
+                if session.isArchived == true {
+                    Label("Archived", systemImage: "archivebox")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(theme.textSecondary)
+                }
             }
             .multilineTextAlignment(.leading)
 
@@ -471,7 +619,10 @@ struct SessionRow: View {
         let countText = count == 1 ? "1 message" : "\(count) messages"
         let end = session.lastActive ?? session.startedAt ?? Date().timeIntervalSince1970
         let start = session.startedAt ?? end
-        return "\(countText) · \(formatDuration(max(0, end - start)))"
+        var parts = [countText, formatDuration(max(0, end - start))]
+        if let model = session.model, !model.isEmpty { parts.append(model) }
+        if let provider = session.provider, !provider.isEmpty { parts.append(provider) }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -558,6 +709,15 @@ struct SessionDetailView: View {
                             row("ID", detail.id)
                             if let source = detail.source { row("Source", source) }
                             if let model = detail.model { row("Model", model) }
+                            if let provider = detail.provider { row("Provider", provider) }
+                            if let workspace = detail.cwd ?? detail.gitRepoRoot {
+                                row("Workspace", workspace)
+                            }
+                        }
+                        Section("State") {
+                            row("Pinned", detail.isPinned == true ? "Yes" : "No")
+                            row("Archived", detail.isArchived == true ? "Yes" : "No")
+                            row("Hidden", detail.isHidden == true ? "Yes" : "No")
                         }
                         Section("Activity") {
                             if let started = detail.date { row("Started", started.formatted(date: .abbreviated, time: .shortened)) }

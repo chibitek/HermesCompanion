@@ -102,8 +102,8 @@ struct HealthResponse: Codable {
     let version: String?
 
     /// Whether this looks like a real Hermes API server
-    var isHermes: Bool {
-        platform == "hermes-agent" || platform == "webhook"
+    var isHermesAPI: Bool {
+        platform == "hermes-agent"
     }
 }
 
@@ -131,6 +131,9 @@ struct CapabilitiesResponse: Codable {
     }
 
     struct Features: Codable {
+        let browserExtensionControl: Bool?
+        let modelOptions: Bool?
+        let sessionModelLock: Bool?
         let chatCompletions: Bool
         let chatCompletionsStreaming: Bool
         let sessionChat: Bool
@@ -142,21 +145,26 @@ struct CapabilitiesResponse: Codable {
         let toolProgressEvents: Bool
         let approvalEvents: Bool
         let sessionResources: Bool
+        let artifactTransport: Bool?
         let sessionFork: Bool
         let skillsAPI: Bool
 
         enum CodingKeys: String, CodingKey {
             case chatCompletions = "chat_completions"
+            case browserExtensionControl = "browser_extension_control"
             case chatCompletionsStreaming = "chat_completions_streaming"
             case sessionChat = "session_chat"
             case sessionChatStreaming = "session_chat_streaming"
             case runSubmission = "run_submission"
             case runEventsSSE = "run_events_sse"
             case runStop = "run_stop"
-            case runApprovalResponse = "run_approval_response"
+        case runApprovalResponse = "run_approval_response"
+        case modelOptions = "model_options"
+        case sessionModelLock = "session_model_lock"
             case toolProgressEvents = "tool_progress_events"
             case approvalEvents = "approval_events"
             case sessionResources = "session_resources"
+            case artifactTransport = "artifact_transport"
             case sessionFork = "session_fork"
             case skillsAPI = "skills_api"
         }
@@ -174,15 +182,28 @@ struct HermesSession: Codable, Identifiable, Hashable {
     let id: String
     let title: String?
     let source: String?
+    var model: String? = nil
+    var provider: String? = nil
     let startedAt: Double?
     let lastActive: Double?
     let messageCount: Int?
+    let cwd: String?
+    let gitRepoRoot: String?
+    var billingProvider: String? = nil
+    var isPinned: Bool?
+    var isArchived: Bool?
+    var isHidden: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, source
+    case id, title, source, model, provider
         case startedAt = "started_at"
         case lastActive = "last_active"
         case messageCount = "message_count"
+        case cwd, gitRepoRoot = "git_repo_root"
+        case billingProvider = "billing_provider"
+        case isPinned = "pinned"
+        case isArchived = "archived"
+        case isHidden = "hidden"
     }
 
     var date: Date? {
@@ -200,6 +221,7 @@ struct CreateSessionResponse: Codable {
 struct SessionListResponse: Codable {
     let object: String
     let data: [HermesSession]
+    let total: Int?
 }
 
 struct CreateSessionRequest: Codable {
@@ -304,6 +326,63 @@ struct SessionChatRequest: Codable {
     }
 }
 
+// MARK: - Session Runtime
+
+struct SessionRuntime: Codable, Hashable, Sendable {
+    let provider: String?
+    let model: String?
+    let routeSource: String?
+    let requested: RequestedRuntime?
+    let modelLock: String?
+
+    struct RequestedRuntime: Codable, Hashable, Sendable {
+        let provider: String?
+        let model: String?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case provider, model
+        case routeSource = "route_source"
+        case requested
+        case modelLock = "model_lock"
+    }
+
+    var effectiveProvider: String? {
+        nonEmpty(provider) ?? nonEmpty(requested?.provider)
+    }
+
+    var effectiveModel: String? {
+        nonEmpty(model) ?? nonEmpty(requested?.model)
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return value
+    }
+}
+
+struct SessionModelLockRequest: Codable {
+    let model: String
+    var provider: String? = nil
+    let requireModelLock: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case model, provider
+        case requireModelLock = "require_model_lock"
+    }
+}
+
+struct SessionModelLockResponse: Codable {
+    let object: String
+    let sessionId: String
+    let runtime: SessionRuntime
+
+    enum CodingKeys: String, CodingKey {
+        case object, runtime
+        case sessionId = "session_id"
+    }
+}
+
 // MARK: - Chat Response (non-streaming)
 
 struct SessionChatResponse: Codable {
@@ -339,6 +418,7 @@ struct SSEEventPayload: Codable, Sendable {
     let partial: Bool?
     let interrupted: Bool?
     let message: String?  // error message
+    let runtime: SessionRuntime?
 
     enum CodingKeys: String, CodingKey {
         case event
@@ -354,6 +434,7 @@ struct SSEEventPayload: Codable, Sendable {
         case partial
         case interrupted
         case message
+        case runtime
     }
 
     /// Custom decoder: the `event` field is NOT in the SSE JSON data — it comes
@@ -382,13 +463,14 @@ struct SSEEventPayload: Codable, Sendable {
             // It's an object or absent — not an error message, so nil is fine
             self.message = nil
         }
+        self.runtime = try c.decodeIfPresent(SessionRuntime.self, forKey: .runtime)
     }
 
     /// Direct initializer for fallback construction
     init(event: String, sessionId: String?, runId: String?, message_id: String?,
          delta: String?, content: String?, toolName: String?, preview: String?,
          args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
-         message: String?) {
+         message: String?, runtime: SessionRuntime? = nil) {
         self.event = event
         self.sessionId = sessionId
         self.runId = runId
@@ -402,6 +484,7 @@ struct SSEEventPayload: Codable, Sendable {
         self.partial = partial
         self.interrupted = interrupted
         self.message = message
+        self.runtime = runtime
     }
 }
 
@@ -492,6 +575,26 @@ struct ModelsResponse: Codable {
     let providers: [ProviderInfo]?
 }
 
+struct ModelOptionProvider: Codable, Identifiable, Hashable {
+    let slug: String
+    let name: String
+    let models: [String]
+    let isCurrent: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case slug, name, models
+        case isCurrent = "is_current"
+    }
+
+    var id: String { slug }
+}
+
+struct ModelOptionsResponse: Codable {
+    let providers: [ModelOptionProvider]
+    let model: String
+    let provider: String?
+}
+
 struct ProviderInfo: Codable, Identifiable, Hashable {
     let id: String
     let name: String
@@ -531,6 +634,7 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     let id: String
     let source: String?
     let model: String?
+    let provider: String?
     let title: String?
     let startedAt: Double?
     let messageCount: Int?
@@ -540,9 +644,22 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     let reasoningTokens: Int?
     let lastActive: Double?
     let preview: String?
+    let hasModelConfig: Bool?
+    let cwd: String?
+    let gitRepoRoot: String?
+    var billingProvider: String? = nil
+    let isPinned: Bool?
+    let isArchived: Bool?
+    let isHidden: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, source, model, title, preview
+        case id, source, model, provider, title, preview
+        case hasModelConfig = "has_model_config"
+        case cwd, gitRepoRoot = "git_repo_root"
+        case billingProvider = "billing_provider"
+        case isPinned = "pinned"
+        case isArchived = "archived"
+        case isHidden = "hidden"
         case startedAt = "started_at"
         case messageCount = "message_count"
         case toolCallCount = "tool_call_count"
@@ -571,8 +688,26 @@ struct GetSessionResponse: Codable {
 
 // MARK: - Session Patch (rename)
 
-struct PatchSessionRequest: Codable {
-    let title: String?
+struct PatchSessionRequest: Encodable {
+    var title: String?
+    var isPinned: Bool?
+    var isArchived: Bool?
+    var isHidden: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case isPinned = "pinned"
+        case isArchived = "archived"
+        case isHidden = "hidden"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let title { try container.encode(title, forKey: .title) }
+        if let isPinned { try container.encode(isPinned, forKey: .isPinned) }
+        if let isArchived { try container.encode(isArchived, forKey: .isArchived) }
+        if let isHidden { try container.encode(isHidden, forKey: .isHidden) }
+    }
 }
 
 // MARK: - Session Fork
@@ -586,4 +721,169 @@ struct ForkSessionRequest: Codable {
 struct ForkSessionResponse: Codable {
     let object: String
     let session: HermesSession
+}
+
+// MARK: - Platform Health
+
+struct PlatformHealthResponse: Codable {
+    let status: String
+    let platform: String?
+    let version: String?
+    let gatewayState: String?
+    let activeAgents: Int?
+    let gatewayBusy: Bool?
+    let gatewayDrainable: Bool?
+    let updatedAt: String?
+    let platforms: [String: HermesPlatformStatus]?
+    let readiness: HermesReadiness?
+
+    enum CodingKeys: String, CodingKey {
+        case status, platform, version, platforms, readiness
+        case gatewayState = "gateway_state"
+        case activeAgents = "active_agents"
+        case gatewayBusy = "gateway_busy"
+        case gatewayDrainable = "gateway_drainable"
+        case updatedAt = "updated_at"
+    }
+}
+
+struct HermesPlatformStatus: Codable, Identifiable, Hashable {
+    var id: String { name }
+    let name: String
+    let state: String?
+    let errorCode: String?
+    let errorMessage: String?
+    let needsAttention: Bool?
+    let updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case state, name
+        case errorCode = "error_code"
+        case errorMessage = "error_message"
+        case needsAttention = "needs_attention"
+        case updatedAt = "updated_at"
+    }
+
+    init(name: String, state: String?, errorCode: String?, errorMessage: String?, needsAttention: Bool?, updatedAt: String?) {
+        self.name = name
+        self.state = state
+        self.errorCode = errorCode
+        self.errorMessage = errorMessage
+        self.needsAttention = needsAttention
+        self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        state = try container.decodeIfPresent(String.self, forKey: .state)
+        errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        needsAttention = try container.decodeIfPresent(Bool.self, forKey: .needsAttention)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
+}
+
+struct HermesReadiness: Codable, Hashable {
+    let status: String?
+    let checks: [String: HermesReadinessCheck]?
+
+    enum CodingKeys: String, CodingKey {
+        case status, checks
+    }
+}
+
+struct HermesReadinessCheck: Codable, Hashable {
+    let status: String?
+    let usedPercent: Double?
+    let freeBytes: Int?
+    let state: String?
+    let connectedPlatforms: Int?
+    let platforms: Int?
+    let activeAPIRuns: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case status, state, platforms
+        case usedPercent = "used_percent"
+        case freeBytes = "free_bytes"
+        case connectedPlatforms = "connected_platforms"
+        case activeAPIRuns = "active_api_runs"
+    }
+}
+
+// MARK: - Scheduled Jobs
+
+struct HermesJob: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let prompt: String?
+    let scheduleDisplay: String?
+    let enabled: Bool?
+    let state: String?
+    let nextRunAt: String?
+    let lastRunAt: String?
+    let lastStatus: String?
+    let lastError: String?
+    let deliver: String?
+    let skills: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, prompt, enabled, state, deliver, skills
+        case scheduleDisplay = "schedule_display"
+        case nextRunAt = "next_run_at"
+        case lastRunAt = "last_run_at"
+        case lastStatus = "last_status"
+        case lastError = "last_error"
+    }
+}
+
+struct HermesJobsResponse: Codable {
+    let jobs: [HermesJob]
+}
+
+struct HermesJobResponse: Codable {
+    let job: HermesJob
+}
+
+struct HermesJobWrite: Encodable, Hashable {
+    var name: String = ""
+    var schedule: String = ""
+    var prompt: String = ""
+    var deliver: String = "local"
+    var skills: [String] = []
+}
+
+struct HermesArtifactReceipt: Codable, Identifiable, Hashable {
+    let artifactId: String
+    let sha256: String
+    let sizeBytes: Int
+    let contentType: String
+    let filename: String
+    let createdAt: Double
+    let expiresAt: Double
+    let ttlSeconds: Double
+    let oneShot: Bool?
+    let downloadPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case artifactId = "artifact_id"
+        case sha256
+        case sizeBytes = "size_bytes"
+        case contentType = "content_type"
+        case filename
+        case createdAt = "created_at"
+        case expiresAt = "expires_at"
+        case ttlSeconds = "ttl_seconds"
+        case oneShot = "one_shot"
+        case downloadPath = "download_path"
+    }
+
+    var id: String { artifactId }
+}
+
+enum HermesJobAction: String {
+    case pause
+    case resume
+    case run
+    case delete
 }

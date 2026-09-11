@@ -11,6 +11,7 @@ struct ChatView: View {
     @State private var inputText = ""
     @State private var showSessionPicker = false
     @State private var showSettings = false
+    @State private var showPlatformHub = false
     @State private var showVideo = false
     @State private var attachments: [AttachmentData] = []
     @State private var showPhotoPicker = false
@@ -52,6 +53,13 @@ struct ChatView: View {
                         Image(systemName: "sidebar.left")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showPlatformHub = true
+                    } label: {
+                        Image(systemName: "square.grid.2x2")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showVideo = true
@@ -77,6 +85,10 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView(store: store)
+                    .withActiveTheme(appearance)
+            }
+            .sheet(isPresented: $showPlatformHub) {
+                PlatformHubView(store: store)
                     .withActiveTheme(appearance)
             }
             .alert("Error", isPresented: .init(
@@ -149,8 +161,8 @@ struct ChatView: View {
             }
          }
         // ponytail: single computed + onChange replaces 5 identical pause/resume blocks
-        .onChange(of: showSettings || showSessionPicker || showPhotoPicker || showFilePicker || showCameraPicker) { _, _ in
-           if showSettings || showSessionPicker || showPhotoPicker || showFilePicker || showCameraPicker {
+        .onChange(of: showSettings || showSessionPicker || showPlatformHub || showPhotoPicker || showFilePicker || showCameraPicker) { _, _ in
+           if showSettings || showSessionPicker || showPlatformHub || showPhotoPicker || showFilePicker || showCameraPicker {
                wakePhraseListener.pause()
             } else if !showVoicePage, scenePhase == .active {
                wakePhraseListener.resume()
@@ -233,6 +245,7 @@ struct ChatView: View {
             attachments: attachments,
             onRemoveAttachment: removeAttachment,
             currentModel: store.effectiveCurrentModel,
+            currentProvider: store.effectiveCurrentProvider,
             availableModels: store.availableModels,
             modelInfos: store.modelInfos,
             onRefreshModels: {
@@ -240,10 +253,14 @@ struct ChatView: View {
             },
             favoriteModels: store.favoriteModels,
             onSelectModel: { model, provider in
-                store.selectPreferredModel(model, provider: provider)
+                Task { await store.selectPreferredModel(model, provider: provider) }
             },
             onToggleFavorite: { model in
                 _ = store.toggleFavorite(model)
+            },
+            gatewayDefaultModel: store.gatewayDefaultModel,
+            onUseGatewayDefault: {
+                Task { await store.selectGatewayDefaultModel() }
             },
             availableSkills: store.skills,
             onRefreshSkills: {

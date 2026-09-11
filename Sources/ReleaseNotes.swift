@@ -14,6 +14,81 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.61":
+            return [
+                "Pinned sessions now surface directly in Platform Hub and History.",
+                "Model provider and catalog sync now refresh live from Hermes.",
+                "Voice replies use the local iOS voice path only.",
+                "Platform Hub now exposes the live Hermes endpoints.",
+                "Streaming watchdog timing is now more stable."
+            ]
+        case "1.8.60":
+            return [
+                "Platform Hub now exposes the full Hermes capability surface."
+            ]
+        case "1.8.59":
+            return [
+                "Chat details now show the exact Hermes provider and workspace."
+            ]
+        case "1.8.58":
+            return [
+                "Session rows and Platform Hub now show the live model provider.",
+                "Session details expose the exact Hermes provider and workspace path."
+            ]
+        case "1.8.57":
+            return [
+                "Project folders now prefer Hermes-managed workspaces.",
+                "Session grouping stays stable while chats are added or archived."
+            ]
+        case "1.8.56":
+            return [
+                "Session models now show the actual Hermes provider."
+            ]
+        case "1.8.55":
+            return [
+                "Projects now show Hermes-managed workspaces and their live chat counts.",
+                "Model pills use the active runtime provider instead of a stale session label."
+            ]
+        case "1.8.54":
+            return [
+                "Platform Hub now syncs the full Hermes history and project workspaces.",
+                "Scheduled jobs can be created and edited directly from the iPhone.",
+                "Model display now follows the active Hermes runtime and session lock."
+            ]
+        case "1.8.53":
+            return [
+                "Platform Hub adds native artifact uploads when browser control is enabled.",
+                "Artifact uploads now show a provenance receipt with ID, hash, and expiry."
+            ]
+        case "1.8.52":
+            return [
+                "Scheduled jobs can now be paused, resumed, run immediately, or deleted from the iPhone.",
+                "Platform Hub controls refresh job state after every action."
+            ]
+        case "1.8.51":
+            return [
+                "New Hermes Platform hub syncs gateway status, history, models, jobs, messaging, artifacts, Kanban, and bots.",
+                "Scheduled jobs now show status, schedule, delivery target, and errors.",
+                "The gateway view exposes readiness and connected platform health."
+            ]
+        case "1.8.50":
+            return [
+                "Model display now follows the active session and gateway runtime.",
+                "Model picker adds a one-tap Use Gateway Default action.",
+                "Model switching no longer overrides an existing Hermes session automatically."
+            ]
+        case "1.8.49":
+            return [
+                "Chats now support server-backed pinning, archiving, and state details.",
+                "History keeps archived chats separate and pins stay at the top.",
+                "Chat details show model, lineage state, activity, and token usage."
+            ]
+        case "1.8.48":
+            return [
+                "Model selection now locks to the active session and follows the real Hermes runtime.",
+                "Model and provider lists load directly from the configured Hermes gateway.",
+                "Project folders are now isolated per server and clean up deleted chats."
+            ]
         case "1.8.34":
             return [
                 "Restored the complete scrollable skills list in the chat composer.",

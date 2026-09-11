@@ -858,6 +858,7 @@ final class VoiceConversationManager: ObservableObject {
     /// Reload voice settings from UserDefaults. Call this when the voice page
     /// appears, in case the user changed settings in Settings > Voice.
     func syncVoiceSettings() {
+        TTSProvider.selected = .apple
         voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
         if voiceSpeed == 0 { voiceSpeed = 0.5 }
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")
