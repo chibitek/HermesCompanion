@@ -10,34 +10,6 @@ final class HermesAPIClient: Sendable {
     private let session: URLSession
     private let config: ConnectionConfig
 
-    /// PUT /model on the model-switch helper (port 8643 on same host).
-    /// The explicit provider keeps aggregator model IDs from being misclassified by their author prefix.
-    func switchGatewayModel(_ modelId: String, provider: String? = nil) async {
-        var host = config.normalizedBaseURL
-        let usesHTTPS = host.hasPrefix("https://")
-        if host.hasPrefix("http://") { host = String(host.dropFirst(7)) }
-        if host.hasPrefix("https://") { host = String(host.dropFirst(8)) }
-        if let colon = host.firstIndex(of: ":") { host = String(host[..<colon]) }
-        let scheme = usesHTTPS ? "https" : "http"
-        guard let url = URL(string: "\(scheme)://\(host):8643/model") else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
-        var payload = ["model": modelId]
-        if let provider, !provider.isEmpty { payload["provider"] = provider }
-        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        req.timeoutInterval = 5
-        do {
-            let (resp, _) = try await session.data(for: req)
-            if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                FileLogger.shared.log("switchGatewayModel HTTP \(http.statusCode) for model=\(modelId) provider=\(provider ?? "nil")")
-            }
-        } catch {
-            FileLogger.shared.log("switchGatewayModel failed: \(error.localizedDescription) for model=\(modelId)")
-        }
-    }
-
     init(config: ConnectionConfig) {
         self.config = config
         let cfg = URLSessionConfiguration.default
@@ -102,8 +74,11 @@ final class HermesAPIClient: Sendable {
     // MARK: - Sessions
 
     /// GET /api/sessions
-    func listSessions() async throws -> [HermesSession] {
-        let res = try await get(path: "/api/sessions", type: SessionListResponse.self)
+    func listSessions(limit: Int = 200) async throws -> [HermesSession] {
+        let clampedLimit = max(1, min(limit, 200))
+        let res = try await get(
+            path: "/api/sessions?limit=\(clampedLimit)", type: SessionListResponse.self
+        )
         return res.data
     }
 
@@ -154,6 +129,30 @@ final class HermesAPIClient: Sendable {
 
     func getModels(refresh: Bool = false) async throws -> [ModelInfo] {
         try await getModelCatalog(refresh: refresh).data
+    }
+
+    // MARK: - Full Provider Model Catalog (/api/model/options)
+
+    /// The gateway's full configured-provider catalog. This is the authoritative
+    /// picker inventory; /v1/models only exposes the virtual agent and aliases.
+    func getModelOptions(refresh: Bool = false) async throws -> ModelOptionsResponse {
+        var path = "/api/model/options"
+        if refresh { path += "?refresh=1" }
+        return try await get(path: path, type: ModelOptionsResponse.self)
+    }
+
+    // MARK: - Per-Session Model Lock
+
+    /// Persist a confirmed model lock on the session itself. Future turns use
+    /// this server-side lock rather than a client-global model preference.
+    func lockSessionModel(sessionId: String, model: String, provider: String?) async throws -> SessionRuntime {
+        var req = try request(method: "POST", path: "/api/sessions/\(sessionId)/model")
+        req.httpBody = try JSONEncoder().encode(
+            SessionModelLockRequest(model: model, provider: provider, requireModelLock: true)
+        )
+        let (data, response) = try await session.data(for: req)
+        try checkHTTPStatus(response)
+        return try JSONDecoder().decode(SessionModelLockResponse.self, from: data).runtime
     }
 
     // MARK: - Toolsets (/v1/toolsets)

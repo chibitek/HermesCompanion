@@ -131,6 +131,8 @@ struct CapabilitiesResponse: Codable {
     }
 
     struct Features: Codable {
+        let modelOptions: Bool?
+        let sessionModelLock: Bool?
         let chatCompletions: Bool
         let chatCompletionsStreaming: Bool
         let sessionChat: Bool
@@ -153,7 +155,9 @@ struct CapabilitiesResponse: Codable {
             case runSubmission = "run_submission"
             case runEventsSSE = "run_events_sse"
             case runStop = "run_stop"
-            case runApprovalResponse = "run_approval_response"
+        case runApprovalResponse = "run_approval_response"
+        case modelOptions = "model_options"
+        case sessionModelLock = "session_model_lock"
             case toolProgressEvents = "tool_progress_events"
             case approvalEvents = "approval_events"
             case sessionResources = "session_resources"
@@ -174,12 +178,13 @@ struct HermesSession: Codable, Identifiable, Hashable {
     let id: String
     let title: String?
     let source: String?
+    var model: String? = nil
     let startedAt: Double?
     let lastActive: Double?
     let messageCount: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, source
+    case id, title, source, model
         case startedAt = "started_at"
         case lastActive = "last_active"
         case messageCount = "message_count"
@@ -304,6 +309,63 @@ struct SessionChatRequest: Codable {
     }
 }
 
+// MARK: - Session Runtime
+
+struct SessionRuntime: Codable, Hashable, Sendable {
+    let provider: String?
+    let model: String?
+    let routeSource: String?
+    let requested: RequestedRuntime?
+    let modelLock: String?
+
+    struct RequestedRuntime: Codable, Hashable, Sendable {
+        let provider: String?
+        let model: String?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case provider, model
+        case routeSource = "route_source"
+        case requested
+        case modelLock = "model_lock"
+    }
+
+    var effectiveProvider: String? {
+        nonEmpty(provider) ?? nonEmpty(requested?.provider)
+    }
+
+    var effectiveModel: String? {
+        nonEmpty(model) ?? nonEmpty(requested?.model)
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return value
+    }
+}
+
+struct SessionModelLockRequest: Codable {
+    let model: String
+    let provider: String?
+    let requireModelLock: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case model, provider
+        case requireModelLock = "require_model_lock"
+    }
+}
+
+struct SessionModelLockResponse: Codable {
+    let object: String
+    let sessionId: String
+    let runtime: SessionRuntime
+
+    enum CodingKeys: String, CodingKey {
+        case object, runtime
+        case sessionId = "session_id"
+    }
+}
+
 // MARK: - Chat Response (non-streaming)
 
 struct SessionChatResponse: Codable {
@@ -339,6 +401,7 @@ struct SSEEventPayload: Codable, Sendable {
     let partial: Bool?
     let interrupted: Bool?
     let message: String?  // error message
+    let runtime: SessionRuntime?
 
     enum CodingKeys: String, CodingKey {
         case event
@@ -354,6 +417,7 @@ struct SSEEventPayload: Codable, Sendable {
         case partial
         case interrupted
         case message
+        case runtime
     }
 
     /// Custom decoder: the `event` field is NOT in the SSE JSON data — it comes
@@ -382,13 +446,14 @@ struct SSEEventPayload: Codable, Sendable {
             // It's an object or absent — not an error message, so nil is fine
             self.message = nil
         }
+        self.runtime = try c.decodeIfPresent(SessionRuntime.self, forKey: .runtime)
     }
 
     /// Direct initializer for fallback construction
     init(event: String, sessionId: String?, runId: String?, message_id: String?,
          delta: String?, content: String?, toolName: String?, preview: String?,
          args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
-         message: String?) {
+         message: String?, runtime: SessionRuntime? = nil) {
         self.event = event
         self.sessionId = sessionId
         self.runId = runId
@@ -402,6 +467,7 @@ struct SSEEventPayload: Codable, Sendable {
         self.partial = partial
         self.interrupted = interrupted
         self.message = message
+        self.runtime = runtime
     }
 }
 
@@ -492,6 +558,26 @@ struct ModelsResponse: Codable {
     let providers: [ProviderInfo]?
 }
 
+struct ModelOptionProvider: Codable, Identifiable, Hashable {
+    let slug: String
+    let name: String
+    let models: [String]
+    let isCurrent: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case slug, name, models
+        case isCurrent = "is_current"
+    }
+
+    var id: String { slug }
+}
+
+struct ModelOptionsResponse: Codable {
+    let providers: [ModelOptionProvider]
+    let model: String
+    let provider: String?
+}
+
 struct ProviderInfo: Codable, Identifiable, Hashable {
     let id: String
     let name: String
@@ -540,9 +626,11 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     let reasoningTokens: Int?
     let lastActive: Double?
     let preview: String?
+    let hasModelConfig: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, source, model, title, preview
+        case hasModelConfig = "has_model_config"
         case startedAt = "started_at"
         case messageCount = "message_count"
         case toolCallCount = "tool_call_count"
