@@ -128,6 +128,7 @@ final class ProjectStore: ObservableObject {
     static func workspacePaths(from sessions: [HermesSession]) -> [String] {
         sessions
             .compactMap { $0.gitRepoRoot ?? $0.cwd }
+            .reduce(into: Set<String>()) { $0.insert($1) }
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
