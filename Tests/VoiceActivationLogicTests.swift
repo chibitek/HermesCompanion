@@ -2,6 +2,10 @@ import XCTest
 @testable import HermesCompanion
 
 final class VoiceActivationLogicTests: XCTestCase {
+    func testVoiceProviderSurfaceIsLocalOnly() {
+        XCTAssertEqual(TTSProvider.visibleCases, [.apple])
+    }
+
     func testEndpointingAllowsNaturalPauses() {
         XCTAssertGreaterThanOrEqual(VoiceEndpointingPolicy.silenceTimeout, 1.5)
     }
