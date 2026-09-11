@@ -89,6 +89,7 @@ final class AppStore: ObservableObject {
         nonEmpty(sessionProviderOverride)
             ?? nonEmpty(activeRuntime?.effectiveProvider)
             ?? modelInfos[effectiveCurrentModel]?.provider
+            ?? nonEmpty(activeSession?.billingProvider)
             ?? nonEmpty(capabilities?.currentProvider)
             ?? nonEmpty(gatewayDefaultProvider)
             ?? ""
@@ -340,9 +341,9 @@ final class AppStore: ObservableObject {
     func seedDemoState() async {
         let now = Date().timeIntervalSince1970
         self.sessions = [
-            HermesSession(id: "demo-session-1", title: "Welcome to Hermes", source: "demo", startedAt: now - 3600, lastActive: now - 60, messageCount: 4, cwd: nil, gitRepoRoot: nil),
-            HermesSession(id: "demo-session-2", title: "Project Planning", source: "demo", startedAt: now - 7200, lastActive: now - 3600, messageCount: 8, cwd: nil, gitRepoRoot: nil),
-            HermesSession(id: "demo-session-3", title: "Code Review", source: "demo", startedAt: now - 86400, lastActive: now - 80000, messageCount: 12, cwd: nil, gitRepoRoot: nil),
+            HermesSession(id: "demo-session-1", title: "Welcome to Hermes", source: "demo", startedAt: now - 3600, lastActive: now - 60, messageCount: 4, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
+            HermesSession(id: "demo-session-2", title: "Project Planning", source: "demo", startedAt: now - 7200, lastActive: now - 3600, messageCount: 8, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
+            HermesSession(id: "demo-session-3", title: "Code Review", source: "demo", startedAt: now - 86400, lastActive: now - 80000, messageCount: 12, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
         ]
         self.activeSession = self.sessions.first
         self.messages = [
@@ -703,7 +704,7 @@ final class AppStore: ObservableObject {
         // sane current model even when Hermes is older and has no runtime lock.
         if let model = session.model, !model.isEmpty {
             activeRuntime = SessionRuntime(
-                provider: modelInfos[model]?.provider,
+                provider: session.provider ?? session.billingProvider ?? modelInfos[model]?.provider,
                 model: model,
                 routeSource: "session",
                 requested: nil,

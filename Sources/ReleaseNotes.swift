@@ -14,10 +14,14 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
-        case "1.8.56":
+        case "1.8.57":
             return [
                 "Project folders now prefer Hermes-managed workspaces.",
                 "Session grouping stays stable while chats are added or archived."
+            ]
+        case "1.8.56":
+            return [
+                "Session models now show the actual Hermes provider."
             ]
         case "1.8.55":
             return [
