@@ -395,50 +395,23 @@ struct SessionPickerView: View {
             .foregroundStyle(theme.textPrimary)
             Spacer()
         } else {
+            let pinned = visibleSessions.filter { $0.isPinned == true }
+            let others = visibleSessions.filter { $0.isPinned != true }
             ScrollView {
                 LazyVStack(spacing: theme.spacingS) {
-                    ForEach(visibleSessions) { session in
-                        SessionRowButton(
-                            session: session,
-                            isActive: store.activeSession?.id == session.id,
-                            projectName: projects.project(for: session.id)?.name,
-                            onSelect: {
-                                Task {
-                                    await store.selectSession(session)
-                                    dismiss()
-                                }
-                            },
-                            onMove: { movingSession = session },
-                            onRename: {
-                                renamingSession = session
-                                renameText = session.title ?? ""
-                            },
-                            onDetails: { detailSession = session },
-                            onFork: {
-                                Task {
-                                    await store.forkSession(session)
-                                    dismiss()
-                                }
-                            },
-                            onTogglePin: {
-                                Task {
-                                    await store.updateSessionFlags(
-                                        session, isPinned: session.isPinned != true
-                                    )
-                                }
-                            },
-                            onToggleArchive: {
-                                Task {
-                                    await store.updateSessionFlags(
-                                        session, isArchived: session.isArchived != true
-                                    )
-                                }
-                            },
-                            onDelete: {
-                                projects.assign(sessionID: session.id, to: nil)
-                                Task { await store.deleteSession(session) }
-                            }
-                        )
+                    if !pinned.isEmpty {
+                        sectionHeader("Pinned")
+                        ForEach(pinned) { session in
+                            sessionRow(session)
+                        }
+                    }
+                    if !others.isEmpty {
+                        if !pinned.isEmpty {
+                            sectionHeader(showArchived ? "Archived" : "Chats")
+                        }
+                        ForEach(others) { session in
+                            sessionRow(session)
+                        }
                     }
                 }
                 .padding(.horizontal, theme.spacingM)
@@ -447,6 +420,61 @@ struct SessionPickerView: View {
             }
             .refreshable { await store.refreshSessions() }
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(theme.textMuted)
+                .textCase(.uppercase)
+            Spacer()
+        }
+        .padding(.vertical, theme.spacingXS)
+    }
+
+    private func sessionRow(_ session: HermesSession) -> some View {
+        SessionRowButton(
+            session: session,
+            isActive: store.activeSession?.id == session.id,
+            projectName: projects.project(for: session.id)?.name,
+            onSelect: {
+                Task {
+                    await store.selectSession(session)
+                    dismiss()
+                }
+            },
+            onMove: { movingSession = session },
+            onRename: {
+                renamingSession = session
+                renameText = session.title ?? ""
+            },
+            onDetails: { detailSession = session },
+            onFork: {
+                Task {
+                    await store.forkSession(session)
+                    dismiss()
+                }
+            },
+            onTogglePin: {
+                Task {
+                    await store.updateSessionFlags(
+                        session, isPinned: session.isPinned != true
+                    )
+                }
+            },
+            onToggleArchive: {
+                Task {
+                    await store.updateSessionFlags(
+                        session, isArchived: session.isArchived != true
+                    )
+                }
+            },
+            onDelete: {
+                projects.assign(sessionID: session.id, to: nil)
+                Task { await store.deleteSession(session) }
+            }
+        )
     }
 
     private var searchBar: some View {
