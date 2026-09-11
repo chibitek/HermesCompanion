@@ -102,8 +102,8 @@ struct HealthResponse: Codable {
     let version: String?
 
     /// Whether this looks like a real Hermes API server
-    var isHermes: Bool {
-        platform == "hermes-agent" || platform == "webhook"
+    var isHermesAPI: Bool {
+        platform == "hermes-agent"
     }
 }
 

@@ -45,4 +45,13 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertEqual(decoded.runtime.effectiveProvider, "nous")
         XCTAssertEqual(decoded.runtime.modelLock, "accepted")
     }
+
+    func testRejectsWebhookEndpointWithClearMessage() {
+        let health = HealthResponse(status: "ok", platform: "webhook", version: "1.0")
+        XCTAssertFalse(health.isHermesAPI)
+        XCTAssertEqual(
+            AppStore.invalidHealthMessage(health),
+            "That URL is the Hermes webhook endpoint. Use the API gateway on port 8642."
+        )
+    }
 }
