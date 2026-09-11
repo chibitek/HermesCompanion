@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.54":
+            return [
+                "Platform Hub now syncs the full Hermes history and project workspaces.",
+                "Scheduled jobs can be created and edited directly from the iPhone.",
+                "Model display now follows the active Hermes runtime and session lock."
+            ]
         case "1.8.53":
             return [
                 "Platform Hub adds native artifact uploads when browser control is enabled.",
