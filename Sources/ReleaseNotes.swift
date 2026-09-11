@@ -14,6 +14,11 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.52":
+            return [
+                "Scheduled jobs can now be paused, resumed, run immediately, or deleted from the iPhone.",
+                "Platform Hub controls refresh job state after every action."
+            ]
         case "1.8.51":
             return [
                 "New Hermes Platform hub syncs gateway status, history, models, jobs, messaging, artifacts, Kanban, and bots.",

@@ -65,6 +65,11 @@ final class HermesAPIClient: Sendable {
         return try JSONDecoder().decode(type, from: data)
     }
 
+    private func sendEmpty(method: String, path: String) async throws {
+        let (_, response) = try await session.data(for: try request(method: method, path: path))
+        try checkHTTPStatus(response)
+    }
+
     // MARK: - Health
 
     /// GET /health — no auth required, used for connection test
@@ -93,6 +98,22 @@ final class HermesAPIClient: Sendable {
             type: HermesJobsResponse.self
         )
         return res.jobs
+    }
+
+    func pauseJob(jobId: String) async throws {
+        try await sendEmpty(method: "POST", path: "/api/jobs/\(jobId)/pause")
+    }
+
+    func resumeJob(jobId: String) async throws {
+        try await sendEmpty(method: "POST", path: "/api/jobs/\(jobId)/resume")
+    }
+
+    func runJob(jobId: String) async throws {
+        try await sendEmpty(method: "POST", path: "/api/jobs/\(jobId)/run")
+    }
+
+    func deleteJob(jobId: String) async throws {
+        try await sendEmpty(method: "DELETE", path: "/api/jobs/\(jobId)")
     }
 
     // MARK: - Sessions

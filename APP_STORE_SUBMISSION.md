@@ -127,6 +127,6 @@ This app is a thin client for the open-source Hermes Agent platform (github.com/
 
 | Field | Value |
 |---|---|
-| **Version** | 1.8.51 |
-| **Build** | 137 |
-| **What's New** | Hermes Platform hub with live gateway health, history, model, job, messaging, artifact, Kanban, and bot sync |
+| **Version** | 1.8.52 |
+| **Build** | 138 |
+| **What's New** | Hermes Platform hub sync plus interactive scheduled-job pause, resume, run, and delete controls |
