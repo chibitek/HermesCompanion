@@ -205,6 +205,8 @@ struct PlatformHubView: View {
     private var modelsSection: some View {
         Section("Models") {
             platformRow("Gateway Default", store.gatewayDefaultModel, icon: "cpu")
+            platformRow("Active Session Model", store.effectiveCurrentModel, icon: "cpu")
+            platformRow("Active Session Provider", store.effectiveCurrentProvider, icon: "server.rack")
             platformRow("Gateway Source", store.gatewayDefaultProvider, icon: "server.rack")
             platformRow("Providers", "\(store.configuredProviders.count)", icon: "square.stack.3d.up")
             platformRow("Selectable Models", "\(store.availableModels.count)", icon: "list.bullet")

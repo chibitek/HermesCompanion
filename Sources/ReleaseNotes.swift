@@ -14,6 +14,11 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.58":
+            return [
+                "Session rows and Platform Hub now show the live model provider.",
+                "Session details expose the exact Hermes provider and workspace path."
+            ]
         case "1.8.57":
             return [
                 "Project folders now prefer Hermes-managed workspaces.",
