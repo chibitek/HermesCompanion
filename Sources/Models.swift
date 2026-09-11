@@ -182,12 +182,18 @@ struct HermesSession: Codable, Identifiable, Hashable {
     let startedAt: Double?
     let lastActive: Double?
     let messageCount: Int?
+    var isPinned: Bool?
+    var isArchived: Bool?
+    var isHidden: Bool?
 
     enum CodingKeys: String, CodingKey {
     case id, title, source, model
         case startedAt = "started_at"
         case lastActive = "last_active"
         case messageCount = "message_count"
+        case isPinned = "pinned"
+        case isArchived = "archived"
+        case isHidden = "hidden"
     }
 
     var date: Date? {
@@ -627,10 +633,16 @@ struct SessionDetail: Codable, Identifiable, Hashable {
     let lastActive: Double?
     let preview: String?
     let hasModelConfig: Bool?
+    let isPinned: Bool?
+    let isArchived: Bool?
+    let isHidden: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, source, model, title, preview
         case hasModelConfig = "has_model_config"
+        case isPinned = "pinned"
+        case isArchived = "archived"
+        case isHidden = "hidden"
         case startedAt = "started_at"
         case messageCount = "message_count"
         case toolCallCount = "tool_call_count"
@@ -659,8 +671,26 @@ struct GetSessionResponse: Codable {
 
 // MARK: - Session Patch (rename)
 
-struct PatchSessionRequest: Codable {
-    let title: String?
+struct PatchSessionRequest: Encodable {
+    var title: String?
+    var isPinned: Bool?
+    var isArchived: Bool?
+    var isHidden: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case isPinned = "pinned"
+        case isArchived = "archived"
+        case isHidden = "hidden"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let title { try container.encode(title, forKey: .title) }
+        if let isPinned { try container.encode(isPinned, forKey: .isPinned) }
+        if let isArchived { try container.encode(isArchived, forKey: .isArchived) }
+        if let isHidden { try container.encode(isHidden, forKey: .isHidden) }
+    }
 }
 
 // MARK: - Session Fork

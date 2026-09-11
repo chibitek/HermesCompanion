@@ -22,6 +22,7 @@ struct SessionPickerView: View {
     @State private var searchText = ""
     @State private var sortMode: SessionSortMode = .lastActive
     @State private var showSortOptions = false
+    @State private var showArchived = false
 
     private var visibleSessions: [HermesSession] {
         var result = store.sessions
@@ -29,6 +30,7 @@ struct SessionPickerView: View {
             let ids = Set(projects.sessionIDs(in: selectedProjectID))
             result = result.filter { ids.contains($0.id) }
         }
+        result = result.filter { showArchived ? $0.isArchived == true : $0.isArchived != true }
         if !searchText.isEmpty {
             result = result.filter {
                 ($0.title ?? "").localizedCaseInsensitiveContains(searchText) ||
@@ -37,13 +39,16 @@ struct SessionPickerView: View {
                 (projects.project(for: $0.id)?.name.localizedCaseInsensitiveContains(searchText) ?? false)
             }
         }
-        switch sortMode {
-        case .lastActive:
-            return result.sorted { ($0.lastActive ?? $0.startedAt ?? 0) > ($1.lastActive ?? $1.startedAt ?? 0) }
-        case .title:
-            return result.sorted { ($0.title ?? "Untitled").localizedCaseInsensitiveCompare($1.title ?? "Untitled") == .orderedAscending }
-        case .messageCount:
-            return result.sorted { ($0.messageCount ?? 0) > ($1.messageCount ?? 0) }
+        return result.sorted { lhs, rhs in
+            if lhs.isPinned != rhs.isPinned { return lhs.isPinned == true }
+            switch sortMode {
+            case .lastActive:
+                return (lhs.lastActive ?? lhs.startedAt ?? 0) > (rhs.lastActive ?? rhs.startedAt ?? 0)
+            case .title:
+                return (lhs.title ?? "Untitled").localizedCaseInsensitiveCompare(rhs.title ?? "Untitled") == .orderedAscending
+            case .messageCount:
+                return (lhs.messageCount ?? 0) > (rhs.messageCount ?? 0)
+            }
         }
     }
 
@@ -52,6 +57,7 @@ struct SessionPickerView: View {
            let project = projects.projects.first(where: { $0.id == selectedProjectID }) {
             return project.name
         }
+        if mode == .chats, showArchived { return "Archived Chats" }
         return mode == .chats ? "History" : "Projects"
     }
 
@@ -190,6 +196,16 @@ struct SessionPickerView: View {
                     .buttonStyle(.plain)
 
                     if !(mode == .projects && selectedProjectID == nil) {
+                        Button { showArchived.toggle() } label: {
+                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                                .frame(width: 38, height: 34)
+                                .background(AnyView(theme.glassCard(cornerRadius: theme.controlRadius)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showArchived ? "Show active chats" : "Show archived chats")
+
                         Button { showSortOptions = true } label: {
                             Image(systemName: "arrow.up.arrow.down")
                                 .font(.system(size: 15, weight: .semibold))
@@ -325,6 +341,20 @@ struct SessionPickerView: View {
                                     dismiss()
                                 }
                             },
+                            onTogglePin: {
+                                Task {
+                                    await store.updateSessionFlags(
+                                        session, isPinned: session.isPinned != true
+                                    )
+                                }
+                            },
+                            onToggleArchive: {
+                                Task {
+                                    await store.updateSessionFlags(
+                                        session, isArchived: session.isArchived != true
+                                    )
+                                }
+                            },
                             onDelete: {
                                 projects.assign(sessionID: session.id, to: nil)
                                 Task { await store.deleteSession(session) }
@@ -398,6 +428,8 @@ private struct SessionRowButton: View {
     let onRename: () -> Void
     let onDetails: () -> Void
     let onFork: () -> Void
+    let onTogglePin: () -> Void
+    let onToggleArchive: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -412,6 +444,18 @@ private struct SessionRowButton: View {
             Button(action: onRename) { Label("Rename", systemImage: "pencil") }
             Button(action: onDetails) { Label("Details", systemImage: "info.circle") }
             Button(action: onFork) { Label("Fork", systemImage: "arrow.triangle.branch") }
+            Button(action: onTogglePin) {
+                Label(
+                    session.isPinned == true ? "Unpin" : "Pin",
+                    systemImage: session.isPinned == true ? "pin.slash" : "pin"
+                )
+            }
+            Button(action: onToggleArchive) {
+                Label(
+                    session.isArchived == true ? "Unarchive" : "Archive",
+                    systemImage: session.isArchived == true ? "tray.and.arrow.up" : "archivebox"
+                )
+            }
             Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }
         }
     }
@@ -426,10 +470,17 @@ struct SessionRow: View {
     var body: some View {
         HStack(spacing: theme.spacingS) {
             VStack(alignment: .leading, spacing: theme.spacingXS) {
-                Text(session.title ?? "Untitled")
-                    .font(theme.uiFont.weight(.semibold))
-                    .foregroundStyle(theme.textPrimary)
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if session.isPinned == true {
+                        Image(systemName: "pin.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(theme.accent)
+                    }
+                    Text(session.title ?? "Untitled")
+                        .font(theme.uiFont.weight(.semibold))
+                        .foregroundStyle(theme.textPrimary)
+                        .lineLimit(2)
+                }
 
                 HStack(spacing: 6) {
                     if let projectName {
@@ -447,6 +498,11 @@ struct SessionRow: View {
                 Text(metadata)
                     .font(.caption)
                     .foregroundStyle(theme.textSecondary)
+                if session.isArchived == true {
+                    Label("Archived", systemImage: "archivebox")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(theme.textSecondary)
+                }
             }
             .multilineTextAlignment(.leading)
 
@@ -564,6 +620,11 @@ struct SessionDetailView: View {
                             row("ID", detail.id)
                             if let source = detail.source { row("Source", source) }
                             if let model = detail.model { row("Model", model) }
+                        }
+                        Section("State") {
+                            row("Pinned", detail.isPinned == true ? "Yes" : "No")
+                            row("Archived", detail.isArchived == true ? "Yes" : "No")
+                            row("Hidden", detail.isHidden == true ? "Yes" : "No")
                         }
                         Section("Activity") {
                             if let started = detail.date { row("Started", started.formatted(date: .abbreviated, time: .shortened)) }

@@ -319,9 +319,19 @@ final class HermesAPIClient: Sendable {
 
     // MARK: - Session Rename (PATCH /api/sessions/{id})
 
-    func patchSession(sessionId: String, title: String?) async throws -> HermesSession {
+    func patchSession(
+        sessionId: String,
+        title: String? = nil,
+        isPinned: Bool? = nil,
+        isArchived: Bool? = nil,
+        isHidden: Bool? = nil
+    ) async throws -> HermesSession {
         var req = try request(method: "PATCH", path: "/api/sessions/\(sessionId)")
-        req.httpBody = try JSONEncoder().encode(PatchSessionRequest(title: title))
+        req.httpBody = try JSONEncoder().encode(
+            PatchSessionRequest(
+                title: title, isPinned: isPinned, isArchived: isArchived, isHidden: isHidden
+            )
+        )
         let (data, response) = try await session.data(for: req)
         try checkHTTPStatus(response)
         let result = try JSONDecoder().decode(CreateSessionResponse.self, from: data)

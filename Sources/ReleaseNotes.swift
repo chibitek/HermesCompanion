@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.49":
+            return [
+                "Chats now support server-backed pinning, archiving, and state details.",
+                "History keeps archived chats separate and pins stay at the top.",
+                "Chat details show model, lineage state, activity, and token usage."
+            ]
         case "1.8.48":
             return [
                 "Model selection now locks to the active session and follows the real Hermes runtime.",

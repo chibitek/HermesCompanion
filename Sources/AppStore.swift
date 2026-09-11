@@ -752,6 +752,48 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func updateSessionFlags(
+        _ session: HermesSession,
+        isPinned: Bool? = nil,
+        isArchived: Bool? = nil,
+        isHidden: Bool? = nil
+    ) async {
+        let client: HermesAPIClient
+        do {
+            client = try self.client()
+        } catch {
+            self.error = AppError(message: "Not connected")
+            return
+        }
+        do {
+            let updated = try await client.patchSession(
+                sessionId: session.id,
+                isPinned: isPinned,
+                isArchived: isArchived,
+                isHidden: isHidden
+            )
+            replaceSession(updated)
+        } catch {
+            self.error = AppError(message: "Could not update chat: \(error.localizedDescription)")
+        }
+    }
+
+    private func replaceSession(_ updated: HermesSession) {
+        if let index = sessions.firstIndex(where: { $0.id == updated.id }) {
+            sessions[index] = updated
+        }
+        if activeSession?.id == updated.id {
+            activeSession = updated
+        }
+        if updated.isArchived == true && activeSession?.id == updated.id {
+            activeSession = nil
+            messages = []
+            if let baseURL = connectionConfig?.normalizedBaseURL {
+                activeSessionPersistence.clear(for: baseURL)
+            }
+        }
+    }
+
     func forkSession(_ session: HermesSession) async {
         let client: HermesAPIClient
         do {

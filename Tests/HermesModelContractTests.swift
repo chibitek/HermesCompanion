@@ -54,4 +54,31 @@ final class HermesModelContractTests: XCTestCase {
             "That URL is the Hermes webhook endpoint. Use the API gateway on port 8642."
         )
     }
+
+    func testDecodesServerSessionFlags() throws {
+        let json = """
+        {
+          "id": "session-1",
+          "title": "Pinned chat",
+          "source": "api_server",
+          "model": "moonshotai/kimi-k3",
+          "pinned": true,
+          "archived": false,
+          "hidden": false
+        }
+        """.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(HermesSession.self, from: json)
+        XCTAssertEqual(session.isPinned, true)
+        XCTAssertEqual(session.isArchived, false)
+        XCTAssertEqual(session.isHidden, false)
+    }
+
+    func testSessionPatchOmitsUnsetFields() throws {
+        let data = try JSONEncoder().encode(
+            PatchSessionRequest(isArchived: true)
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json as? [String: Bool], ["archived": true])
+    }
 }
