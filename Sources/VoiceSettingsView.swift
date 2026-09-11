@@ -147,7 +147,7 @@ struct VoiceSettingsView: View {
             } header: {
                 Text("Voice")
             } footer: {
-                Text("Enhanced and premium voices sound more natural. Download additional voices in iOS Settings under Accessibility > Spoken Content.")
+                Text("Hermes replies use the local iOS speech engine. Enhanced and premium voices sound more natural. Download additional voices in iOS Settings under Accessibility > Spoken Content.")
             }
 
             Section {
