@@ -205,7 +205,6 @@ struct VoiceConversationPage: View {
         if voiceConversation.isThinking { return "THINKING..." }
         if voiceConversation.isSpeaking { return "SPEAKING..." }
         if voiceConversation.isListening { return "LISTENING..." }
-        if voiceConversation.voiceError != nil { return "MIC NEEDS ATTENTION" }
         if voiceConversation.isConversing { return "TAP TO TALK" }
         return "SAY SOMETHING"
     }

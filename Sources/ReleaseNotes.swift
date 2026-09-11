@@ -16,6 +16,9 @@ enum ReleaseNotes {
         switch version {
         case "1.8.61":
             return [
+                "Pinned sessions now surface directly in Platform Hub and History.",
+                "Model provider and catalog sync now refresh live from Hermes.",
+                "Voice replies use the local iOS voice path only.",
                 "Platform Hub now exposes the live Hermes endpoints.",
                 "Streaming watchdog timing is now more stable."
             ]

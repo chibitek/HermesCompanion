@@ -249,6 +249,26 @@ struct PlatformHubView: View {
                         }
                     }
                 }
+                if !pinnedSessions.isEmpty {
+                    ForEach(pinnedSessions.prefix(12)) { session in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(session.title ?? "Untitled")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(theme.textPrimary)
+                                .lineLimit(1)
+                            if let model = session.model, !model.isEmpty {
+                                Text(model)
+                                    .font(.caption)
+                                    .foregroundStyle(theme.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                } else {
+                    Text("No pinned sessions are reported by this gateway.")
+                        .font(.caption)
+                        .foregroundStyle(theme.textSecondary)
+                }
             }
         }
     }
@@ -258,6 +278,26 @@ struct PlatformHubView: View {
             platformRow("Total Chats", "\(store.sessions.count)", icon: "bubble.left.and.bubble.right")
             platformRow("Active Chats", "\(activeSessions.count)", icon: "bubble.left")
             platformRow("Pinned Chats", "\(pinnedSessions.count)", icon: "pin")
+            if !pinnedSessions.isEmpty {
+                ForEach(pinnedSessions.prefix(12)) { session in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(session.title ?? "Untitled")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(theme.textPrimary)
+                            .lineLimit(1)
+                        if let model = session.model, !model.isEmpty {
+                            Text(model)
+                                .font(.caption)
+                                .foregroundStyle(theme.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            } else {
+                Text("No pinned sessions are reported by this gateway.")
+                    .font(.caption)
+                    .foregroundStyle(theme.textSecondary)
+            }
             platformRow("Archived Chats", "\(store.sessions.filter { $0.isArchived == true }.count)", icon: "archivebox")
         }
     }
