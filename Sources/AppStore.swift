@@ -153,7 +153,7 @@ final class AppStore: ObservableObject {
                     do {
                         let health = try await client.checkHealth()
                         let latency = Int(Date().timeIntervalSince(start) * 1000)
-                        return (config.baseURL, health.status == "ok" ? .online : .offline, latency, health.version)
+                        return (config.baseURL, health.status == "ok" && health.isHermesAPI ? .online : .offline, latency, health.version)
                     } catch {
                         return (config.baseURL, .offline, nil, nil)
                     }
@@ -208,8 +208,9 @@ final class AppStore: ObservableObject {
             let health = try await withTimeout(seconds: 10) {
                 try await client.checkHealth()
             }
-            guard health.status == "ok" else {
-                self.error = AppError(message: "Server returned status: \(health.status)")
+            guard health.status == "ok", health.isHermesAPI else {
+                self.error = AppError(message: Self.invalidHealthMessage(health))
+                FileLogger.shared.log("AppStore: autoConnect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
                 self.isLoadingConnection = false
                 return
             }
@@ -244,8 +245,9 @@ final class AppStore: ObservableObject {
         reconnectRetryCount = 0
         do {
             let health = try await client.checkHealth()
-            guard health.status == "ok" else {
-                self.error = AppError(message: "Server returned status: \(health.status)")
+            guard health.status == "ok", health.isHermesAPI else {
+                self.error = AppError(message: Self.invalidHealthMessage(health))
+                FileLogger.shared.log("AppStore: connect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
                 return false
             }
             _ = try await client.getCapabilities()
@@ -506,6 +508,16 @@ final class AppStore: ObservableObject {
     private func nonEmpty(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
         return value
+    }
+
+    nonisolated static func invalidHealthMessage(_ health: HealthResponse) -> String {
+        if health.platform == "webhook" {
+            return "That URL is the Hermes webhook endpoint. Use the API gateway on port 8642."
+        }
+        if health.status != "ok" {
+            return "Server returned status: \(health.status)"
+        }
+        return "That URL is not a Hermes API gateway."
     }
 
     private func savePreference(_ value: String, key: String) {

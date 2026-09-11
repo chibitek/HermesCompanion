@@ -370,6 +370,7 @@ enum APIError: LocalizedError {
     case rateLimited
     case serverError(status: Int)
     case unknown(status: Int)
+    case invalidEndpoint(String)
     case sseParseError(String)
     case connectionRefused
 
@@ -382,6 +383,7 @@ enum APIError: LocalizedError {
         case .rateLimited: return "Rate limited — too many requests"
         case .serverError(let s): return "Server error (HTTP \(s))"
         case .unknown(let s): return "Unknown error (HTTP \(s))"
+        case .invalidEndpoint(let message): return message
         case .sseParseError(let d): return "Failed to parse SSE event: \(d)"
         case .connectionRefused: return "Cannot connect to Hermes. Check your URL and network (Tailscale connected?)"
         }
