@@ -56,6 +56,7 @@
 		A7C964BA91BD19B6BE8FA0B9 /* FilePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE611F1C01056A05C20BC7AA /* FilePickerView.swift */; };
 		A8FBD11A8D629EB4A29E5F40 /* ActiveSessionPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */; };
 		AA0469C11390A59867DA014C /* HermesControlWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE746186A15D314B390ECCF0 /* HermesControlWidgetBundle.swift */; };
+		C3B9E7CA5A98A25BE25299F3 /* HermesModelContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DDD0EF00AE53B1CB6CE883 /* HermesModelContractTests.swift */; };
 		C976F5D603BB2A2E0CBC38D6 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */; };
 		CB8F46D3AEFF5EB3E585BAE5 /* ToolsetsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B87A150E7A7EE2D29064C1E /* ToolsetsListView.swift */; };
 		CF434D0979D078532F24B72E /* TTSProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D30460C7C6F28D2359A8E8 /* TTSProvider.swift */; };
@@ -155,6 +156,7 @@
 		AD348F4EBB40BD3B6F3F2C74 /* StreamWatchdogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamWatchdogTests.swift; sourceTree = "<group>"; };
 		B0462220C6A7891E8E42F07B /* StreamWatchdogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamWatchdogManager.swift; sourceTree = "<group>"; };
 		B063172039210054C110721D /* CarPlayVoiceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayVoiceController.swift; sourceTree = "<group>"; };
+		B0DDD0EF00AE53B1CB6CE883 /* HermesModelContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesModelContractTests.swift; sourceTree = "<group>"; };
 		BE611F1C01056A05C20BC7AA /* FilePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePickerView.swift; sourceTree = "<group>"; };
 		C5DCE8A1000AFBDEFBF97D7E /* HermesControlWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HermesControlWidgetExtension.entitlements; sourceTree = "<group>"; };
 		C65133D88E05ED712E002D1E /* GlassAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassAnimations.swift; sourceTree = "<group>"; };
@@ -257,6 +259,7 @@
 			children = (
 				3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */,
 				C6CC0110AB94C4C9331E73C4 /* ComposerSubmissionLogicTests.swift */,
+				B0DDD0EF00AE53B1CB6CE883 /* HermesModelContractTests.swift */,
 				413E29ABC281FB559F469790 /* MarkdownBlocksTests.swift */,
 				6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */,
 				8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */,
@@ -393,6 +396,7 @@
 			files = (
 				A8FBD11A8D629EB4A29E5F40 /* ActiveSessionPersistenceTests.swift in Sources */,
 				447392FE56BF7B3443B7CBAF /* ComposerSubmissionLogicTests.swift in Sources */,
+				C3B9E7CA5A98A25BE25299F3 /* HermesModelContractTests.swift in Sources */,
 				2448C7D9A618A8A8D68026C9 /* MarkdownBlocksTests.swift in Sources */,
 				D3508E86FEF84CE0FB3A2362 /* ProjectStoreTests.swift in Sources */,
 				149052C798A239F946342A23 /* ReleaseNotesTests.swift in Sources */,
@@ -507,7 +511,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 130;
+				CURRENT_PROJECT_VERSION = 131;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -518,7 +522,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = YES;
-				MARKETING_VERSION = 1.8.47;
+				MARKETING_VERSION = 1.8.48;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -533,7 +537,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 130;
+				CURRENT_PROJECT_VERSION = 131;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -544,7 +548,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.8.47;
+				MARKETING_VERSION = 1.8.48;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -625,7 +629,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 130;
+				CURRENT_PROJECT_VERSION = 131;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -633,7 +637,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.47;
+				MARKETING_VERSION = 1.8.48;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -707,7 +711,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 130;
+				CURRENT_PROJECT_VERSION = 131;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -715,7 +719,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.47;
+				MARKETING_VERSION = 1.8.48;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
