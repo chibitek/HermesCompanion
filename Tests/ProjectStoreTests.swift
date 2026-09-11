@@ -63,6 +63,37 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.project(for: "session-42")?.id, project.id)
     }
 
+    func testProjectsAreScopedPerServer() {
+        let defaults = isolatedDefaults()
+        let store = ProjectStore(defaults: defaults)
+        store.configure(for: "http://server-a:8642")
+        let project = store.createProject(name: "Server A")
+        store.assign(sessionID: "session-a", to: project.id)
+
+        let remote = ProjectStore(defaults: defaults)
+        remote.configure(for: "http://server-b:8642")
+        XCTAssertTrue(remote.projects.isEmpty)
+
+        let sameServer = ProjectStore(defaults: defaults)
+        sameServer.configure(for: "http://server-a:8642")
+        XCTAssertEqual(sameServer.projects.first?.id, project.id)
+        XCTAssertEqual(sameServer.project(for: "session-a")?.id, project.id)
+    }
+
+    func testPrunesAssignmentsForDeletedSessions() {
+        let defaults = isolatedDefaults()
+        let store = ProjectStore(defaults: defaults)
+        store.configure(for: "http://server-a:8642")
+        let project = store.createProject(name: "Archive")
+        store.assign(sessionID: "deleted", to: project.id)
+        store.assign(sessionID: "current", to: project.id)
+
+        store.pruneSessions(Set(["current"]))
+
+        XCTAssertNil(store.project(for: "deleted"))
+        XCTAssertEqual(store.project(for: "current")?.id, project.id)
+    }
+
     private func isolatedDefaults() -> UserDefaults {
         let suite = "ProjectStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

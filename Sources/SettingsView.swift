@@ -353,7 +353,11 @@ struct SettingsView: View {
                             // AUTHOR (e.g. "anthropic") — sending it as provider
                             // broke switching for every OpenRouter model picked
                             // here. The bucket the user drilled into is the source.
-                            store.selectPreferredModel(model.id, provider: model.provider ?? selectedProvider)
+                            Task {
+                                await store.selectPreferredModel(
+                                    model.id, provider: model.provider ?? selectedProvider
+                                )
+                            }
                         },
                         onToggleFavorite: { model in
                             _ = store.toggleFavorite(model.id)
@@ -703,9 +707,17 @@ struct SettingsView: View {
         defer { isLoadingModels = false }
 
         do {
-            let catalog = try await client.getModelCatalog(refresh: forceRefresh)
-            availableModels = catalog.data
-            configuredProviders = catalog.providers ?? []
+            let options = try await client.getModelOptions(refresh: forceRefresh)
+            var infos: [ModelInfo] = []
+            for provider in options.providers {
+                infos += provider.models.map {
+                    ModelInfo(id: $0, object: "model", ownedBy: provider.name, provider: provider.slug)
+                }
+            }
+            configuredProviders = options.providers.map {
+                ProviderInfo(id: $0.slug, name: $0.name, modelCount: $0.models.count)
+            }
+            availableModels = infos
             // Only update the store's availableModels if we got a non-empty
             // list. Transient failures shouldn't replace the store's list
             // (which the compact picker reads) with an empty one.
@@ -723,14 +735,15 @@ struct SettingsView: View {
             selectCurrentModel(forProvider: resolvedProvider, preferExistingSelection: preferExistingSelection)
             modelRefreshFailed = false
         } catch {
+            do {
+                let catalog = try await client.getModelCatalog(refresh: forceRefresh)
+                availableModels = catalog.data
+                configuredProviders = catalog.providers ?? []
+            } catch {
             if forceRefresh {
                 modelRefreshFailed = true
                 modelRefreshMessage = "Refresh failed: \(error.localizedDescription)"
-            } else {
-                if availableModels.isEmpty {
-                    addCurrentModelIfNeeded()
-                    selectCurrentModel(forProvider: targetProvider, preferExistingSelection: preferExistingSelection)
-                }
+            }
             }
         }
     }

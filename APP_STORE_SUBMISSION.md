@@ -127,6 +127,6 @@ This app is a thin client for the open-source Hermes Agent platform (github.com/
 
 | Field | Value |
 |---|---|
-| **Version** | 1.8.40 |
-| **Build** | 117 |
-| **What's New** | ElevenLabs TTS support, voice provider picker, sessions pinned to bottom, voice latency improvements, CarPlay voice mode, App Store readiness |
+| **Version** | 1.8.48 |
+| **Build** | 131 |
+| **What's New** | Session-backed model locks, full gateway model catalogs, per-server project folders, stale project cleanup, and connection stability fixes |

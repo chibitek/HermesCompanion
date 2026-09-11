@@ -240,7 +240,7 @@ struct ChatView: View {
             },
             favoriteModels: store.favoriteModels,
             onSelectModel: { model, provider in
-                store.selectPreferredModel(model, provider: provider)
+                Task { await store.selectPreferredModel(model, provider: provider) }
             },
             onToggleFavorite: { model in
                 _ = store.toggleFavorite(model)

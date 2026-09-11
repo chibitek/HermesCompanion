@@ -284,10 +284,12 @@ struct GlassInputBar: View {
 
                     Button {
                         showModelPicker = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            if let prov = ProviderUtils.providerOf(currentModel), !prov.isEmpty {
-                                Text(prov.capitalized)
+                        } label: {
+                            HStack(spacing: 4) {
+                            let provider = modelInfos[currentModel]?.provider
+                                ?? ProviderUtils.providerOf(currentModel)
+                            if let provider, !provider.isEmpty {
+                                Text(provider.capitalized)
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(theme.accent)
                             }

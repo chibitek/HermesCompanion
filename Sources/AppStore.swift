@@ -28,6 +28,8 @@ final class AppStore: ObservableObject {
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
     @Published var modelInfos: [String: ModelInfo] = [:]
+    @Published var configuredProviders: [String] = []
+    @Published var activeRuntime: SessionRuntime?
     @Published private(set) var queuedMessages: [QueuedMessage] = [] {
         didSet { saveQueue() }
     }
@@ -86,6 +88,10 @@ final class AppStore: ObservableObject {
             ?? nonEmpty(capabilities?.currentModel)
             ?? nonEmpty(capabilities?.model)
             ?? ""
+    }
+
+    var sessionModelLockAvailable: Bool {
+        capabilities?.features.sessionModelLock == true
     }
 
     // MARK: - Private
@@ -422,48 +428,60 @@ final class AppStore: ObservableObject {
         } catch {
             // Non-fatal — capabilities are optional
         }
-        // Load available models
-        var modelsLoaded = false
+        // Load the configured-provider catalog first. This is the full list the
+        // desktop sees; /v1/models is only a fallback for older gateways.
         do {
-            let infos = try await client.getModels()
-            self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            let models = infos.map { $0.id }
-            self.availableModels = modelsIncludingCurrent(models)
-            modelsLoaded = true
-        } catch {
-            self.availableModels = modelsIncludingCurrent([])
-            self.error = AppError(message: "Failed to load models: \(error.localizedDescription)")
-        }
-        // Sync preferredModel to gateway's current model ONLY when models
-        // loaded successfully. If getModels() failed, availableModels is stale
-        // and we must not overwrite the user's saved preference.
-        if modelsLoaded {
-            let gwModel = self.capabilities?.currentModel ?? self.capabilities?.model ?? ""
-            if !gwModel.isEmpty,
-               preferredModel.isEmpty || !availableModels.contains(preferredModel) {
-                preferredModel = gwModel
+            let options = try await client.getModelOptions()
+            var infos: [ModelInfo] = []
+            for provider in options.providers {
+                infos += provider.models.map {
+                    ModelInfo(id: $0, object: "model", ownedBy: provider.name, provider: provider.slug)
+                }
             }
+            self.configuredProviders = options.providers.map(\.slug)
+            self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let models = infos.map(\.id)
+            self.availableModels = modelsIncludingCurrent(models)
+        } catch {
+            do {
+                let infos = try await client.getModels()
+                self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                let models = infos.map(\.id)
+                self.availableModels = modelsIncludingCurrent(models)
+            } catch {
+                self.availableModels = modelsIncludingCurrent([])
+                self.error = AppError(message: "Failed to load models: \(error.localizedDescription)")
+            }
+        }
+        if preferredModel.isEmpty {
+            let gwModel = self.capabilities?.currentModel ?? self.capabilities?.model ?? ""
+            preferredModel = gwModel
         }
     }
 
-    func selectPreferredModel(_ model: String, provider: String? = nil) {
+    func selectPreferredModel(_ model: String, provider: String? = nil) async {
         preferredModel = model
         // Resolve provider ONLY from explicit arg or model ID prefix (e.g. "openai/gpt-4").
         // Do NOT fall back to capabilities.currentProvider — that's the gateway's
         // current state, not necessarily where this model lives. Sending a stale
-        // provider (e.g. "nous") to switchGatewayModel breaks local Ollama models.
         let resolvedProvider = nonEmpty(provider)
             ?? ProviderUtils.providerOf(model)
+            ?? nonEmpty(modelInfos[model]?.provider)
             ?? ""
         if !resolvedProvider.isEmpty {
             preferredProvider = resolvedProvider
         }
-        // Switch the gateway's active model. Only send provider when we know it
-        // from the model ID or explicit arg; otherwise let the gateway keep its
-        // current provider config.
-        let selectedProvider = resolvedProvider.isEmpty ? nil : resolvedProvider
-        Task {
-            await apiClient?.switchGatewayModel(model, provider: selectedProvider)
+        // Lock the model on the active Hermes session. This is the server-backed
+        // equivalent of opening a chat in the desktop; it never rewrites the
+        // gateway's global provider config.
+        guard let sessionId = activeSession?.id else { return }
+        do {
+            activeRuntime = try await apiClient?.lockSessionModel(
+                sessionId: sessionId, model: model,
+                provider: resolvedProvider.isEmpty ? nil : resolvedProvider
+            )
+        } catch {
+            self.error = AppError(message: "Could not lock this session's model: \(error.localizedDescription)")
         }
     }
 
@@ -611,6 +629,19 @@ final class AppStore: ObservableObject {
         } catch {
             self.error = AppError(message: "Failed to load messages: \(error.localizedDescription)")
         }
+        // Session model is the server's durable row value. Use it to show a
+        // sane current model even when Hermes is older and has no runtime lock.
+        if let model = session.model, !model.isEmpty {
+            activeRuntime = SessionRuntime(
+                provider: modelInfos[model]?.provider,
+                model: model,
+                routeSource: "session",
+                requested: nil,
+                modelLock: nil
+            )
+        } else {
+            activeRuntime = nil
+        }
     }
 
     /// Silently reload the active session's messages without tearing down UI
@@ -745,6 +776,11 @@ final class AppStore: ObservableObject {
 
         let session = await ensureSession(client: client)
         guard let session else { return nil }
+        // Confirm the selected model belongs to this session before sending.
+        // A failure must stop the turn instead of silently using another model.
+        if await !lockPreferredModel(for: session, client: client) {
+            return nil
+        }
 
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
@@ -872,6 +908,30 @@ final class AppStore: ObservableObject {
         }
     }
 
+    private func lockPreferredModel(for session: HermesSession, client: HermesAPIClient) async -> Bool {
+        guard let model = nonEmpty(effectiveCurrentModel) else { return true }
+        if !sessionModelLockAvailable {
+            activeRuntime = SessionRuntime(
+                provider: modelInfos[model]?.provider,
+                model: model,
+                routeSource: "request",
+                requested: nil,
+                modelLock: nil
+            )
+            return true
+        }
+        let provider = nonEmpty(modelInfos[model]?.provider)
+        do {
+            activeRuntime = try await client.lockSessionModel(
+                sessionId: session.id, model: model, provider: provider
+            )
+            return true
+        } catch {
+            self.error = AppError(message: "Could not lock this session's model: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     private func streamMessage(
         client: HermesAPIClient, session: HermesSession,
         text: String, watchdog: StreamWatchdogManager
@@ -879,7 +939,8 @@ final class AppStore: ObservableObject {
         var assistantMessage: ChatDisplayMessage?
         var receivedCompletion = false
         let stream = try await client.streamChat(
-            sessionId: session.id, message: text, model: effectiveCurrentModel,
+            sessionId: session.id, message: text,
+            model: sessionModelLockAvailable ? nil : effectiveCurrentModel,
             onKeepalive: { watchdog.recordActivity() }
         )
         for try await event in stream {
@@ -901,7 +962,8 @@ final class AppStore: ObservableObject {
     ) async throws -> ChatDisplayMessage? {
         let response = try await client.sendChat(
             sessionId: session.id, message: text,
-            model: effectiveCurrentModel, images: images, attachments: attachments
+            model: sessionModelLockAvailable ? nil : effectiveCurrentModel,
+            images: images, attachments: attachments
         )
         if Task.isCancelled { return nil }
         let content = response.message.content
@@ -1026,6 +1088,9 @@ final class AppStore: ObservableObject {
             ))
 
         case "assistant.completed":
+            if let runtime = event.runtime {
+                activeRuntime = runtime
+            }
             let finalContent = Self.stripRawArtifacts(event.content ?? streamingText)
 
             if !finalContent.isEmpty {
@@ -1044,6 +1109,9 @@ final class AppStore: ObservableObject {
             streamingThinking = ""
 
         case "run.completed":
+            if let runtime = event.runtime {
+                activeRuntime = runtime
+            }
             streamingText = ""
             streamingThinking = ""
             await refreshSessions()

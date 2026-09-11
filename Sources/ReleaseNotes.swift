@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.48":
+            return [
+                "Model selection now locks to the active session and follows the real Hermes runtime.",
+                "Model and provider lists load directly from the configured Hermes gateway.",
+                "Project folders are now isolated per server and clean up deleted chats."
+            ]
         case "1.8.34":
             return [
                 "Restored the complete scrollable skills list in the chat composer.",

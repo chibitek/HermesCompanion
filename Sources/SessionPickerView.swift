@@ -130,6 +130,12 @@ struct SessionPickerView: View {
             ProjectAssignmentSheet(projects: projects, session: session)
                 .withActiveTheme(appearance)
         }
+        .task(id: store.connectionConfig?.normalizedBaseURL) {
+            projects.configure(for: store.connectionConfig?.normalizedBaseURL ?? "")
+        }
+        .task(id: store.sessions.map(\.id).hashValue) {
+            projects.pruneSessions(Set(store.sessions.map(\.id)))
+        }
         .confirmationDialog("Sort Chats", isPresented: $showSortOptions, titleVisibility: .visible) {
             ForEach(SessionSortMode.allCases) { sortMode in
                 Button { self.sortMode = sortMode } label: {
