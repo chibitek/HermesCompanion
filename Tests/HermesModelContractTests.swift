@@ -2,6 +2,21 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testJobRenameOmitsUntouchedRemoteFieldsButAllowsClearingSkills() throws {
+        let original = try JSONDecoder().decode(HermesJob.self, from: Data(#"{"id":"job","name":"Original","prompt":"Existing prompt","schedule_display":"Every 2 hours","deliver":"local","skills":["review"]}"#.utf8))
+        var draft = HermesJobWrite(name: "Renamed", schedule: nil, prompt: "Existing prompt", deliver: "local", skills: ["review"])
+        let patch = draft.changes(comparedTo: original)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(patch)) as? [String: Any])
+        XCTAssertEqual(Set(json.keys), ["name"])
+        XCTAssertTrue(patch.hasChanges)
+        draft.name = "Original"
+        XCTAssertFalse(draft.changes(comparedTo: original).hasChanges)
+        draft.skills = []
+        let cleared = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(draft.changes(comparedTo: original))) as? [String: Any])
+        XCTAssertEqual(Set(cleared.keys), ["skills"])
+        XCTAssertEqual(cleared["skills"] as? [String], [])
+    }
+
     @MainActor
     func testOlderSessionRefreshCannotOverwriteNewerModelAndPin() async throws {
         let config = URLSessionConfiguration.ephemeral
