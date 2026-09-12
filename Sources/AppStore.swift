@@ -1206,8 +1206,12 @@ final class AppStore: ObservableObject {
                       self.activeSession?.id == session.id else { return }
 
                 if assistantMessage == nil {
-                    assistantMessage = self.messages.last(where: \.isAssistant)
-                    FileLogger.shared.log("AppStore: fell back to reloaded assistant message: \(String(describing: assistantMessage?.content.prefix(60)))")
+                    let assistants = self.messages.filter(\.isAssistant)
+                    // A reload can recover a missing completion, but an unchanged
+                    // transcript must never replay an earlier answer as this turn.
+                    if assistants.count > existingAssistantCount {
+                        assistantMessage = assistants.last
+                    }
                 }
 
                 self.emptyStreamGuard(

@@ -233,6 +233,26 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertNil(store.error)
     }
 
+    @MainActor
+    func testEmptyChatResponseDoesNotReplayPreviousAssistantMessage() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.messages = [ChatDisplayMessage(id: "previous", role: "assistant", content: "Previous answer", timestamp: Date())]
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"object":"hermes.session.chat.completion","session_id":"current","message":{"role":"assistant","content":""}}"#)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        // Exercise the non-streaming attachment response path without contacting a server.
+        let result = await store.sendMessage("New question", images: [Data([0])], skipPostReload: true)
+        XCTAssertNil(result)
+        XCTAssertEqual(store.messages.filter(\.isAssistant).map(\.content), ["Previous answer"])
+        XCTAssertFalse(store.isStreaming)
+    }
+
     func testDecodesFullModelOptionsCatalog() throws {
         let json = """
         {
