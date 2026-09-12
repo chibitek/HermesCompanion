@@ -42,7 +42,7 @@ struct ConnectionSetupView: View {
     }
     
     private var isConnecting: Bool {
-        isTesting || (initialConfig == nil && testResult == nil) // Only during first save+connect
+        isTesting
     }
 
     var body: some View {
