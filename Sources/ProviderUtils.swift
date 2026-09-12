@@ -48,7 +48,7 @@ enum ProviderUtils {
     /// SF Symbol icon name for a provider slug.
     static func icon(for provider: String) -> String {
         switch provider.lowercased() {
-        case "ollama", "ollama-local", "lmstudio": return "desktopcomputer"
+        case "ollama", "ollama-local": return "desktopcomputer"
         case "ollama-cloud", "openrouter", "nous": return "cloud"
         case "anthropic", "openai", "openai-api", "gemini", "xai": return "sparkles"
         case "github-copilot", "copilot", "codex-oauth", "openai-codex", "qwen-oauth", "minimax-oauth": return "person.badge.key"
