@@ -22,6 +22,17 @@ storage changes are included. Regression coverage uses temporary profile data,
 including real skill discovery and named custom-provider resolution. The API,
 session API, and custom-provider identity suites pass: 162 tests, zero failures.
 
+Live verification on September 11, 2026: `/v1/skills` returned HTTP 200 with 286
+entries; the bridge returned ten project profile groups without errors, ten Bot
+profiles, and two boards. A separate diagnostic session returned HTTP 200 with
+provider `custom:local-(localhost:11434)`, model `qwen3.8:27b-mlx`, and
+`model_lock: confirmed`. The diagnostic session was then deleted successfully.
+
+The first graceful restart hit a transient macOS port-8642 bind failure. After
+the old process exited and the port was confirmed free, a second graceful
+restart restored the API. This restart edge case is not fixed by these patches;
+always verify the HTTP listener rather than relying only on service status.
+
 ## Applying to a Compatible Checkout
 
 Review the patches against the installed Hermes version first. Start from a
