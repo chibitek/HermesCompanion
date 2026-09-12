@@ -2,6 +2,17 @@
 
 ## Text-Only Audio Isolation Follow-Up
 
+The typed-message background keep-alive no longer generates or plays a silent
+audio loop. Its start/end/foreground paths do not touch AVAudioSession, and
+the obsolete phone/CarPlay handoff hooks were removed. Background execution
+now uses only the iOS time-limited task; indefinite text streaming while
+suspended is not promised. Foreground reconnection remains in place.
+
+All 9 VoiceActivationLogicTests passed in
+`Test-HermesCompanion-2026.09.11_23-38-31--0400.xcresult`, including a real
+AVAudioSession category-preservation test around the text lifecycle. This is
+not a physical-device music continuity or long-background recovery test.
+
 Wake listening now defaults off. Shared defaults perform a one-time reset of
 the previous automatic setting before views read it; later explicit opt-ins
 are preserved. The legacy defaults migration no longer restores the old value.

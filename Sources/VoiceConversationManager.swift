@@ -47,8 +47,6 @@ final class VoiceConversationManager: ObservableObject {
 
     // Conversation flow
     private var onTranscriptionComplete: ((String) -> Void)?
-    // Called before starting voice mode to stop background audio
-    var onStopBackgroundAudio: (() -> Void)?
 
     // Barge-in: mic level monitoring during TTS playback
     private var bargeInCheckTimer: Timer?
@@ -342,11 +340,6 @@ final class VoiceConversationManager: ObservableObject {
         }
         isStoppingListening = false
         voiceError = nil
-
-        // Stop the background silent audio player before starting voice mode.
-        // The silent player uses .playback category; switching to .playAndRecord
-        // while it's running can crash the audio engine.
-        onStopBackgroundAudio?()
 
         // CRITICAL: Stop the engine and remove any existing tap BEFORE setting
         // up a new tap. AVAudioEngine throws an Objective-C exception

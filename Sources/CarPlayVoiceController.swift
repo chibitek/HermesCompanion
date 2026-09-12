@@ -50,9 +50,6 @@ final class CarPlayVoiceController: ObservableObject {
     /// Called from HermesCompanionApp once the store exists.
     func attach(store: AppStore) {
         self.store = store
-        voice.onStopBackgroundAudio = { [weak store] in
-            store?.stopSilentAudioForVoice()
-        }
     }
 
     func toggleConversation() {

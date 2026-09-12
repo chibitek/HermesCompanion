@@ -113,9 +113,6 @@ struct ChatView: View {
             }
         }
         .onAppear {
-            voiceConversation.onStopBackgroundAudio = { [weak store] in
-                store?.stopSilentAudioForVoice()
-            }
             wakePhraseListener.onWakePhrase = {
                 guard !showVoicePage, !voiceConversation.isConversing else { return }
                 showVoicePage = true
