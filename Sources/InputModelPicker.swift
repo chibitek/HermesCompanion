@@ -7,6 +7,8 @@ struct InputModelPicker: View {
     let availableModels: [String]
     let favoriteModels: [String]
     let modelInfos: [String: ModelInfo]
+    var modelCatalog: [ModelInfo] = []
+    var currentProvider: String = ""
     let onSelect: (String, String?) -> Void
     var onToggleFavorite: ((String) -> Void)? = nil
     var gatewayDefaultModel: String = ""
@@ -27,7 +29,7 @@ struct InputModelPicker: View {
     /// Each name maps to the list of model IDs that share it.
     private var uniqueModels: [(name: String, ids: [String])] {
         var groups: [String: [String]] = [:]
-        for model in availableModels {
+        for model in Set(availableModels) {
             let name = ProviderUtils.shortModelName(model)
             groups[name, default: []].append(model)
         }
@@ -36,25 +38,10 @@ struct InputModelPicker: View {
     }
 
     /// Sources for a given model name (deduplicated).
-    private func sourcesFor(_ name: String) -> [(id: String, provider: String)] {
+    private func sourcesFor(_ name: String) -> [ModelSourceChoice] {
         let ids = uniqueModels.first { $0.name == name }?.ids ?? []
-        return ids.map { (id: $0, provider: sourceOf($0)) }
-            .sorted { ProviderUtils.displayName(for: $0.provider).localizedCaseInsensitiveCompare(ProviderUtils.displayName(for: $1.provider)) == .orderedAscending }
-    }
-
-    // MARK: - Source resolution
-
-    private func sourceOf(_ model: String) -> String {
-        if let info = modelInfos[model], let provider = info.provider, !provider.isEmpty {
-            return provider
-        }
-        if let prefix = ProviderUtils.providerOf(model) {
-            return prefix
-        }
-        if let info = modelInfos[model], let owned = info.ownedBy, !owned.isEmpty, owned.lowercased() != "hermes" {
-            return owned
-        }
-        return "Other"
+        return ModelSourceChoice.choices(for: ids, catalog: modelCatalog, fallback: modelInfos)
+            .sorted { ProviderUtils.displayName(for: $0.provider ?? "Other").localizedCaseInsensitiveCompare(ProviderUtils.displayName(for: $1.provider ?? "Other")) == .orderedAscending }
     }
 
     // MARK: - Search
@@ -200,21 +187,21 @@ struct InputModelPicker: View {
                 ForEach(sources, id: \.id) { source in
                     Button {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        onSelect(source.id, modelInfos[source.id]?.provider ?? nil)
+                        onSelect(source.model, source.provider)
                         dismiss()
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: ProviderUtils.icon(for: source.provider))
+                            Image(systemName: ProviderUtils.icon(for: source.provider ?? "Other"))
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(theme.accent)
                                 .frame(width: 34, height: 34)
                                 .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(ProviderUtils.displayName(for: source.provider))
+                                Text(ProviderUtils.displayName(for: source.provider ?? "Other"))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(theme.textPrimary)
-                                Text(source.id)
+                                Text(source.model)
                                     .font(.caption)
                                     .foregroundStyle(theme.textMuted)
                                     .lineLimit(1)
@@ -222,7 +209,7 @@ struct InputModelPicker: View {
 
                             Spacer()
 
-                            if source.id == currentModel {
+                            if source.model == currentModel && source.provider == currentProvider {
                                 Image(systemName: "checkmark")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(theme.accent)
@@ -258,12 +245,13 @@ struct InputModelPicker: View {
     private func modelRow(_ entry: (name: String, ids: [String])) -> some View {
         let isFavorite = entry.ids.contains { favoriteSet.contains($0) }
         let isSelected = entry.ids.contains { $0 == currentModel }
-        let sourceCount = entry.ids.count
+        let sources = sourcesFor(entry.name)
+        let sourceCount = sources.count
 
         return Button {
-            if sourceCount == 1 {
+            if sourceCount == 1, let source = sources.first {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onSelect(entry.ids[0], modelInfos[entry.ids[0]]?.provider ?? nil)
+                onSelect(source.model, source.provider)
                 dismiss()
             } else {
                 selectedModelName = entry.name

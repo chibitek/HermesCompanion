@@ -15,14 +15,7 @@ struct HermesCompanionApp: App {
                 .preferredColorScheme(effectiveColorScheme)
                 .tint(appearance.accent)
                 .task {
-                    // Migrate hey_hermes_enabled from standard UserDefaults to
-                    // App Group SharedDefaults so the Control Center toggle
-                    // and the app read/write the same store.
-                    if SharedDefaults.shared.object(forKey: "hey_hermes_enabled") == nil {
-                        let legacy = UserDefaults.standard.bool(forKey: "hey_hermes_enabled")
-                        SharedDefaults.shared.set(legacy, forKey: "hey_hermes_enabled")
-                        ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
-                    }
+                    ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
                     // Auto-connect if a saved config exists in Keychain.
                     // AppStore.init already loads it into connectionConfig;
                     // here we verify the server is reachable and populate
@@ -40,7 +33,12 @@ struct HermesCompanionApp: App {
                     // silently reconnects when the socket died while the app sat
                     // open (Tailscale rekey, gateway restart, network switch).
                     while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(60))
+                        do {
+                            try await Task.sleep(for: .seconds(60))
+                        } catch {
+                            return
+                        }
+                        guard !Task.isCancelled else { return }
                         guard scenePhase == .active, !store.isStreaming else { continue }
                         await store.reconnectIfNeeded()
                     }

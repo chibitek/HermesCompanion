@@ -3,10 +3,22 @@ import SwiftUI
 struct BotHistoryView: View {
     let client: HermesAPIClient
     let bot: ServerBot
+
+    var body: some View {
+        WorkspaceHistoryView(title: bot.title, identity: bot.name) { offset in
+            try await client.botHistory(profile: bot.name, offset: offset)
+        }
+    }
+}
+
+struct WorkspaceHistoryView: View {
+    let title: String
+    let identity: String
+    let load: (Int) async throws -> BotHistory
     @State private var offset = 0
 
     var body: some View {
-        WorkspaceReadView(load: { try await client.botHistory(profile: bot.name, offset: offset) },
+        WorkspaceReadView(load: { try await load(offset) },
                           refreshAutomatically: offset == 0) { history in
             Section {
                 if offset > 0 {
@@ -15,7 +27,7 @@ struct BotHistoryView: View {
                     }
                 }
                 if history.session_id == nil {
-                    ContentUnavailableView("No Bot Conversation", systemImage: "bubble.left")
+                    ContentUnavailableView("No Conversation", systemImage: "bubble.left")
                 } else if history.messages.isEmpty {
                     ContentUnavailableView("No Messages", systemImage: "bubble.left")
                 }
@@ -35,8 +47,8 @@ struct BotHistoryView: View {
                 }
             }
         }
-        .id("\(bot.name):\(offset)")
-        .navigationTitle(bot.title)
+        .id("\(identity):\(offset)")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
     }
 }

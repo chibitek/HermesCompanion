@@ -99,7 +99,6 @@ struct VoiceConversationPage: View {
             UIApplication.shared.isIdleTimerDisabled = true
             // Sync voice settings from UserDefaults (Settings > Voice)
             voiceConversation.syncVoiceSettings()
-            store?.isVoiceConversationActive = true
             startVoiceConversationIfNeeded()
             rainEaseTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
                 Task { @MainActor in
@@ -119,7 +118,6 @@ struct VoiceConversationPage: View {
             UIApplication.shared.isIdleTimerDisabled = false
             rainEaseTimer?.invalidate()
             rainEaseTimer = nil
-            store?.isVoiceConversationActive = false
             voiceConversation.stopConversation()
         }
     }

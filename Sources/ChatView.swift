@@ -21,7 +21,7 @@ struct ChatView: View {
     @StateObject private var voiceConversation = VoiceConversationManager()
     @State private var showVoicePage = false
     @StateObject private var wakePhraseListener = WakePhraseListener()
-    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = true
+    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -113,9 +113,6 @@ struct ChatView: View {
             }
         }
         .onAppear {
-            voiceConversation.onStopBackgroundAudio = { [weak store] in
-                store?.stopSilentAudioForVoice()
-            }
             wakePhraseListener.onWakePhrase = {
                 guard !showVoicePage, !voiceConversation.isConversing else { return }
                 showVoicePage = true
@@ -153,7 +150,7 @@ struct ChatView: View {
                     }
                  }
            case .background:
-               wakePhraseListener.startBackgroundMode()
+               wakePhraseListener.pause()
            case .inactive:
                break
             @unknown default:
@@ -248,6 +245,7 @@ struct ChatView: View {
             currentProvider: store.effectiveCurrentProvider,
             availableModels: store.availableModels,
             modelInfos: store.modelInfos,
+            modelCatalog: store.modelCatalog,
             onRefreshModels: {
                 Task { await store.refreshCapabilities() }
             },
@@ -440,63 +438,19 @@ struct ChatView: View {
     private func handleVoiceTranscription(_ transcription: String) {
         FileLogger.shared.log("ChatView: handleVoiceTranscription called: \(transcription)")
         let priorErrorID = store.error?.id
-        voiceConversation.isThinking = true
+        let voiceTurn = voiceConversation.beginRemoteTurn()
 
         Task {
-            // Hard timeout: if store.sendMessage doesn't return in 20 seconds,
-            // bail out and surface an error so the UI doesn't freeze.
-            // StreamWatchdogManager is flag-based (DispatchQueue.asyncAfter)
-            // because iOS's Task.sleep doesn't reliably fire when backgrounded.
-            let voiceWatchdog = StreamWatchdogManager()
-            voiceWatchdog.arm(after: 20) {
-                Task { @MainActor in
-                    guard self.voiceConversation.isThinking else { return }
-                    FileLogger.shared.log("ChatView: voice timeout fired (20s)")
-                    self.voiceConversation.failRemoteTurn(message: "Hermes took too long to respond. Please try again.")
-                }
-            }
-
-            // Monitor streaming text and start speaking as soon as we have
-            // enough text for natural speech. This cuts perceived latency dramatically
-            // — the user hears the response start while the rest is still streaming.
-            let monitorTask = Task { @MainActor in
-                var hasStartedSpeaking = false
-                while !Task.isCancelled && self.voiceConversation.isThinking {
-                    let current = self.store.streamingText
-                    if !current.isEmpty && !hasStartedSpeaking {
-                        let wordCount = current.split(separator: " ").count
-                        let hasSentenceEnd = current.contains(".") || current.contains("!") || current.contains("?")
-
-                        if hasSentenceEnd {
-                            if let endIdx = current.firstIndex(where: { ".!?".contains($0) }) {
-                                let firstSentence = String(current[...endIdx])
-                                if firstSentence.split(separator: " ").count >= 2 {
-                                    hasStartedSpeaking = true
-                                    FileLogger.shared.log("ChatView: starting early TTS with first sentence: \(firstSentence.prefix(80))")
-                                    self.voiceConversation.startEarlySpeaking(text: firstSentence)
-                                }
-                            }
-                        } else if wordCount >= 2 {
-                            hasStartedSpeaking = true
-                            FileLogger.shared.log("ChatView: starting early TTS with \(wordCount) words: \(current.prefix(80))")
-                            self.voiceConversation.startEarlySpeaking(text: current)
-                        }
-                    }
-                    try? await Task.sleep(nanoseconds: 20_000_000) // 20ms poll — faster response
-                }
-            }
-
+            guard voiceConversation.isCurrentRemoteTurn(voiceTurn) else { return }
+            // AppStore owns activity-aware request timeouts. Speak its complete
+            // answer rather than an untracked prefix from the text stream.
             let voiceMessage = "[voice] \(transcription)"
             let responseMessage = await store.sendMessage(voiceMessage, skipPostReload: true)
-            monitorTask.cancel()
-            voiceWatchdog.cancel()
+            guard voiceConversation.isCurrentRemoteTurn(voiceTurn) else { return }
             FileLogger.shared.log("ChatView: store.sendMessage returned \(String(describing: responseMessage?.content.prefix(80)))")
 
             guard let responseMessage = responseMessage else {
                 FileLogger.shared.log("ChatView: no response message")
-                // If thinking was already cleared (user cancelled / watchdog /
-                // a newer turn took over), stay quiet — don't fail a dead turn.
-                guard self.voiceConversation.isThinking else { return }
                 if let error = store.error, error.id != priorErrorID {
                     voiceConversation.failRemoteTurn(message: error.message)
                 } else {

@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var availableModels: [ModelInfo] = []
     @State private var configuredProviders: [ProviderInfo] = []
     @State private var isLoadingModels = false
+    @State private var modelLoadID = UUID()
     @State private var showingAddServer = false
     @State private var editingServer: ConnectionConfig?
 
@@ -90,9 +91,8 @@ struct SettingsView: View {
             }
             .onChange(of: selectedProvider) { oldValue, newValue in
                 guard oldValue != newValue, !isPriming else { return }
-                store.preferredProvider = newValue
                 Task {
-                    await loadModels(forProvider: newValue, preferExistingSelection: false)
+                    await loadModels(forProvider: newValue, preferExistingSelection: false, forceRefresh: true)
                 }
             }
             .sheet(isPresented: $showingAddServer) {
@@ -354,9 +354,10 @@ struct SettingsView: View {
                             // AUTHOR (e.g. "anthropic") — sending it as provider
                             // broke switching for every OpenRouter model picked
                             // here. The bucket the user drilled into is the source.
+                            let provider = model.provider ?? selectedProvider
                             Task {
                                 await store.selectPreferredModel(
-                                    model.id, provider: model.provider ?? selectedProvider
+                                    model.id, provider: provider
                                 )
                             }
                         },
@@ -370,7 +371,7 @@ struct SettingsView: View {
                     )
                 } label: {
                     settingsNavigationRow(
-                        title: "Active Model",
+                        title: "Model",
                         subtitle: modelSummary,
                         icon: "cpu",
                         value: selectedModel.isEmpty ? "Choose" : displayName(for: ModelInfo(id: selectedModel, ownedBy: selectedProvider))
@@ -729,11 +730,18 @@ struct SettingsView: View {
             return
         }
         let targetProvider = provider ?? selectedProvider
+        guard targetProvider == selectedProvider else { return }
+        let requestID = UUID()
+        modelLoadID = requestID
         isLoadingModels = true
-        defer { isLoadingModels = false }
+        defer {
+            if modelLoadID == requestID { isLoadingModels = false }
+        }
 
         do {
             let options = try await client.getModelOptions(refresh: forceRefresh)
+            guard modelLoadID == requestID, store.apiClient === client,
+                  selectedProvider == targetProvider, !Task.isCancelled else { return }
             var infos: [ModelInfo] = []
             for provider in options.providers {
                 infos += provider.models.map {
@@ -744,6 +752,7 @@ struct SettingsView: View {
                 ProviderInfo(id: $0.slug, name: $0.name, modelCount: $0.models.count)
             }
             availableModels = infos
+            store.modelCatalog = infos
             // Only update the store's availableModels if we got a non-empty
             // list. Transient failures shouldn't replace the store's list
             // (which the compact picker reads) with an empty one.
@@ -756,20 +765,26 @@ struct SettingsView: View {
                 : (availableProviders.first ?? "")
             if selectedProvider != resolvedProvider {
                 selectedProvider = resolvedProvider
-                store.preferredProvider = resolvedProvider
             }
             selectCurrentModel(forProvider: resolvedProvider, preferExistingSelection: preferExistingSelection)
             modelRefreshFailed = false
         } catch {
+            guard modelLoadID == requestID, store.apiClient === client,
+                  selectedProvider == targetProvider, !Task.isCancelled else { return }
             do {
                 let catalog = try await client.getModelCatalog(refresh: forceRefresh)
+                guard modelLoadID == requestID, store.apiClient === client,
+                      selectedProvider == targetProvider, !Task.isCancelled else { return }
                 availableModels = catalog.data
+                store.modelCatalog = catalog.data
                 configuredProviders = catalog.providers ?? []
             } catch {
-            if forceRefresh {
-                modelRefreshFailed = true
-                modelRefreshMessage = "Refresh failed: \(error.localizedDescription)"
-            }
+                guard modelLoadID == requestID, store.apiClient === client,
+                      selectedProvider == targetProvider, !Task.isCancelled else { return }
+                if forceRefresh {
+                    modelRefreshFailed = true
+                    modelRefreshMessage = "Refresh failed: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -876,7 +891,6 @@ struct SettingsView: View {
         if !serverModel.isEmpty,
            providerModels.contains(where: { $0.id == serverModel }) {
             selectedModel = serverModel
-            store.preferredModel = serverModel
             return
         }
 
@@ -890,8 +904,9 @@ struct SettingsView: View {
     private func addCurrentModelIfNeeded() {
         let model = store.effectiveCurrentModel
         guard !model.isEmpty, !availableModels.contains(where: { $0.id == model }) else { return }
-        let owner = store.capabilities?.currentProvider ?? ProviderUtils.providerOf(model) ?? selectedProvider
-        availableModels.insert(ModelInfo(id: model, ownedBy: owner.isEmpty ? nil : owner), at: 0)
+        let owner = store.effectiveCurrentProvider
+        availableModels.insert(ModelInfo(id: model, ownedBy: owner.isEmpty ? nil : owner,
+                                         provider: owner.isEmpty ? nil : owner), at: 0)
     }
 
     /// Display name for a model. Strips the "provider/" prefix and falls back

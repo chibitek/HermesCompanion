@@ -608,6 +608,23 @@ struct ModelInfo: Codable, Identifiable, Hashable {
     }
 }
 
+struct ModelSourceChoice: Identifiable, Hashable {
+    let model: String
+    let provider: String?
+    var id: Self { self }
+
+    static func choices(for modelIDs: [String], catalog: [ModelInfo], fallback: [String: ModelInfo]) -> [Self] {
+        var seen = Set<Self>()
+        return modelIDs.flatMap { model -> [Self] in
+            let matches = catalog.filter { $0.id == model }
+            let infos = matches.isEmpty ? fallback[model].map { [$0] } ?? [] : matches
+            let choices = infos.isEmpty ? [Self(model: model, provider: nil)]
+                : infos.map { Self(model: model, provider: $0.provider) }
+            return choices.filter { seen.insert($0).inserted }
+        }
+    }
+}
+
 struct ModelsResponse: Codable {
     let object: String?
     let data: [ModelInfo]
@@ -894,11 +911,34 @@ struct HermesJobResponse: Codable {
 }
 
 struct HermesJobWrite: Encodable, Hashable {
-    var name: String = ""
-    var schedule: String = ""
-    var prompt: String = ""
-    var deliver: String = "local"
-    var skills: [String] = []
+    var name: String? = ""
+    var schedule: String? = ""
+    var prompt: String? = ""
+    var deliver: String? = "local"
+    var skills: [String]? = []
+
+    var hasChanges: Bool {
+        name != nil || schedule != nil || prompt != nil || deliver != nil || skills != nil
+    }
+
+    func changes(comparedTo original: HermesJob) -> HermesJobWrite {
+        var patch = self
+        if name == original.name.trimmingCharacters(in: .whitespacesAndNewlines) { patch.name = nil }
+        if prompt == (original.prompt ?? "").trimmingCharacters(in: .whitespacesAndNewlines) { patch.prompt = nil }
+        if deliver == (original.deliver ?? "local").trimmingCharacters(in: .whitespacesAndNewlines) { patch.deliver = nil }
+        if skills == (original.skills ?? []) { patch.skills = nil }
+        if let schedule { patch.schedule = Self.scheduleUpdate(edited: schedule, originalDisplay: original.scheduleDisplay) }
+        return patch
+    }
+
+    static func scheduleUpdate(edited: String, originalDisplay: String?) -> String? {
+        let value = edited.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let originalDisplay,
+           value == originalDisplay.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return nil
+        }
+        return value
+    }
 }
 
 struct HermesArtifactReceipt: Codable, Identifiable, Hashable {

@@ -44,6 +44,10 @@ struct ServerProjectDetail: Decodable {
 
 struct WorkspaceBots: Decodable {
     let profiles: [ServerBot]
+
+    func profile(named name: String) -> ServerBot? {
+        profiles.first { $0.name == name }
+    }
 }
 
 struct ServerBot: Decodable, Identifiable {
@@ -70,6 +74,17 @@ struct BotHistory: Decodable {
     let session_id: String?
     let messages: [BotHistoryMessage]
     let pagination: HistoryPagination
+}
+
+struct ProjectSessionHistory: Decodable {
+    let project_id: String
+    let requested_session_id: String
+    let history: BotHistory
+
+    func matches(profile: String, projectID: String, sessionID: String, offset: Int) -> Bool {
+        project_id == projectID && requested_session_id == sessionID
+            && history.profile == profile && history.pagination.offset == offset
+    }
 }
 
 struct HistoryPagination: Decodable {
@@ -122,4 +137,59 @@ struct ServerBoardTask: Decodable, Identifiable {
     let status: String
     let assignee: String?
     let latest_summary: String?
+    let result: String?
+}
+
+struct ServerTaskDetail: Decodable {
+    let board: String
+    let task: ServerBoardTask
+    let comments: [ServerTaskComment]
+    let runs: [ServerTaskRun]
+    let links: ServerTaskLinks?
+    let child_results: [ServerBoardTask]?
+    let attachments: [ServerTaskAttachment]?
+
+    func matches(board: String, taskID: String) -> Bool {
+        self.board == board && task.id == taskID
+            && comments.allSatisfy { $0.task_id == taskID }
+            && runs.allSatisfy { $0.task_id == taskID }
+            && (child_results ?? []).allSatisfy { links?.children.contains($0.id) == true }
+            && (attachments ?? []).allSatisfy { $0.task_id == taskID }
+    }
+}
+
+struct ServerTaskLinks: Decodable {
+    let parents: [String]
+    let children: [String]
+}
+
+struct ServerTaskAttachment: Decodable, Identifiable {
+    let id: Int
+    let task_id: String
+    let filename: String
+    let size: Int
+
+    var safeFilename: String {
+        let name = (filename.replacingOccurrences(of: "\\", with: "/") as NSString).lastPathComponent
+        return name.isEmpty || name == "." || name == ".." ? "attachment" : name
+    }
+}
+
+struct ServerTaskComment: Decodable, Identifiable {
+    let id: Int
+    let task_id: String
+    let author: String
+    let body: String
+    let created_at: Double
+}
+
+struct ServerTaskRun: Decodable, Identifiable {
+    let id: Int
+    let task_id: String
+    let status: String
+    let profile: String?
+    let outcome: String?
+    let summary: String?
+    let error: String?
+    let started_at: Double
 }

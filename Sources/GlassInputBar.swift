@@ -18,6 +18,7 @@ struct GlassInputBar: View {
     var currentProvider: String = ""
     var availableModels: [String] = []
     var modelInfos: [String: ModelInfo] = [:]
+    var modelCatalog: [ModelInfo] = []
     var onRefreshModels: (() -> Void)? = nil
     var favoriteModels: [String] = []
     var onSelectModel: ((String, String?) -> Void)? = nil
@@ -38,6 +39,8 @@ struct GlassInputBar: View {
     @EnvironmentObject private var appearance: AppearanceSettings
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var voiceTranscriber = VoiceTranscriber()
+    @State private var dictationOriginalText: String?
+    @Environment(\.scenePhase) private var dictationScenePhase
     // External VoiceConversationManager passed from ChatView so overlay state stays in sync
     var voiceConversation: VoiceConversationManager
     @State private var showAttachmentMenu = false
@@ -93,15 +96,7 @@ struct GlassInputBar: View {
                     Spacer()
 
                     Button {
-                        // Insert transcribed text and stop
-                        if !voiceTranscriber.transcribedText.isEmpty {
-                            if text.isEmpty {
-                                text = voiceTranscriber.transcribedText
-                            } else {
-                                text += " " + voiceTranscriber.transcribedText
-                            }
-                        }
-                        voiceTranscriber.stopTranscription()
+                        finishDictation(accept: true)
                     } label: {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.title3)
@@ -110,7 +105,7 @@ struct GlassInputBar: View {
                     .buttonStyle(.plain)
 
                     Button {
-                        voiceTranscriber.stopTranscription()
+                        finishDictation(accept: false)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title3)
@@ -200,6 +195,7 @@ struct GlassInputBar: View {
             // Claude-style two-line composer: text on top, controls/status below.
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Chat with Hermes", text: $text, axis: .vertical)
+                    .disabled(voiceTranscriber.isRecording)
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .submitLabel(appearance.returnKeySends ? .send : .return)
@@ -317,6 +313,8 @@ struct GlassInputBar: View {
                                 availableModels: availableModels,
                                 favoriteModels: favoriteModels,
                                 modelInfos: modelInfos,
+                                modelCatalog: modelCatalog,
+                                currentProvider: currentProvider,
                                 onSelect: { model, provider in
                                     onSelectModel?(model, provider)
                                     showModelPicker = false
@@ -338,6 +336,7 @@ struct GlassInputBar: View {
 
                     if !voiceTranscriber.isRecording && !voiceConversation.isConversing {
                         Button {
+                            dictationOriginalText = text
                             voiceTranscriber.startTranscription()
                         } label: {
                             Image(systemName: "mic.fill")
@@ -371,7 +370,7 @@ struct GlassInputBar: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(!isStreaming && !canSend && voiceTranscriber.isRecording)
+                    .disabled(voiceTranscriber.isRecording)
                     .accessibilityLabel(trailingActionLabel)
                 }
             }
@@ -388,17 +387,18 @@ struct GlassInputBar: View {
             .padding(.horizontal, theme.spacingL)
             .padding(.bottom, theme.spacingS)
         }
-        .onAppear {
-            Task { await voiceTranscriber.requestAuthorization() }
-            Task { await voiceConversation.requestAuthorization() }
-        }
         .onChange(of: voiceTranscriber.transcribedText) { _, newValue in
-            if voiceTranscriber.isRecording && !newValue.isEmpty {
-                text = newValue
+            if voiceTranscriber.isRecording, let original = dictationOriginalText {
+                text = ComposerDictationLogic.mergedText(original: original, transcription: newValue)
             }
         }
         .onChange(of: voiceTranscriber.isRecording) { _, isRecording in
+            if !isRecording { finishDictation(accept: true) }
             onDictationStateChange?(isRecording)
+        }
+        .onDisappear { finishDictation(accept: true) }
+        .onChange(of: dictationScenePhase) { _, phase in
+            if phase == .background { finishDictation(accept: true) }
         }
         .alert("Dictation Unavailable", isPresented: Binding(
             get: { voiceTranscriber.errorMessage != nil },
@@ -408,6 +408,15 @@ struct GlassInputBar: View {
         } message: {
             Text(voiceTranscriber.errorMessage ?? "")
         }
+    }
+
+    private func finishDictation(accept: Bool) {
+        if let original = dictationOriginalText {
+            text = accept ? ComposerDictationLogic.mergedText(original: original,
+                                                             transcription: voiceTranscriber.transcribedText) : original
+        }
+        dictationOriginalText = nil
+        voiceTranscriber.stopTranscription()
     }
 
     private var skillSuggestionMenu: some View {
