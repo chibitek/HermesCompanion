@@ -2,6 +2,15 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testBotHistoryPreservesDisplayProjectionAndHidesCompactionInternals() throws {
+        let data = Data(#"{"profile":"assistant","session_id":"canonical","messages":[{"id":1,"role":"user","content":"internal summary","display_content":"Original question"},{"id":2,"role":"system","content":"hidden summary","display_kind":"hidden"}],"pagination":{"offset":0,"limit":100,"returned":2}}"#.utf8)
+        let history = try JSONDecoder().decode(BotHistory.self, from: data)
+        XCTAssertEqual(history.profile, "assistant")
+        XCTAssertEqual(history.messages[0].visibleText, "Original question")
+        XCTAssertNil(history.messages[1].visibleText)
+        XCTAssertEqual(history.pagination.returned, 2)
+    }
+
     func testProjectsKeepProfileOwnershipAndEmptyFolders() throws {
         let data = Data(#"{"groups":[{"profile":"default","projects":[{"id":"same","label":"Empty project","path":null,"sessionCount":0,"repos":[{"id":"repo","label":"Sources","path":"/workspace/sources","groups":[]}]}]},{"profile":"assistant","projects":[{"id":"same","label":"Different project","path":null,"sessionCount":0,"repos":[]}]}],"errors":[]}"#.utf8)
         let snapshot = try JSONDecoder().decode(WorkspaceProjects.self, from: data)

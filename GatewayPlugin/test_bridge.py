@@ -2,7 +2,8 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
+import types
 
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
@@ -24,6 +25,10 @@ class BridgeRoutesTests(unittest.IsolatedAsyncioTestCase):
 
         def reader(query):
             self.reads += 1
+            if query.get("async"):
+                async def snapshot():
+                    return {"async": True}
+                return snapshot()
             return {"received": query.get("value")}
 
         app = web.Application()
@@ -40,6 +45,7 @@ class BridgeRoutesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 401)
         self.assertEqual(self.reads, 0)
 
+
     async def testUsesExistingAuthorizationAndDisablesCaching(self):
         self.allowed = True
         response = await self.client.get("/api/companion/projects?value=folder")
@@ -55,6 +61,47 @@ class BridgeRoutesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 405)
         self.assertEqual(self.reads, 0)
 
+    async def testAwaitsAsynchronousDomainReaders(self):
+        self.allowed = True
+        response = await self.client.get("/api/companion/projects?async=true")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await response.json(), {"async": True})
+
+
+class BotHistoryTests(unittest.IsolatedAsyncioTestCase):
+    async def testCanonicalPointerAndOwnerComeFromRoster(self):
+        reader = AsyncMock(return_value={"profile": "assistant", "messages": []})
+        module = types.ModuleType("hermes_cli.web_routers.sessions")
+        module.get_session_messages = reader
+        roster = {"profiles": [{"name": "assistant", "canonical_session": {"id": "canonical"}}]}
+        with patch.object(bridge, "rpc", return_value=roster), patch.dict(
+            "sys.modules", {"hermes_cli.web_routers.sessions": module}
+        ):
+            await bridge.bot_history({"profile": "assistant", "offset": "100", "session_id": "foreign"})
+        reader.assert_awaited_once_with("canonical", profile="assistant", limit=100,
+                                        offset=100, order="latest", include_compacted=False)
+
+    async def testUnknownProfileDoesNotFallBackToDefault(self):
+        module = types.ModuleType("hermes_cli.web_routers.sessions")
+        module.get_session_messages = AsyncMock()
+        with patch.object(bridge, "rpc", return_value={"profiles": []}), patch.dict(
+            "sys.modules", {"hermes_cli.web_routers.sessions": module}
+        ):
+            with self.assertRaises(ValueError):
+                await bridge.bot_history({"profile": "missing"})
+        module.get_session_messages.assert_not_awaited()
+
+    async def testNoCanonicalChatDoesNotShowUnrelatedLatestSession(self):
+        module = types.ModuleType("hermes_cli.web_routers.sessions")
+        module.get_session_messages = AsyncMock()
+        roster = {"profiles": [{"name": "assistant", "last_session": {"id": "unrelated"}}]}
+        with patch.object(bridge, "rpc", return_value=roster), patch.dict(
+            "sys.modules", {"hermes_cli.web_routers.sessions": module}
+        ):
+            history = await bridge.bot_history({"profile": "assistant"})
+        self.assertIsNone(history["session_id"])
+        self.assertEqual(history["messages"], [])
+        module.get_session_messages.assert_not_awaited()
 
 if __name__ == "__main__":
     unittest.main()

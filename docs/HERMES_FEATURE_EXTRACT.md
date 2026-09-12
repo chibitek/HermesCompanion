@@ -21,6 +21,15 @@ tests pass. Cross-profile Bot conversation, project mutations, full task results
 and Kanban editing remain open. See `GatewayPlugin/README.md` for installation,
 access scope, upstream dependencies, and native session-limit caveats.
 
+Build 156 adds canonical Bot history through a sixth bridge endpoint. The server
+resolves the Bot's conversation pointer, follows Hermes's resume resolution, and
+uses the existing profile-aware, paginated message reader. The client rejects
+foreign-profile/page responses and respects hidden/display-projected compaction
+messages. Verification: all ten live profile responses decoded, authenticated
+HTTP 200 with matching owner, unknown profile HTTP 400, unauthenticated HTTP 401,
+56 iOS tests and seven bridge tests passed. This does not implement cross-profile
+message submission or change profile authentication.
+
 ## Decision framework
 
 Hermes Agent separates a narrow agent core from broad client-facing surfaces. Hermes Companion should follow the same boundary. The app should not duplicate the agent loop, memory engine, or terminal. It should expose selected gateway capabilities through mobile-native workflows.

@@ -65,6 +65,32 @@ struct BotSession: Decodable {
     let preview: String?
 }
 
+struct BotHistory: Decodable {
+    let profile: String
+    let session_id: String?
+    let messages: [BotHistoryMessage]
+    let pagination: HistoryPagination
+}
+
+struct HistoryPagination: Decodable {
+    let offset: Int
+    let limit: Int
+    let returned: Int
+}
+
+struct BotHistoryMessage: Decodable, Identifiable {
+    let id: Int
+    let role: String
+    let content: String?
+    let display_content: String?
+    let display_kind: String?
+
+    var visibleText: String? {
+        guard display_kind != "hidden" else { return nil }
+        return display_content ?? content
+    }
+}
+
 struct WorkspaceBoards: Decodable {
     let boards: [ServerBoard]
     let current: String

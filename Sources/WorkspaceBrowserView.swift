@@ -76,6 +76,11 @@ struct WorkspaceBrowserView: View {
                                     if let preview = session.preview, !preview.isEmpty { Text(preview) }
                                 }
                             }
+                            NavigationLink {
+                                BotHistoryView(client: client, bot: bot)
+                            } label: {
+                                Label("Conversation History", systemImage: "bubble.left.and.bubble.right")
+                            }
                         }
                         .navigationTitle(bot.title)
                     } label: {
@@ -186,8 +191,9 @@ private struct WorkspaceRow: View {
     }
 }
 
-private struct WorkspaceReadView<Value, Content: View>: View {
+struct WorkspaceReadView<Value, Content: View>: View {
     let load: () async throws -> Value
+    var refreshAutomatically = true
     @ViewBuilder let content: (Value) -> Content
     @Environment(\.scenePhase) private var scenePhase
     @State private var value: Value?
@@ -210,6 +216,7 @@ private struct WorkspaceReadView<Value, Content: View>: View {
             guard scenePhase == .active else { return }
             repeat {
                 await refresh()
+                guard refreshAutomatically else { return }
                 do { try await Task.sleep(for: .seconds(30)) }
                 catch { return }
             } while !Task.isCancelled
@@ -228,7 +235,7 @@ private struct WorkspaceReadView<Value, Content: View>: View {
         } catch {
             guard !Task.isCancelled, requestID == id else { return }
             if case APIError.notFound = error {
-                self.error = "This server does not expose the Companion workspace bridge."
+                self.error = "This workspace endpoint is unavailable on the server."
             } else {
                 self.error = "Workspace sync failed: \(error.localizedDescription)"
             }
