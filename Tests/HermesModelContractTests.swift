@@ -153,6 +153,55 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertEqual(store.error?.message, currentError)
     }
 
+    @MainActor
+    func testPendingAutomaticSessionCreationCannotReplaceUserSelection() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        let selected = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"selected","model":"local-model"}"#.utf8))
+        let creationStarted = expectation(description: "Creation pending")
+        var creation: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                if request.request.httpMethod == "POST" {
+                    creation = request
+                    creationStarted.fulfill()
+                } else {
+                    request.succeed(body: #"{"object":"list","data":[]}"#)
+                }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let send = Task { await store.sendMessage("Pending creation") }
+        await fulfillment(of: [creationStarted], timeout: 3)
+        await store.selectSession(selected)
+        try XCTUnwrap(creation).succeed(body: #"{"object":"hermes.session","session":{"id":"late-created","model":"old-model"}}"#)
+        let response = await send.value
+        XCTAssertNil(response)
+        XCTAssertEqual(store.activeSession?.id, "selected")
+        XCTAssertFalse(store.sessions.contains { $0.id == "late-created" })
+        XCTAssertNil(store.error)
+        XCTAssertTrue(store.messages.isEmpty)
+        XCTAssertFalse(store.isStreaming)
+    }
+
+    @MainActor
+    func testStopStreamingClearsTransientTextAndQueuedSends() {
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"))
+        let store = AppStore(client: client)
+        store.isStreaming = true
+        store.streamingText = "Old response"
+        store.streamingThinking = "Old reasoning"
+        store.queueMessage("Do not send after stop")
+        store.stopStreaming()
+        XCTAssertFalse(store.isStreaming)
+        XCTAssertEqual(store.streamingText, "")
+        XCTAssertEqual(store.streamingThinking, "")
+        XCTAssertTrue(store.queuedMessages.isEmpty)
+    }
+
     func testDecodesFullModelOptionsCatalog() throws {
         let json = """
         {
