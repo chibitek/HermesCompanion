@@ -125,47 +125,50 @@ struct WorkspaceBrowserView: View {
 
     private func projectDetail(_ project: ServerProject, profile: String, client: HermesAPIClient) -> some View {
         WorkspaceReadView(load: { try await client.workspaceProject(profile: profile, id: project.id) }) { detail in
-            // Discovered empty repositories may not appear in the hydrated response.
-            let current = detail.project ?? project
-            ForEach(current.repos) { repo in
-                Section(repo.label) {
-                    if let path = repo.path { Text(path).font(.caption).foregroundStyle(.secondary) }
-                    ForEach(repo.groups) { lane in
-                        DisclosureGroup {
-                            if let path = lane.path { Text(path).font(.caption).foregroundStyle(.secondary) }
-                            ForEach(lane.sessions) { session in
-                                // A profile's session ID must never be submitted to another profile.
-                                if profile == "default",
-                                   store.connectionConfig?.normalizedBaseURL.contains("/p/") != true,
-                                   let known = store.sessions.first(where: { $0.id == session.id }) {
-                                    Button {
-                                        Task {
-                                            await store.selectSession(known)
-                                            guard store.apiClient === client else { return }
-                                            onSessionSelected?()
+            if let current = detail.project {
+                ForEach(current.repos) { repo in
+                    Section(repo.label) {
+                        if let path = repo.path { Text(path).font(.caption).foregroundStyle(.secondary) }
+                        ForEach(repo.groups) { lane in
+                            DisclosureGroup {
+                                if let path = lane.path { Text(path).font(.caption).foregroundStyle(.secondary) }
+                                ForEach(lane.sessions) { session in
+                                    // A profile's session ID must never be submitted to another profile.
+                                    if profile == "default",
+                                       store.connectionConfig?.normalizedBaseURL.contains("/p/") != true,
+                                       let known = store.sessions.first(where: { $0.id == session.id }) {
+                                        Button {
+                                            Task {
+                                                await store.selectSession(known)
+                                                guard store.apiClient === client else { return }
+                                                onSessionSelected?()
+                                            }
+                                        } label: {
+                                            Label(session.title ?? "Untitled", systemImage: "bubble.left")
                                         }
-                                    } label: {
-                                        Label(session.title ?? "Untitled", systemImage: "bubble.left")
-                                    }
-                                } else {
-                                    NavigationLink {
-                                        WorkspaceHistoryView(title: session.title ?? "Untitled", identity: "\(profile):\(session.id)") { offset in
-                                            try await client.projectHistory(profile: profile, projectID: project.id,
-                                                                            sessionID: session.id, offset: offset)
+                                    } else {
+                                        NavigationLink {
+                                            WorkspaceHistoryView(title: session.title ?? "Untitled", identity: "\(profile):\(session.id)") { offset in
+                                                try await client.projectHistory(profile: profile, projectID: project.id,
+                                                                                sessionID: session.id, offset: offset)
+                                            }
+                                        } label: {
+                                            Label(session.title ?? "Untitled", systemImage: "bubble.left")
                                         }
-                                    } label: {
-                                        Label(session.title ?? "Untitled", systemImage: "bubble.left")
                                     }
                                 }
+                            } label: {
+                                Text(lane.label)
                             }
-                        } label: {
-                            Text(lane.label)
                         }
                     }
                 }
-            }
-            if current.repos.isEmpty {
-                ContentUnavailableView("No Folders", systemImage: "folder")
+                if current.repos.isEmpty {
+                    ContentUnavailableView("No Folders", systemImage: "folder")
+                }
+            } else {
+                ContentUnavailableView("Project Unavailable", systemImage: "folder.badge.questionmark",
+                                       description: Text("Hermes did not return this project in its current folder tree."))
             }
         }
         .navigationTitle(project.label)
