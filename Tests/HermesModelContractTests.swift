@@ -2,6 +2,62 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    @MainActor
+    func testDeletedSessionCannotBeRepopulatedByPendingHistory() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        let session = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current","model":"deleted-model"}"#.utf8))
+        let started = expectation(description: "History pending")
+        var history: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                if request.request.httpMethod == "GET" {
+                    history = request
+                    started.fulfill()
+                } else {
+                    request.succeed(body: #"{"ok":true}"#)
+                }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let selection = Task { await store.selectSession(session) }
+        await fulfillment(of: [started], timeout: 3)
+        await store.deleteSession(session)
+        try XCTUnwrap(history).succeed()
+        await selection.value
+        XCTAssertNil(store.activeSession)
+        XCTAssertNil(store.activeRuntime)
+        XCTAssertTrue(store.messages.isEmpty)
+    }
+
+    @MainActor
+    func testDeletingActiveSessionStopsItsTransientStreamState() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        let session = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.activeSession = session
+        store.sessions = [session]
+        store.activeRuntime = SessionRuntime(provider: "old-provider", model: "old-model", routeSource: "test", requested: nil, modelLock: nil)
+        store.isStreaming = true
+        store.streamingText = "In-flight reply"
+        store.queueMessage("Queued for this session")
+        SessionHistoryURLProtocol.handler = { $0.succeed(body: #"{"ok":true}"#) }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.deleteSession(session)
+        XCTAssertNil(store.activeSession)
+        XCTAssertNil(store.activeRuntime)
+        XCTAssertTrue(store.sessions.isEmpty)
+        XCTAssertFalse(store.isStreaming)
+        XCTAssertEqual(store.streamingText, "")
+        XCTAssertTrue(store.queuedMessages.isEmpty)
+    }
+
     func testUnchangedJobScheduleIsOmittedInsteadOfReparsed() throws {
         let schedule = HermesJobWrite.scheduleUpdate(edited: " Every 2 hours ", originalDisplay: "Every 2 hours")
         XCTAssertNil(schedule)

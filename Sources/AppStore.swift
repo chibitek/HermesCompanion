@@ -826,15 +826,23 @@ final class AppStore: ObservableObject {
         }
         do {
             try await client.deleteSession(sessionId: session.id)
+            guard apiClient === client else { return }
             self.sessions.removeAll { $0.id == session.id }
             if activeSession?.id == session.id {
+                sessionSelectionID = UUID()
+                stopStreaming()
                 activeSession = nil
+                activeRuntime = nil
+                sessionModelOverride = nil
+                sessionProviderOverride = nil
+                toolEvents = []
                 messages = []
                 if let baseURL = connectionConfig?.normalizedBaseURL {
                     activeSessionPersistence.clear(for: baseURL)
                 }
             }
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Failed to delete session: \(error.localizedDescription)")
         }
     }
@@ -849,6 +857,7 @@ final class AppStore: ObservableObject {
         }
         do {
             let updated = try await client.patchSession(sessionId: session.id, title: newTitle)
+            guard apiClient === client else { return }
             if let idx = self.sessions.firstIndex(where: { $0.id == session.id }) {
                 self.sessions[idx] = updated
             }
@@ -856,6 +865,7 @@ final class AppStore: ObservableObject {
                 self.activeSession = updated
             }
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Failed to rename session: \(error.localizedDescription)")
         }
     }
@@ -880,8 +890,10 @@ final class AppStore: ObservableObject {
                 isArchived: isArchived,
                 isHidden: isHidden
             )
+            guard apiClient === client else { return }
             replaceSession(updated)
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Could not update chat: \(error.localizedDescription)")
         }
     }
@@ -894,7 +906,13 @@ final class AppStore: ObservableObject {
             activeSession = updated
         }
         if updated.isArchived == true && activeSession?.id == updated.id {
+            sessionSelectionID = UUID()
+            stopStreaming()
             activeSession = nil
+            activeRuntime = nil
+            sessionModelOverride = nil
+            sessionProviderOverride = nil
+            toolEvents = []
             messages = []
             if let baseURL = connectionConfig?.normalizedBaseURL {
                 activeSessionPersistence.clear(for: baseURL)
@@ -910,11 +928,14 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Not connected")
             return
         }
+        let selectionID = sessionSelectionID
         do {
             let forked = try await client.forkSession(sessionId: session.id, title: forkTitle(for: session))
+            guard apiClient === client, sessionSelectionID == selectionID else { return }
             self.sessions.insert(forked, at: 0)
             await selectSession(forked)
         } catch {
+            guard apiClient === client, sessionSelectionID == selectionID else { return }
             self.error = AppError(message: "Failed to fork session: \(error.localizedDescription)")
         }
     }
