@@ -5,10 +5,7 @@ import UserNotifications
 
 /// Low-profile foreground listener that opens hands-free voice mode when the
 /// user says "Hey Hermes". iOS reserves true system-wide wake words for Siri,
-/// so this listener operates while Hermes is active in the foreground. When
-/// the app is backgrounded, the listener keeps running using the `audio`
-/// background mode and posts a local notification when the wake phrase is
-/// detected, which brings the app back to the foreground.
+/// so this opt-in listener operates only while Hermes is in the foreground.
 @MainActor
 final class WakePhraseListener: ObservableObject {
     var onWakePhrase: (() -> Void)?
@@ -23,9 +20,18 @@ final class WakePhraseListener: ObservableObject {
     private var isBackground = false
     private var lastActivation = Date.distantPast
     private var recognitionGeneration = UUID()
+    private var ownsAudioSession = false
+    private let deactivateAudioSession: () -> Void
+
+    init(deactivateAudioSession: @escaping () -> Void = {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }) {
+        self.deactivateAudioSession = deactivateAudioSession
+    }
 
     func start() {
         isEnabled = true
+        isPaused = false
         isBackground = false
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -43,29 +49,13 @@ final class WakePhraseListener: ObservableObject {
     func pause(deactivateAudioSession: Bool = true) {
         isPaused = true
         tearDown(deactivateAudioSession: deactivateAudioSession)
+        // Voice mode takes ownership without interrupting the shared session.
+        if !deactivateAudioSession { ownsAudioSession = false }
     }
 
     func resume() {
         isPaused = false
         isBackground = false
-        beginListeningIfPossible()
-    }
-
-    /// Switch to background mode: keep listening with the audio session alive
-    /// via the `audio` UIBackgroundMode. When the wake phrase is detected,
-    /// post a local notification to bring the app to the foreground.
-    func startBackgroundMode() {
-        isBackground = true
-        isPaused = false
-        // Keep the audio session active so the audio engine keeps running
-        // in the background. The `audio` background mode allows this.
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
-            try audioSession.setActive(true)
-        } catch {
-            FileLogger.shared.log("WakePhraseListener: background audio session failed: \(error.localizedDescription)")
-        }
         beginListeningIfPossible()
     }
 
@@ -109,6 +99,7 @@ final class WakePhraseListener: ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
             try audioSession.setActive(true)
+            ownsAudioSession = true
         } catch {
             FileLogger.shared.log("WakePhraseListener: audio session failed: \(error.localizedDescription)")
             return
@@ -202,8 +193,9 @@ final class WakePhraseListener: ObservableObject {
             audioEngine.inputNode.removeTap(onBus: 0)
             hasInputTap = false
         }
-        if deactivateAudioSession {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if deactivateAudioSession, ownsAudioSession {
+            self.deactivateAudioSession()
+            ownsAudioSession = false
         }
     }
 }
