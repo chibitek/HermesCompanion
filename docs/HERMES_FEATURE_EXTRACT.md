@@ -32,6 +32,34 @@ message submission or change profile authentication.
 
 ## Decision framework
 
+### Cross-Profile Messaging Verification
+
+September 11, 2026: read-only live probes of `/p/<profile>/api/sessions?limit=1`
+returned HTTP 200 for `default` and HTTP 404 for all nine other roster profiles.
+The installed configuration does not set `gateway.multiplex_profiles`.
+This is a serving boundary, not evidence that those profiles have no sessions.
+The Companion bridge can read their project/Bot history through profile-aware
+domain readers, but that does not establish a valid chat transport for them.
+
+The installed Hermes API implements profile-prefixed native session/chat routes
+in `gateway/platforms/api_server.py`. `_resolve_request_profile` rejects profiles
+that the gateway is not configured to serve. `_make_profile_prefix_middleware`
+then enters the selected profile's runtime scope. Do not bypass this boundary by
+passing a different profile's session ID to the default chat endpoint.
+
+The dashboard's alternative chat transport is not a drop-in REST send: its
+`hermes_cli/web_server_chat.py::_resolve_chat_argv` launches a profile-scoped
+process, and `hermes_cli/web_routers/chat_ws.py` owns its WebSocket lifecycle.
+Wrapping a generic subprocess or forwarding arbitrary RPC would bypass existing
+admission, cancellation, authorization, and session ownership behavior.
+
+Next messaging work must use a verified native profile transport and preserve
+the canonical conversation pointer and session model. Enabling multi-profile
+serving is an operator configuration change requiring approval, followed by
+per-profile credential/route verification, stream cancellation/reconnect tests,
+and on-device confirmation. No authentication or token storage changes have
+been made, and no non-default chat requests were submitted during these probes.
+
 Hermes Agent separates a narrow agent core from broad client-facing surfaces. Hermes Companion should follow the same boundary. The app should not duplicate the agent loop, memory engine, or terminal. It should expose selected gateway capabilities through mobile-native workflows.
 
 Adopt a feature only when it satisfies one of these:
