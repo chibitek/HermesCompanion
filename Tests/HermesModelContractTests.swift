@@ -2,6 +2,65 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    @MainActor
+    func testOlderModelLockCannotOverwriteNewerSelection() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        let firstStarted = expectation(description: "First model lock pending")
+        let secondStarted = expectation(description: "Second model lock pending")
+        var requests: [SessionHistoryURLProtocol] = []
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                requests.append(request)
+                if requests.count == 1 { firstStarted.fulfill() }
+                else { secondStarted.fulfill() }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let first = Task { await store.selectPreferredModel("old", provider: "remote") }
+        await fulfillment(of: [firstStarted], timeout: 3)
+        let second = Task { await store.selectPreferredModel("current", provider: "local") }
+        await fulfillment(of: [secondStarted], timeout: 3)
+        requests[1].succeed(body: #"{"object":"session.model","session_id":"current","runtime":{"model":"current","provider":"local"}}"#)
+        await second.value
+        requests[0].succeed(body: #"{"object":"session.model","session_id":"current","runtime":{"model":"old","provider":"remote"}}"#)
+        await first.value
+        XCTAssertEqual(store.activeRuntime?.effectiveModel, "current")
+        XCTAssertEqual(store.effectiveCurrentModel, "current")
+        XCTAssertEqual(store.effectiveCurrentProvider, "local")
+    }
+
+    @MainActor
+    func testModelLockCompletionCannotAffectDifferentSession() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        for fails in [false, true] {
+            let store = AppStore(client: client)
+            store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"old"}"#.utf8))
+            let started = expectation(description: "Model lock pending")
+            var request: SessionHistoryURLProtocol?
+            SessionHistoryURLProtocol.handler = { pending in
+                Task { @MainActor in request = pending; started.fulfill() }
+            }
+            let locking = Task { await store.selectPreferredModel("old-model", provider: "remote") }
+            await fulfillment(of: [started], timeout: 3)
+            store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"new"}"#.utf8))
+            store.activeRuntime = SessionRuntime(provider: "local", model: "new-model", routeSource: nil, requested: nil, modelLock: nil)
+            if fails { request?.fail() }
+            else { request?.succeed(body: #"{"object":"session.model","session_id":"old","runtime":{"model":"old-model","provider":"remote"}}"#) }
+            await locking.value
+            XCTAssertEqual(store.activeRuntime?.effectiveModel, "new-model")
+            XCTAssertNil(store.error)
+            SessionHistoryURLProtocol.handler = nil
+        }
+    }
+
     func testJobRenameOmitsUntouchedRemoteFieldsButAllowsClearingSkills() throws {
         let original = try JSONDecoder().decode(HermesJob.self, from: Data(#"{"id":"job","name":"Original","prompt":"Existing prompt","schedule_display":"Every 2 hours","deliver":"local","skills":["review"]}"#.utf8))
         var draft = HermesJobWrite(name: "Renamed", schedule: nil, prompt: "Existing prompt", deliver: "local", skills: ["review"])

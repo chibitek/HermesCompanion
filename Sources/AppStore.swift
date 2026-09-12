@@ -145,6 +145,7 @@ final class AppStore: ObservableObject {
     }
     private var platformRefreshID: UUID?
     private var sessionSelectionID = UUID()
+    private var modelSelectionID = UUID()
     private var sessionRefreshID = UUID()
     private var streamTask: Task<Void, Never>?
     private var chatTurnID = UUID()
@@ -557,6 +558,9 @@ final class AppStore: ObservableObject {
     }
 
     func selectPreferredModel(_ model: String, provider: String? = nil) async {
+        let requestID = UUID()
+        modelSelectionID = requestID
+        let selectionID = sessionSelectionID
         preferredModel = model
         // Resolve provider ONLY from explicit arg or model ID prefix (e.g. "openai/gpt-4").
         // Do NOT fall back to capabilities.currentProvider — that's the gateway's
@@ -573,13 +577,20 @@ final class AppStore: ObservableObject {
         // Lock the model on the active Hermes session. This is the server-backed
         // equivalent of opening a chat in the desktop; it never rewrites the
         // gateway's global provider config.
-        guard let sessionId = activeSession?.id else { return }
+        guard let sessionId = activeSession?.id, let client = apiClient else { return }
         do {
-            activeRuntime = try await apiClient?.lockSessionModel(
+            let runtime = try await client.lockSessionModel(
                 sessionId: sessionId, model: model,
                 provider: resolvedProvider.isEmpty ? nil : resolvedProvider
             )
+            guard apiClient === client, sessionSelectionID == selectionID,
+                  activeSession?.id == sessionId, modelSelectionID == requestID,
+                  !Task.isCancelled else { return }
+            activeRuntime = runtime
         } catch {
+            guard apiClient === client, sessionSelectionID == selectionID,
+                  activeSession?.id == sessionId, modelSelectionID == requestID,
+                  !Task.isCancelled else { return }
             self.error = AppError(message: "Could not lock this session's model: \(error.localizedDescription)")
         }
     }
