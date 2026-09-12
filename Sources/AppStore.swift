@@ -146,6 +146,7 @@ final class AppStore: ObservableObject {
     private var platformRefreshID: UUID?
     private var sessionSelectionID = UUID()
     private var streamTask: Task<Void, Never>?
+    private var chatTurnID = UUID()
     private let activeSessionPersistence = ActiveSessionPersistence()
 
     // MARK: - Init
@@ -726,14 +727,17 @@ final class AppStore: ObservableObject {
         }
         do {
             let session = try await client.createSession(title: title)
+            guard apiClient === client else { return }
             self.sessions.insert(session, at: 0)
             await selectSession(session)
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
         }
     }
 
     func selectSession(_ session: HermesSession) async {
+        stopStreaming()
         let selectionID = UUID()
         sessionSelectionID = selectionID
         // ponytail: demo mode — switch active session, keep seeded messages for first session.
@@ -1112,8 +1116,11 @@ final class AppStore: ObservableObject {
             return nil
         }
 
+        let turnID = UUID()
+        chatTurnID = turnID
+        streamTask?.cancel()
         let session = await ensureSession(client: client)
-        guard let session else { return nil }
+        guard let session, apiClient === client, chatTurnID == turnID else { return nil }
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
         let userMsg = ChatDisplayMessage(
@@ -1137,7 +1144,8 @@ final class AppStore: ObservableObject {
         // After that, 60s with no events AND no keepalives means a dead socket
         // (keepalive comments reset the timer via onKeepalive).
         watchdog.arm(after: 60, initialTimeout: 180) { [weak self] in
-            guard let self, self.isStreaming else { return }
+            guard let self, self.isStreaming, self.chatTurnID == turnID,
+                  self.apiClient === client, self.activeSession?.id == session.id else { return }
             self.streamTask?.cancel()
             self.isStreaming = false
             self.streamingText = ""
@@ -1153,11 +1161,15 @@ final class AppStore: ObservableObject {
 
         let task = Task { [weak self] in
             guard let self = self else { return }
+            defer { watchdog.cancel() }
             do {
                 if images.isEmpty && attachments.isEmpty {
                     let (streamedMsg, streamedCompletion) = try await self.streamMessage(
                         client: client, session: session, text: text, watchdog: watchdog
                     )
+                    try Task.checkCancellation()
+                    guard self.chatTurnID == turnID, self.apiClient === client,
+                          self.activeSession?.id == session.id else { return }
                     assistantMessage = streamedMsg
                     if streamedCompletion { receivedCompletion = true }
                     if !self.streamingText.isEmpty {
@@ -1186,6 +1198,9 @@ final class AppStore: ObservableObject {
                     client: client, session: session, skipPostReload: skipPostReload,
                     assistantMessage: assistantMessage, receivedCompletion: receivedCompletion
                 )
+                try Task.checkCancellation()
+                guard self.chatTurnID == turnID, self.apiClient === client,
+                      self.activeSession?.id == session.id else { return }
 
                 if assistantMessage == nil {
                     assistantMessage = self.messages.last(where: \.isAssistant)
@@ -1200,41 +1215,56 @@ final class AppStore: ObservableObject {
                 // Cancelled on purpose (barge-in, stop tap, new turn superseding
                 // this one). Not an error — don't surface "Message failed".
             } catch let e as APIError {
-                self.error = AppError(message: e.errorDescription ?? "Message failed")
+                if !Task.isCancelled, self.chatTurnID == turnID, self.apiClient === client {
+                    self.error = AppError(message: e.errorDescription ?? "Message failed")
+                }
             } catch {
-                self.error = AppError(message: "Message failed: \(error.localizedDescription)")
+                if !Task.isCancelled, self.chatTurnID == turnID, self.apiClient === client {
+                    self.error = AppError(message: "Message failed: \(error.localizedDescription)")
+                }
             }
+            guard self.chatTurnID == turnID, self.apiClient === client,
+                  self.activeSession?.id == session.id else { return }
             self.streamingText = ""
             self.streamingThinking = ""
             self.isStreaming = false
             self.endBackgroundTask()
-            watchdog.cancel()
 
             if !self.queuedMessages.isEmpty {
                 let next = self.queuedMessages.removeFirst()
-                Task { await self.sendMessage(next.payload, displayText: next.display) }
+                Task {
+                    guard self.chatTurnID == turnID, self.apiClient === client,
+                          self.activeSession?.id == session.id else { return }
+                    await self.sendMessage(next.payload, displayText: next.display)
+                }
             }
 
-            if let assistantMessage,
+            if assistantMessage != nil, !Task.isCancelled,
                UIApplication.shared.applicationState != .active {
                 sendBackgroundNotification()
             }
         }
         streamTask = task
         await task.value
+        guard chatTurnID == turnID, apiClient === client, activeSession?.id == session.id,
+              !task.isCancelled else { return nil }
         return assistantMessage
     }
 
     // MARK: - sendMessage Helpers
 
     private func ensureSession(client: HermesAPIClient) async -> HermesSession? {
+        let selectionID = sessionSelectionID
+        let turnID = chatTurnID
         if let active = activeSession { return active }
         do {
             let newSession = try await client.createSession(title: nil)
+            guard apiClient === client, sessionSelectionID == selectionID, chatTurnID == turnID else { return nil }
             self.sessions.insert(newSession, at: 0)
             self.activeSession = newSession
             return newSession
         } catch {
+            guard apiClient === client, sessionSelectionID == selectionID, chatTurnID == turnID else { return nil }
             self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
             return nil
         }
@@ -1252,7 +1282,8 @@ final class AppStore: ObservableObject {
             onKeepalive: { watchdog.recordActivity() }
         )
         for try await event in stream {
-            if Task.isCancelled { return (nil, false) }
+            try Task.checkCancellation()
+            guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
             watchdog.recordActivity()
             if event.event == "assistant.completed" || event.event == "run.completed" {
                 receivedCompletion = true
@@ -1273,7 +1304,8 @@ final class AppStore: ObservableObject {
             model: sessionModelLockAvailable ? nil : sessionModelOverride,
             images: images, attachments: attachments
         )
-        if Task.isCancelled { return nil }
+        try Task.checkCancellation()
+        guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
         let content = response.message.content
         guard !content.isEmpty else { return nil }
         let message = ChatDisplayMessage(
@@ -1293,6 +1325,8 @@ final class AppStore: ObservableObject {
 
         if !skipPostReload && msg == nil {
             let history = try await client.getMessages(sessionId: session.id)
+            try Task.checkCancellation()
+            guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
             self.messages = history
                 .filter { $0.isUser || $0.isAssistant }
                 .map { ChatDisplayMessage(from: $0) }
@@ -1305,6 +1339,8 @@ final class AppStore: ObservableObject {
         if skipPostReload && msg == nil && !completion {
             FileLogger.shared.log("AppStore: voice mode fallback — reloading from server")
             let history = try await client.getMessages(sessionId: session.id)
+            try Task.checkCancellation()
+            guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
             self.messages = history
                 .filter { $0.isUser || $0.isAssistant }
                 .map { ChatDisplayMessage(from: $0) }
@@ -1323,8 +1359,14 @@ final class AppStore: ObservableObject {
     }
 
     func stopStreaming() {
+        chatTurnID = UUID()
         streamTask?.cancel()
+        streamTask = nil
         isStreaming = false
+        streamingText = ""
+        streamingThinking = ""
+        queuedMessages.removeAll()
+        endBackgroundTask()
     }
 
     // MARK: - SSE Event Handler
