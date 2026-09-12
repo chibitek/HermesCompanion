@@ -217,3 +217,18 @@ All 88 iOS tests passed in the September 11 23:20 run, including 252-session
 catalogs with/without totals and a repeating-page response. Concurrent changes
 during server pagination still require end-to-end validation; this is not an
 atomic-snapshot guarantee or proof of remote deletion reconciliation.
+
+## Remote Deletion Reconciliation
+
+After a session refresh, an idle active chat missing from the list is checked
+through the native direct-session endpoint. A 404 clears the active chat,
+runtime, messages, pending stream state, and saved pointer. Other failures leave
+the chat intact. Connection, selection, and refresh identifiers guard delayed
+lookup results and the subsequent restoration step. Both regular and platform
+refreshes use the same reconciliation path.
+
+Tests cover not-found, server error, a readable session omitted from the list,
+and a late not-found response after switching chats. Live Mac deletion and phone
+foreground recovery still require device verification. This assumes the connected
+Hermes gateway implements the native direct-session endpoint; alternate hosted
+endpoint behavior must be verified separately.

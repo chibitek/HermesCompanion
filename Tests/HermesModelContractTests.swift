@@ -2,6 +2,56 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    @MainActor
+    func testMissingActiveSessionIsClearedOnlyWhenDirectLookupReturnsNotFound() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        defer { SessionHistoryURLProtocol.handler = nil }
+        for status in [404, 500, 200] {
+            let store = AppStore(client: client)
+            store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current","model":"local"}"#.utf8))
+            store.activeRuntime = SessionRuntime(provider: "local", model: "local", routeSource: nil, requested: nil, modelLock: nil)
+            SessionHistoryURLProtocol.handler = { request in
+                if request.request.url!.path.hasSuffix("/sessions") {
+                    request.succeed(body: #"{"object":"list","total":0,"data":[]}"#)
+                } else {
+                    request.succeed(body: #"{"object":"session","session":{"id":"current"}}"#, status: status)
+                }
+            }
+            await store.refreshSessions()
+            XCTAssertEqual(store.activeSession == nil, status == 404)
+            XCTAssertEqual(store.activeRuntime == nil, status == 404)
+        }
+    }
+
+    @MainActor
+    func testLateDeletionProbeCannotClearAnotherActiveSession() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"old"}"#.utf8))
+        let started = expectation(description: "Deletion probe pending")
+        var probe: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path.hasSuffix("/sessions") {
+                request.succeed(body: #"{"object":"list","total":0,"data":[]}"#)
+            } else {
+                Task { @MainActor in probe = request; started.fulfill() }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let refresh = Task { await store.refreshSessions() }
+        await fulfillment(of: [started], timeout: 3)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"new"}"#.utf8))
+        probe?.succeed(body: "{}", status: 404)
+        await refresh.value
+        XCTAssertEqual(store.activeSession?.id, "new")
+    }
+
     func testSessionPaginationKeepsHistoryBeyondTwoHundredWithOrWithoutTotal() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]
@@ -697,8 +747,8 @@ private final class SessionHistoryURLProtocol: URLProtocol, @unchecked Sendable 
     override func startLoading() { Self.handler?(self) }
     override func stopLoading() {}
 
-    func succeed(body: String = #"{"object":"list","data":[{"id":1,"role":"assistant","content":"Old session reply"}]}"#) {
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+    func succeed(body: String = #"{"object":"list","data":[{"id":1,"role":"assistant","content":"Old session reply"}]}"#, status: Int = 200) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
