@@ -145,6 +145,7 @@ final class AppStore: ObservableObject {
     }
     private var platformRefreshID: UUID?
     private var sessionSelectionID = UUID()
+    private var sessionRefreshID = UUID()
     private var streamTask: Task<Void, Never>?
     private var chatTurnID = UUID()
     private let activeSessionPersistence = ActiveSessionPersistence()
@@ -675,13 +676,15 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Not connected")
             return
         }
+        let refreshID = UUID()
+        sessionRefreshID = refreshID
         do {
             let sessions = try await client.listSessions()
-            guard apiClient === client else { return }
+            guard !Task.isCancelled, apiClient === client, sessionRefreshID == refreshID else { return }
             applySessionSnapshot(sessions)
             await restoreActiveSessionIfAvailable()
         } catch {
-            guard apiClient === client else { return }
+            guard !Task.isCancelled, apiClient === client, sessionRefreshID == refreshID else { return }
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
             FileLogger.shared.log("AppStore: refreshSessions failed for \(connectionConfig?.baseURL ?? "unknown") — \(error.localizedDescription)")
         }
@@ -731,6 +734,7 @@ final class AppStore: ObservableObject {
         do {
             let session = try await client.createSession(title: title)
             guard apiClient === client, sessionSelectionID == creationID else { return }
+            sessionRefreshID = UUID()
             self.sessions.insert(session, at: 0)
             await selectSession(session)
         } catch {
@@ -827,6 +831,7 @@ final class AppStore: ObservableObject {
         do {
             try await client.deleteSession(sessionId: session.id)
             guard apiClient === client else { return }
+            sessionRefreshID = UUID()
             self.sessions.removeAll { $0.id == session.id }
             if activeSession?.id == session.id {
                 sessionSelectionID = UUID()
@@ -858,6 +863,7 @@ final class AppStore: ObservableObject {
         do {
             let updated = try await client.patchSession(sessionId: session.id, title: newTitle)
             guard apiClient === client else { return }
+            sessionRefreshID = UUID()
             if let idx = self.sessions.firstIndex(where: { $0.id == session.id }) {
                 self.sessions[idx] = updated
             }
@@ -891,6 +897,7 @@ final class AppStore: ObservableObject {
                 isHidden: isHidden
             )
             guard apiClient === client else { return }
+            sessionRefreshID = UUID()
             replaceSession(updated)
         } catch {
             guard apiClient === client else { return }
@@ -932,6 +939,7 @@ final class AppStore: ObservableObject {
         do {
             let forked = try await client.forkSession(sessionId: session.id, title: forkTitle(for: session))
             guard apiClient === client, sessionSelectionID == selectionID else { return }
+            sessionRefreshID = UUID()
             self.sessions.insert(forked, at: 0)
             await selectSession(forked)
         } catch {
@@ -1288,6 +1296,7 @@ final class AppStore: ObservableObject {
         do {
             let newSession = try await client.createSession(title: nil)
             guard apiClient === client, sessionSelectionID == selectionID, chatTurnID == turnID else { return nil }
+            sessionRefreshID = UUID()
             self.sessions.insert(newSession, at: 0)
             self.activeSession = newSession
             return newSession
