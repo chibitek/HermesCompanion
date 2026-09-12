@@ -2,6 +2,25 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testUnresponsiveHealthRequestTimesOut() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(
+            config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+            session: URLSession(configuration: config)
+        )
+        SessionHistoryURLProtocol.handler = { _ in }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let start = Date()
+        do {
+            _ = try await client.checkHealth()
+            XCTFail("A health request that never responds must time out")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .timedOut)
+            XCTAssertLessThan(Date().timeIntervalSince(start), 8)
+        }
+    }
+
     @MainActor
     func testSessionRefreshUpdatesOpenChatFromServerAfterStreamFinishes() async throws {
         let config = URLSessionConfiguration.ephemeral

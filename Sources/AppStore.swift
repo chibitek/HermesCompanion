@@ -249,7 +249,7 @@ final class AppStore: ObservableObject {
     /// Performs a health check and, if successful, loads capabilities and
     /// sessions so the user goes straight to chat without re-entering credentials.
     func autoConnect() async {
-        guard let config = connectionConfig else { return }
+        guard !isLoadingConnection, let config = connectionConfig else { return }
         // ponytail: demo mode skips network entirely, seeds mock state.
         if config.isDemoMode { await seedDemoState(); hasExplicitlyConnected = true; return }
         isLoadingConnection = true
@@ -270,12 +270,13 @@ final class AppStore: ObservableObject {
                 self.isLoadingConnection = false
                 return
             }
-            _ = try await client.getCapabilities()
+            let capabilities = try await client.getCapabilities()
             self.apiClient = client
-            await refreshCapabilities()
+            self.capabilities = capabilities
             await refreshSessions()
             self.isLoadingConnection = false
             hasExplicitlyConnected = true
+            await refreshCapabilities()
         } catch let e as APIError {
             if await fallbackToReachableServer(excluding: config.baseURL) {
                 self.isLoadingConnection = false
@@ -314,7 +315,7 @@ final class AppStore: ObservableObject {
                 FileLogger.shared.log("AppStore: connect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
                 return false
             }
-            _ = try await client.getCapabilities()
+            let capabilities = try await client.getCapabilities()
             // Persist: add/update in the multi-connection list, then mark as active.
             do {
                 let updated = try KeychainManager.shared.addOrUpdate(config)
@@ -325,10 +326,10 @@ final class AppStore: ObservableObject {
             }
             self.connectionConfig = config
             loadPreferences(for: config)
-            // Load capabilities
-            await refreshCapabilities()
+            self.capabilities = capabilities
             await refreshSessions()
             hasExplicitlyConnected = true
+            Task { await refreshCapabilities() }
             return true
         } catch let e as APIError {
             self.error = AppError(message: e.errorDescription ?? "Connection failed")
