@@ -92,3 +92,17 @@ drill-in omits them. It uses only the same profile's current overview, requires
 an exact project ID and an explicit zero session count, and never substitutes
 a nonempty preview for hydrated history. Fourteen bridge tests pass. This does
 not remove the native session-list limits and has not been deployed.
+
+## Voice Request Ownership Update
+
+The phone and CarPlay now rely on AppStore's activity-aware stream watchdog
+instead of independent 20/60-second voice failure timers. The phone no longer
+speaks an untracked two-word or first-sentence prefix: it speaks the complete
+returned answer, so audible playback starts after generation completes. This
+does not implement incremental speech queueing.
+
+Remote voice turn identifiers reject completions from canceled, replaced, or
+closed conversations. All 78 iOS tests passed in the September 11 22:42 run,
+including ownership across cancellation/restart and existing stream-watchdog
+tests. Slow real-device tool turns, audible completeness, and network loss still
+require end-to-end phone validation before release.

@@ -5,6 +5,27 @@ import AVFoundation
 
 final class MarkdownBlocksTests: XCTestCase {
     @MainActor
+    func testVoiceRemoteTurnOwnershipSurvivesLateCompletionAndRestart() {
+        let manager = VoiceConversationManager()
+        manager.isConversing = true
+        let old = manager.beginRemoteTurn()
+        let current = manager.beginRemoteTurn()
+        XCTAssertFalse(manager.isCurrentRemoteTurn(old))
+        XCTAssertTrue(manager.isCurrentRemoteTurn(current))
+        XCTAssertTrue(manager.isThinking)
+        manager.cancelThinking()
+        XCTAssertFalse(manager.isCurrentRemoteTurn(current))
+        XCTAssertFalse(manager.isThinking)
+        manager.stopConversation()
+        manager.isConversing = true
+        XCTAssertFalse(manager.isCurrentRemoteTurn(current))
+        let restarted = manager.beginRemoteTurn()
+        XCTAssertTrue(manager.isCurrentRemoteTurn(restarted))
+        manager.stopConversation()
+        XCTAssertFalse(manager.isCurrentRemoteTurn(restarted))
+    }
+
+    @MainActor
     func testOldSpeechCallbacksCannotChangeReplacementPlayback() async {
         let manager = VoiceConversationManager()
         let old = AVSpeechUtterance(string: "First reply")
