@@ -4,6 +4,20 @@ import SwiftUI
 
 final class MarkdownBlocksTests: XCTestCase {
     @MainActor
+    func testAppearanceSettingsFitNarrowAndWideContainers() {
+        let appearance = AppearanceSettings()
+        for width: CGFloat in [260, 420, 700] {
+            let host = UIHostingController(rootView: AppearanceSettingsView(appearance: appearance)
+                .environmentObject(appearance))
+            let size = host.sizeThatFits(in: CGSize(width: width, height: 800))
+            XCTAssertEqual(size.width, width, accuracy: 1)
+            XCTAssertTrue(size.height.isFinite)
+            XCTAssertGreaterThan(size.height, 0)
+        }
+        XCTAssertEqual(Set(ThemeRegistry.allThemes.map(\.id)).count, ThemeRegistry.allThemes.count)
+    }
+
+    @MainActor
     func testMessageBubblesFitTheirContainerAndReflowLongText() {
         let appearance = AppearanceSettings()
         let content = String(repeating: "A message that must wrap within its available window. ", count: 30)
