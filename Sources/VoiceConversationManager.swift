@@ -260,19 +260,17 @@ final class VoiceConversationManager: ObservableObject {
         // the displayed text with the full response. Don't restart TTS.
         if isSpeaking {
             FileLogger.shared.log("completeRemoteTurn: already speaking from early TTS, updating text only")
-            let rawResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let cleanResponse = filterGatewayArtifacts(rawResponse)
+            let cleanResponse = Self.normalizedRemoteResponse(response)
             if !cleanResponse.isEmpty {
                 spokenResponse = cleanResponse
             }
             return
         }
         
-        let rawResponse = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let cleanResponse = filterGatewayArtifacts(rawResponse)
+        let cleanResponse = Self.normalizedRemoteResponse(response)
         
         if cleanResponse.isEmpty {
-            FileLogger.shared.log("VoiceManager: response is empty after filtering, failing turn")
+            FileLogger.shared.log("VoiceManager: response is empty, failing turn")
             failRemoteTurn(message: "Hermes did not return a voice response.")
             return
         }
@@ -285,18 +283,10 @@ final class VoiceConversationManager: ObservableObject {
         speakResponse(cleanResponse)
     }
     
-    /// Remove gateway-injected latency warnings, status messages, and other
-    /// non-conversational text that shouldn't be spoken aloud.
-    private func filterGatewayArtifacts(_ text: String) -> String {
-        var cleaned = text
-        // Remove lines containing latency warnings (e.g. "Hermes 9000+ milliseconds")
-        cleaned = cleaned.components(separatedBy: "\n").filter { line in
-            let lower = line.lowercased()
-            let isLatencyWarning = lower.contains("millisecond") || lower.contains("latency") || lower.contains("response time")
-            let isGatewayStatus = lower.contains("warning:") && (lower.contains("ms") || lower.contains("second"))
-            return !isLatencyWarning && !isGatewayStatus
-        }.joined(separator: "\n")
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Assistant prose is authoritative. Transport status must not be inferred
+    // from words that can also occur in a legitimate answer.
+    nonisolated static func normalizedRemoteResponse(_ text: String?) -> String {
+        (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Finish a remote Hermes turn when the network request fails or returns no

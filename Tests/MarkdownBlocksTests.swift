@@ -3,6 +3,13 @@ import SwiftUI
 @testable import HermesCompanion
 
 final class MarkdownBlocksTests: XCTestCase {
+    func testVoicePreservesServerAnswersAboutLatencyAndWarnings() {
+        let response = "Latency is 300 milliseconds.\nResponse time includes tool execution.\nWarning: wait a second before retrying."
+        XCTAssertEqual(VoiceConversationManager.normalizedRemoteResponse("\n " + response + " \n"), response)
+        XCTAssertEqual(VoiceConversationManager.normalizedRemoteResponse(nil), "")
+        XCTAssertEqual(VoiceConversationManager.normalizedRemoteResponse(" \n\t"), "")
+    }
+
     @MainActor
     func testAppearanceSettingsFitNarrowAndWideContainers() {
         let appearance = AppearanceSettings()
