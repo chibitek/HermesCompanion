@@ -70,3 +70,17 @@ authorized HTTP byte download and denied/foreign-attachment requests. Client
 tests cover filename containment and attachment ownership; redirects are refused
 and downloaded byte count must match metadata. This is not deployed or verified
 on the phone yet, and it is not a general artifact browser for all Hermes output.
+
+## Voice Playback Development Update
+
+Voice replies now preserve the server's text instead of dropping lines about
+latency or response time. Playback uses iOS speech synthesis only. System speech
+callbacks must match the current utterance, and delayed microphone resumption
+is invalidated when playback stops or is replaced.
+
+The September 11 22:30 simulator test log records 77 passing tests, including
+late start/finish/cancel callbacks and active cancellation. Xcode also reported
+a thread-priority inversion during the speech-stop test. This warning is not
+resolved by the passing assertions and needs performance validation on a phone.
+Tests do not establish actual audio quality, uninterrupted microphone recovery,
+or physical-device voice stability. These changes remain unreleased.
