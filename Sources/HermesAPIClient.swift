@@ -10,8 +10,12 @@ final class HermesAPIClient: Sendable {
     private let session: URLSession
     private let config: ConnectionConfig
 
-    init(config: ConnectionConfig) {
+    init(config: ConnectionConfig, session: URLSession? = nil) {
         self.config = config
+        if let session {
+            self.session = session
+            return
+        }
         let cfg = URLSessionConfiguration.default
         // Hermes turns can legitimately take several minutes on large contexts.
         cfg.timeoutIntervalForRequest = 600
