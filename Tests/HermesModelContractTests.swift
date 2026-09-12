@@ -3,6 +3,56 @@ import XCTest
 
 final class HermesModelContractTests: XCTestCase {
     @MainActor
+    func testFailedModelLockPreservesConfirmedSelection() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current","model":"confirmed","provider":"local"}"#.utf8))
+        store.preferredModel = "confirmed"
+        store.preferredProvider = "local"
+        let started = expectation(description: "Rejected model lock pending")
+        var request: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { pending in
+            Task { @MainActor in request = pending; started.fulfill() }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let locking = Task { await store.selectPreferredModel("unavailable", provider: "remote") }
+        await fulfillment(of: [started], timeout: 3)
+        XCTAssertEqual(store.effectiveCurrentModel, "confirmed")
+        XCTAssertEqual(store.preferredModel, "confirmed")
+        request?.fail()
+        await locking.value
+        XCTAssertEqual(store.effectiveCurrentModel, "confirmed")
+        XCTAssertEqual(store.effectiveCurrentProvider, "local")
+        XCTAssertEqual(store.preferredModel, "confirmed")
+        XCTAssertEqual(store.preferredProvider, "local")
+        XCTAssertNil(store.sessionModelOverride)
+        XCTAssertNotNil(store.error)
+    }
+
+    @MainActor
+    func testAcknowledgedModelLockUsesServerNormalizedIdentity() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"object":"session.model","session_id":"current","runtime":{"model":"canonical-model","provider":"custom:local"}}"#)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.selectPreferredModel("alias", provider: "custom")
+        XCTAssertEqual(store.effectiveCurrentModel, "canonical-model")
+        XCTAssertEqual(store.effectiveCurrentProvider, "custom:local")
+        XCTAssertEqual(store.preferredModel, "canonical-model")
+        XCTAssertEqual(store.preferredProvider, "custom:local")
+        XCTAssertNil(store.error)
+    }
+
+    @MainActor
     func testOlderModelLockCannotOverwriteNewerSelection() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]
