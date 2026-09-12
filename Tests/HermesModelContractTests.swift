@@ -3,6 +3,38 @@ import XCTest
 
 final class HermesModelContractTests: XCTestCase {
     @MainActor
+    func testOlderSessionRefreshCannotOverwriteNewerModelAndPin() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current","model":"initial"}"#.utf8))
+        let firstStarted = expectation(description: "First refresh pending")
+        let secondStarted = expectation(description: "Second refresh pending")
+        var requests: [SessionHistoryURLProtocol] = []
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                requests.append(request)
+                if requests.count == 1 { firstStarted.fulfill() }
+                else { secondStarted.fulfill() }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let first = Task { await store.refreshSessions() }
+        await fulfillment(of: [firstStarted], timeout: 3)
+        let second = Task { await store.refreshSessions() }
+        await fulfillment(of: [secondStarted], timeout: 3)
+        requests[1].succeed(body: #"{"object":"list","data":[{"id":"current","model":"latest","pinned":true}]}"#)
+        await second.value
+        requests[0].succeed(body: #"{"object":"list","data":[{"id":"current","model":"stale","pinned":false}]}"#)
+        await first.value
+        XCTAssertEqual(store.effectiveCurrentModel, "latest")
+        XCTAssertEqual(store.activeSession?.isPinned, true)
+        XCTAssertEqual(store.sessions.first?.model, "latest")
+    }
+
+    @MainActor
     func testDeletedSessionCannotBeRepopulatedByPendingHistory() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]
