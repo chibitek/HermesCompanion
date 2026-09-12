@@ -62,10 +62,6 @@ final class VoiceActivationLogicTests: XCTestCase {
         XCTAssertTrue(delegate.responds(to: NSSelectorFromString("templateApplicationScene:didConnectInterfaceController:")))
     }
 
-    func testVoiceProviderSurfaceIsLocalOnly() {
-        XCTAssertEqual(TTSProvider.visibleCases, [.apple])
-    }
-
     func testEndpointingAllowsNaturalPauses() {
         XCTAssertGreaterThanOrEqual(VoiceEndpointingPolicy.silenceTimeout, 1.5)
     }

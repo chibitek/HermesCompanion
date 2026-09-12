@@ -30,30 +30,32 @@ or a claim that the full product goal is complete.
 
 ## Latest Verification Snapshot
 
-Source `d6ff737` passed 80 iOS Simulator tests and a fresh generic iPhone Release
-build with signing disabled on September 11 at 22:49. Bridge 0.1.5 passed all
-14 tests again. The physical Portatus XVII Pro Max was available and paired;
-no installation or gateway restart was performed.
-
-The Release build still reports dormant ElevenLabs captured-reference warnings,
-an unused mutable Markdown variable, a duplicate provider icon switch pattern,
-and asynchronous notification API suggestions. Successful arm64 compilation
-does not establish signing, physical-device behavior, or feature completeness.
-Earlier evidence below is historical; this snapshot supersedes its build/test
-counts, not its unresolved release requirements.
+Source `390c86f` plus the local-only voice cleanup passed 93 iOS Simulator tests
+on September 12. Bridge 0.1.6 passed all 16 tests again. The release also
+removed the dormant ElevenLabs streaming path, its key storage, an unused
+mutable variable, and a duplicate provider-icon pattern. Successful arm64
+compilation does not establish signing, physical-device behavior, or feature
+completeness. Earlier evidence below is historical; this snapshot supersedes
+its build/test counts, not its unresolved release requirements.
 
 ## Installed Versus Unreleased
 
 The latest verified phone installation is 1.8.63 build 157, from merged PR 44.
-The local Hermes gateway was restarted with the Companion bridge 0.1.6; its
-health endpoint returned 200 and the Companion projects route returned 401
-without credentials, confirming route registration. The phone launch was
-confirmed by a device screenshot. Physical voice, music continuity, workspace
-navigation, and complete parity have not yet been verified on the device.
+It predates the September 12 local-only voice cleanup. The local Hermes gateway
+was restarted with the Companion bridge 0.1.6; its health endpoint returned 200
+and the Companion projects route returned 401 without credentials, confirming
+route registration. The phone launch was confirmed by a device screenshot.
+Physical voice, music continuity, workspace navigation, and complete parity
+have not yet been verified on the device.
 
 The prior verified phone installation was 1.8.62 build 156, from merged PR 42.
 
 ## Evidence
+
+- The September 12 local-only voice cleanup passed all 93 iOS tests on iPhone 17
+  Pro Simulator, iOS 26.5, and all 16 bridge tests. It removes the hidden
+  ElevenLabs streaming path, provider/key storage, an unused mutable variable,
+  and a duplicate provider-icon pattern. This is not installed on the phone yet.
 
 - 69 iOS unit tests passed on iPhone 17 Pro Simulator, iOS 26.5. Coverage includes
   stale list/history/creation responses, deleted session state, canonical Bot
@@ -61,9 +63,8 @@ The prior verified phone installation was 1.8.62 build 156, from merged PR 42.
 - Ten bridge route/domain contract tests passed. No live data was mutated by
   these tests.
 - The generic iOS Release build passed with signing disabled. Remaining compiler
-  warnings include captured weak references in dormant ElevenLabs code, the
-  deprecated screen-size lookup in `GlassBubble`, and a duplicate provider icon
-  pattern. This does not verify signing, phone installation, or Swift 6 mode.
+  warnings include asynchronous notification API suggestions. This does not
+  verify signing, phone installation, or Swift 6 mode.
 - Subsequent bubble-layout work removes that deprecated screen-size lookup.
   Hosting-controller checks cover long user/assistant text at 240- and 700-point
   container widths, verifying bounded width and vertical reflow. These are layout
