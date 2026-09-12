@@ -147,18 +147,32 @@ struct ServerTaskDetail: Decodable {
     let runs: [ServerTaskRun]
     let links: ServerTaskLinks?
     let child_results: [ServerBoardTask]?
+    let attachments: [ServerTaskAttachment]?
 
     func matches(board: String, taskID: String) -> Bool {
         self.board == board && task.id == taskID
             && comments.allSatisfy { $0.task_id == taskID }
             && runs.allSatisfy { $0.task_id == taskID }
             && (child_results ?? []).allSatisfy { links?.children.contains($0.id) == true }
+            && (attachments ?? []).allSatisfy { $0.task_id == taskID }
     }
 }
 
 struct ServerTaskLinks: Decodable {
     let parents: [String]
     let children: [String]
+}
+
+struct ServerTaskAttachment: Decodable, Identifiable {
+    let id: Int
+    let task_id: String
+    let filename: String
+    let size: Int
+
+    var safeFilename: String {
+        let name = (filename.replacingOccurrences(of: "\\", with: "/") as NSString).lastPathComponent
+        return name.isEmpty || name == "." || name == ".." ? "attachment" : name
+    }
 }
 
 struct ServerTaskComment: Decodable, Identifiable {

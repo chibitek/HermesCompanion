@@ -1,5 +1,13 @@
 import Foundation
 
+private final class AttachmentRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 /// Handles all HTTP communication with the Hermes Agent API server.
 ///
 /// All endpoints use Bearer token auth. The base URL is user-configured
@@ -138,6 +146,31 @@ final class HermesAPIClient: Sendable {
     }
 
     // MARK: - Health
+
+    func downloadTaskAttachment(board: String, taskID: String, attachment: ServerTaskAttachment) async throws -> URL {
+        guard attachment.task_id == taskID, attachment.size >= 0 else { throw APIError.invalidResponse }
+        let req = try request(method: "GET", path: "/api/companion/task-attachment", queryItems: [
+            URLQueryItem(name: "board", value: board),
+            URLQueryItem(name: "task_id", value: taskID),
+            URLQueryItem(name: "attachment_id", value: String(attachment.id))
+        ])
+        let (temporary, response) = try await session.download(for: req, delegate: AttachmentRedirectPolicy())
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try checkHTTPStatus(response)
+        try Task.checkCancellation()
+        let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        guard size == attachment.size else { throw APIError.invalidResponse }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-attachment-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        do {
+            let file = directory.appendingPathComponent(attachment.safeFilename)
+            try FileManager.default.moveItem(at: temporary, to: file)
+            return file
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
 
     /// GET /health — no auth required, used for connection test
     func checkHealth() async throws -> HealthResponse {

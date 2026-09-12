@@ -32,6 +32,8 @@ Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://git
 `Dev_Erick` adds profile-owned project history, full Kanban task results/comments/
 runs, and navigation through task dependencies and children. These require the
 updated [workspace bridge](GatewayPlugin/README.md), version 0.1.3. The branch
+also adds Kanban attachment downloads and Quick Look previews with bridge 0.1.4.
+The branch
 also addresses stale session/model refreshes, delayed session creation, stream
 ownership after session changes, CarPlay disconnect cleanup, old voice-answer
 replay, and unchanged job schedules being resubmitted during edits.

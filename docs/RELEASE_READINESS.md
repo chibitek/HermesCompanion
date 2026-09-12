@@ -61,3 +61,12 @@ limited by Hermes's hydrated-tree membership and native listing limits. Physical
 voice stability and complete desktop feature parity have not been established.
 Do not describe this development branch as bug-free or fully synchronized across
 every Hermes feature based on the focused tests above.
+
+## Attachment Development Update
+
+Bridge 0.1.4 and the native task screen now implement task-owned attachment
+downloads and Quick Look previews. Eleven bridge tests pass, including an
+authorized HTTP byte download and denied/foreign-attachment requests. Client
+tests cover filename containment and attachment ownership; redirects are refused
+and downloaded byte count must match metadata. This is not deployed or verified
+on the phone yet, and it is not a general artifact browser for all Hermes output.

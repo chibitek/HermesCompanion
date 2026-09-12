@@ -2,6 +2,20 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testAttachmentNamesCannotEscapeDownloadDirectory() throws {
+        for (name, expected) in [("../../report.txt", "report.txt"), ("C:\\private\\report.txt", "report.txt"), ("..", "attachment"), ("", "attachment")] {
+            let data = try JSONSerialization.data(withJSONObject: ["id": 1, "task_id": "task", "filename": name, "size": 10])
+            let attachment = try JSONDecoder().decode(ServerTaskAttachment.self, from: data)
+            XCTAssertEqual(attachment.safeFilename, expected)
+        }
+    }
+
+    func testTaskRejectsForeignAttachmentMetadata() throws {
+        let data = Data(#"{"board":"board","task":{"id":"task","title":"Task","status":"done"},"comments":[],"runs":[],"attachments":[{"id":1,"task_id":"foreign","filename":"report.txt","size":10}]}"#.utf8)
+        let detail = try JSONDecoder().decode(ServerTaskDetail.self, from: data)
+        XCTAssertFalse(detail.matches(board: "board", taskID: "task"))
+    }
+
     func testTaskHierarchyPreservesLinksAndRejectsUnlinkedChildResults() throws {
         let payload: [String: Any] = [
             "board": "engineering", "task": ["id": "parent", "title": "Parent", "status": "running"],
