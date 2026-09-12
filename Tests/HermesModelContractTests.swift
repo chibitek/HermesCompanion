@@ -2,6 +2,44 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testSessionPaginationKeepsHistoryBeyondTwoHundredWithOrWithoutTotal() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        for includeTotal in [true, false] {
+            SessionHistoryURLProtocol.handler = { request in
+                let query = URLComponents(url: request.request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+                let offset = Int(query.first { $0.name == "offset" }!.value!)!
+                let rows = (offset..<min(offset + 100, 252)).map { ["id": "session-\($0)"] }
+                var payload: [String: Any] = ["object": "list", "data": rows]
+                if includeTotal { payload["total"] = 252 }
+                request.succeed(body: String(data: try! JSONSerialization.data(withJSONObject: payload), encoding: .utf8)!)
+            }
+            let sessions = try await client.listSessions()
+            XCTAssertEqual(sessions.count, 252)
+            XCTAssertEqual(sessions.last?.id, "session-251")
+        }
+        SessionHistoryURLProtocol.handler = nil
+    }
+
+    func testRepeatingSessionPageFailsInsteadOfReportingPartialHistory() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"object":"list","total":250,"data":[{"id":"repeated"}]}"#)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        do {
+            _ = try await client.listSessions()
+            XCTFail("A repeated page must not be accepted as a complete history")
+        } catch {
+            guard case APIError.invalidResponse = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+    }
+
     func testModelSourcesPreserveDuplicateIDsAcrossProviders() {
         let catalog = [ModelInfo(id: "shared", provider: "local"),
                        ModelInfo(id: "shared", provider: "hosted"),

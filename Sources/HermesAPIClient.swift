@@ -253,13 +253,14 @@ final class HermesAPIClient: Sendable {
     // MARK: - Sessions
 
     /// GET /api/sessions
-    func listSessions(limit: Int = 200) async throws -> [HermesSession] {
+    func listSessions() async throws -> [HermesSession] {
         var allSessions: [HermesSession] = []
         var seenIDs = Set<String>()
         let pageSize = 100
         var offset = 0
 
         while true {
+            try Task.checkCancellation()
             let res = try await get(
                 path: "/api/sessions",
                 queryItems: [
@@ -274,14 +275,17 @@ final class HermesAPIClient: Sendable {
             let fresh = res.data.filter { seenIDs.insert($0.id).inserted }
             allSessions.append(contentsOf: fresh)
 
-            let knownTotal = res.total ?? allSessions.count
             offset += res.data.count
-            if res.data.isEmpty || allSessions.count >= knownTotal || fresh.isEmpty {
+            if let total = res.total, allSessions.count >= total { break }
+            if res.data.isEmpty {
+                guard res.total == nil else { throw APIError.invalidResponse }
                 break
             }
+            guard !fresh.isEmpty else { throw APIError.invalidResponse }
+            if res.total == nil && res.data.count < pageSize { break }
         }
 
-        return Array(allSessions.prefix(max(1, limit)))
+        return allSessions
     }
 
     /// POST /api/sessions
