@@ -69,7 +69,7 @@ struct SessionPickerView: View {
             return project.name
         }
         if mode == .chats, showArchived { return "Archived Chats" }
-        return mode == .chats ? "History" : "Projects"
+        return mode == .chats ? "History" : mode.label
     }
 
     private var workspaceProjects: [WorkspaceProject] {
@@ -84,14 +84,14 @@ struct SessionPickerView: View {
                 header
                 Divider().background(theme.cardBorder)
 
-                if mode == .projects && selectedProjectID == nil && selectedWorkspaceProject == nil {
-                    projectsOverview
+                if let section = mode.workspaceSection {
+                    WorkspaceBrowserView(store: store, section: section, onSessionSelected: { dismiss() })
                 } else {
                     chatsView
                 }
             }
 
-            if !(mode == .projects && selectedProjectID == nil && selectedWorkspaceProject == nil) {
+            if mode == .chats {
                 searchBar
             }
         }
@@ -196,6 +196,7 @@ struct SessionPickerView: View {
 
                 Spacer()
 
+                if mode == .chats {
                 HStack(spacing: theme.spacingXS) {
                     Button {
                     if mode == .projects && selectedProjectID == nil && selectedWorkspaceProject == nil {
@@ -232,6 +233,7 @@ struct SessionPickerView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                }
                 }
             }
 
@@ -437,14 +439,13 @@ struct SessionPickerView: View {
         SessionRowButton(
             session: session,
             isActive: store.activeSession?.id == session.id,
-            projectName: projects.project(for: session.id)?.name,
+            projectName: nil,
             onSelect: {
                 Task {
                     await store.selectSession(session)
                     dismiss()
                 }
             },
-            onMove: { movingSession = session },
             onRename: {
                 renamingSession = session
                 renameText = session.title ?? ""
@@ -500,9 +501,19 @@ struct SessionPickerView: View {
 private enum HistoryMode: String, CaseIterable, Identifiable {
     case chats
     case projects
+    case bots
+    case kanban
     var id: String { rawValue }
-    var label: String { self == .chats ? "Chats" : "Projects" }
-    var icon: String { self == .chats ? "bubble.left.and.bubble.right" : "folder" }
+    var label: String { rawValue.capitalized }
+    var workspaceSection: WorkspaceSection? {
+        switch self {
+        case .chats: nil
+        case .projects: .projects
+        case .bots: .bots
+        case .kanban: .kanban
+        }
+    }
+    var icon: String { workspaceSection?.icon ?? "bubble.left.and.bubble.right" }
 }
 
 enum SessionSortMode: String, CaseIterable, Identifiable {
@@ -531,7 +542,6 @@ private struct SessionRowButton: View {
     let isActive: Bool
     let projectName: String?
     let onSelect: () -> Void
-    let onMove: () -> Void
     let onRename: () -> Void
     let onDetails: () -> Void
     let onFork: () -> Void
@@ -545,9 +555,6 @@ private struct SessionRowButton: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button(action: onMove) {
-                Label(projectName == nil ? "Move to Project" : "Change Project", systemImage: "folder")
-            }
             Button(action: onRename) { Label("Rename", systemImage: "pencil") }
             Button(action: onDetails) { Label("Details", systemImage: "info.circle") }
             Button(action: onFork) { Label("Fork", systemImage: "arrow.triangle.branch") }

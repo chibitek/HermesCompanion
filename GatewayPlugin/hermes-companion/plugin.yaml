@@ -1,0 +1,7 @@
+name: hermes-companion
+version: 0.1.0
+description: Server-backed workspace browsing for Hermes Companion.
+author: Chibitek
+license: MIT
+platforms:
+  - api_server

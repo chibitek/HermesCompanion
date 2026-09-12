@@ -2,6 +2,54 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testDetailedHealthUsesServerPlatformKeysAsNames() throws {
+        let data = Data(#"{"status":"ok","platforms":{"telegram":{"state":"connected"},"discord":{"state":"error","error_code":"unavailable"}}}"#.utf8)
+        let health = try JSONDecoder().decode(PlatformHealthResponse.self, from: data)
+        XCTAssertEqual(health.platforms?["telegram"]?.name, "telegram")
+        XCTAssertEqual(health.platforms?["telegram"]?.state, "connected")
+        XCTAssertEqual(health.platforms?["discord"]?.id, "discord")
+        XCTAssertEqual(health.platforms?["discord"]?.errorCode, "unavailable")
+    }
+
+    func testCapabilitiesAcceptStructuredBrowserControl() throws {
+        for enabled in [false, true] {
+            let data = Data("""
+            {"browser_extension_control":{"enabled":\(enabled),"protocol_version":"1","artifact_transport":{"upload":{"method":"POST","path":"/v1/artifacts/upload"}}},"session_chat":true}
+            """.utf8)
+            let features = try JSONDecoder().decode(CapabilitiesResponse.Features.self, from: data)
+            XCTAssertEqual(features.browserExtensionControl, enabled)
+            XCTAssertEqual(features.artifactTransport, enabled)
+            XCTAssertTrue(features.sessionChat)
+            XCTAssertFalse(features.runStop)
+        }
+    }
+
+    func testCapabilitiesAcceptLegacyBooleanBrowserControl() throws {
+        let data = Data(#"{"browser_extension_control":false,"artifact_transport":true}"#.utf8)
+        let features = try JSONDecoder().decode(CapabilitiesResponse.Features.self, from: data)
+        XCTAssertEqual(features.browserExtensionControl, false)
+        XCTAssertEqual(features.artifactTransport, true)
+    }
+
+    func testUnresponsiveHealthRequestTimesOut() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(
+            config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+            session: URLSession(configuration: config)
+        )
+        SessionHistoryURLProtocol.handler = { _ in }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let start = Date()
+        do {
+            _ = try await client.checkHealth()
+            XCTFail("A health request that never responds must time out")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .timedOut)
+            XCTAssertLessThan(Date().timeIntervalSince(start), 8)
+        }
+    }
+
     @MainActor
     func testSessionRefreshUpdatesOpenChatFromServerAfterStreamFinishes() async throws {
         let config = URLSessionConfiguration.ephemeral
