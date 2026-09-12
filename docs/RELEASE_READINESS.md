@@ -206,3 +206,14 @@ start paths when invoked. Voice-page appearance still starts conversation mode
 automatically; this removes duplicate permission requests, not automatic listening
 after an explicit voice-mode entry. First-use permission UI remains unverified
 on a physical device.
+
+## Complete Session Pagination
+
+The iOS session client no longer fetches all pages and then discards rows after
+the first 200. Gateways without a total count continue through full pages until
+a short/empty page. Repeated pages, or an empty page before an advertised total
+is reached, fail the refresh rather than report a partial list as complete.
+All 88 iOS tests passed in the September 11 23:20 run, including 252-session
+catalogs with/without totals and a repeating-page response. Concurrent changes
+during server pagination still require end-to-end validation; this is not an
+atomic-snapshot guarantee or proof of remote deletion reconciliation.
