@@ -28,6 +28,7 @@ final class AppStore: ObservableObject {
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
     @Published var modelInfos: [String: ModelInfo] = [:]
+    @Published var modelCatalog: [ModelInfo] = []
     @Published var configuredProviders: [String] = []
     @Published var activeRuntime: SessionRuntime?
     @Published private(set) var gatewayDefaultModel = ""
@@ -139,6 +140,7 @@ final class AppStore: ObservableObject {
             gatewayDefaultModel = ""
             gatewayDefaultProvider = ""
             modelInfos = [:]
+            modelCatalog = []
             availableModels = []
             configuredProviders = []
         }
@@ -539,6 +541,7 @@ final class AppStore: ObservableObject {
             self.gatewayDefaultModel = options.model
             self.gatewayDefaultProvider = options.provider ?? ""
             self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            self.modelCatalog = infos
             let models = infos.map(\.id)
             self.availableModels = modelsIncludingCurrent(models)
         } catch {
@@ -547,6 +550,7 @@ final class AppStore: ObservableObject {
                 let infos = try await client.getModels()
                 guard apiClient === client else { return }
                 self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                self.modelCatalog = infos
                 let models = infos.map(\.id)
                 self.availableModels = modelsIncludingCurrent(models)
             } catch {
