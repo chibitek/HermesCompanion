@@ -3,6 +3,43 @@ import XCTest
 
 final class HermesModelContractTests: XCTestCase {
     @MainActor
+    func testPlatformSnapshotCannotOverwriteNewerSessionRefresh() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current","model":"initial"}"#.utf8))
+        let platformStarted = expectation(description: "Platform sessions pending")
+        let refreshStarted = expectation(description: "Newer sessions pending")
+        var requests: [SessionHistoryURLProtocol] = []
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                guard request.request.url?.path.hasSuffix("/sessions") == true else {
+                    request.fail()
+                    return
+                }
+                requests.append(request)
+                if requests.count == 1 { platformStarted.fulfill() }
+                else { refreshStarted.fulfill() }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let platform = Task { await store.refreshPlatform() }
+        await fulfillment(of: [platformStarted], timeout: 3)
+        let refresh = Task { await store.refreshSessions() }
+        await fulfillment(of: [refreshStarted], timeout: 3)
+        requests[1].succeed(body: #"{"object":"list","data":[{"id":"current","model":"latest","pinned":true}]}"#)
+        await refresh.value
+        requests[0].succeed(body: #"{"object":"list","data":[{"id":"current","model":"stale","pinned":false}]}"#)
+        await platform.value
+        XCTAssertEqual(store.effectiveCurrentModel, "latest")
+        XCTAssertEqual(store.activeSession?.isPinned, true)
+        XCTAssertEqual(store.sessions.first?.model, "latest")
+        XCTAssertFalse(store.isLoadingPlatform)
+    }
+
+    @MainActor
     func testFailedModelLockPreservesConfirmedSelection() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]

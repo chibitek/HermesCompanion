@@ -1011,6 +1011,8 @@ final class AppStore: ObservableObject {
         platformError = nil
         let refreshID = UUID()
         platformRefreshID = refreshID
+        let sessionsID = UUID()
+        sessionRefreshID = sessionsID
         defer {
             if platformRefreshID == refreshID { isLoadingPlatform = false }
         }
@@ -1045,8 +1047,10 @@ final class AppStore: ObservableObject {
         do {
             let value = try await sessions
             guard apiClient === client, platformRefreshID == refreshID else { return }
-            applySessionSnapshot(value)
-            await restoreActiveSessionIfAvailable()
+            if sessionRefreshID == sessionsID, !Task.isCancelled {
+                applySessionSnapshot(value)
+                await restoreActiveSessionIfAvailable()
+            }
         } catch {
             FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
         }
