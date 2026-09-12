@@ -11,6 +11,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
                                   didConnect interfaceController: CPInterfaceController) {
+        cancellables.removeAll()
         self.interfaceController = interfaceController
         interfaceController.setRootTemplate(makeTemplate(), animated: false, completion: nil)
 
@@ -25,7 +26,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
-                                  didDisconnect interfaceController: CPInterfaceController) {
+                                  didDisconnectInterfaceController interfaceController: CPInterfaceController) {
         controller.stop()
         self.interfaceController = nil
         cancellables.removeAll()

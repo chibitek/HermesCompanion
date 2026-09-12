@@ -2,6 +2,13 @@ import XCTest
 @testable import HermesCompanion
 
 final class VoiceActivationLogicTests: XCTestCase {
+    @MainActor
+    func testCarPlayImplementsSystemDisconnectCallback() {
+        let delegate = CarPlaySceneDelegate()
+        XCTAssertTrue(delegate.responds(to: NSSelectorFromString("templateApplicationScene:didDisconnectInterfaceController:")))
+        XCTAssertTrue(delegate.responds(to: NSSelectorFromString("templateApplicationScene:didConnectInterfaceController:")))
+    }
+
     func testVoiceProviderSurfaceIsLocalOnly() {
         XCTAssertEqual(TTSProvider.visibleCases, [.apple])
     }

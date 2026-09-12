@@ -15,6 +15,7 @@ final class CarPlayVoiceController: ObservableObject {
     let voice = VoiceConversationManager()
     private weak var store: AppStore?
     private var cancellables = Set<AnyCancellable>()
+    private var turnID = UUID()
 
     private init() {
         // Keep CarPlay UI in sync with the voice manager's state.
@@ -63,27 +64,32 @@ final class CarPlayVoiceController: ObservableObject {
     }
 
     func start() {
+        guard !isActive else { return }
         guard let store, store.isConnected else {
             stateText = "Not connected to Hermes"
             return
         }
         isActive = true
+        turnID = UUID()
         voice.startConversation { [weak self] transcription in
             self?.handleTranscription(transcription)
         }
     }
 
     func stop() {
+        turnID = UUID()
         isActive = false
         voice.stopConversation()
         stateText = "Tap to talk"
     }
 
     private func handleTranscription(_ transcription: String) {
-        guard let store else { return }
+        guard isActive, let store else { return }
+        let currentTurn = UUID()
+        turnID = currentTurn
         let priorErrorID = store.error?.id
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.isActive, self.turnID == currentTurn else { return }
             self.voice.isThinking = true
 
             // 60s hard timeout. do/catch, never try? — see ios-voice skill.
@@ -91,7 +97,8 @@ final class CarPlayVoiceController: ObservableObject {
                 do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { return }
                 guard !Task.isCancelled else { return }
                 await MainActor.run { [weak self] in
-                    guard let self, self.voice.isThinking else { return }
+                    guard let self, self.isActive, self.turnID == currentTurn,
+                          self.voice.isThinking else { return }
                     self.voice.failRemoteTurn(message: "Hermes took too long to respond.")
                 }
             }
@@ -99,7 +106,7 @@ final class CarPlayVoiceController: ObservableObject {
             let responseMessage = await store.sendMessage(transcription, skipPostReload: true)
             timeoutTask.cancel()
 
-            guard self.voice.isThinking else { return }  // turn already ended
+            guard self.isActive, self.turnID == currentTurn, self.voice.isThinking else { return }
             guard let responseMessage else {
                 if let error = store.error, error.id != priorErrorID {
                     self.voice.failRemoteTurn(message: error.message)
