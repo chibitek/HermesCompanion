@@ -38,7 +38,7 @@ struct ConnectionSetupView: View {
     }
     
     private var isFormValid: Bool {
-        !baseURL.isEmpty && !apiKey.isEmpty
+        ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label).isValid
     }
     
     private var isConnecting: Bool {
