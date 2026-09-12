@@ -670,13 +670,26 @@ final class AppStore: ObservableObject {
         do {
             let sessions = try await client.listSessions()
             guard apiClient === client else { return }
-            self.sessions = sessions
+            applySessionSnapshot(sessions)
             await restoreActiveSessionIfAvailable()
         } catch {
             guard apiClient === client else { return }
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
             FileLogger.shared.log("AppStore: refreshSessions failed for \(connectionConfig?.baseURL ?? "unknown") — \(error.localizedDescription)")
         }
+    }
+
+    private func applySessionSnapshot(_ sessions: [HermesSession]) {
+        self.sessions = sessions
+        guard !isStreaming, let current = activeSession,
+              let updated = sessions.first(where: { $0.id == current.id }) else { return }
+        if current.model != updated.model || current.provider != updated.provider ||
+            current.billingProvider != updated.billingProvider {
+            activeRuntime = nil
+            sessionModelOverride = nil
+            sessionProviderOverride = nil
+        }
+        activeSession = updated
     }
 
     /// Restores the last chat used on this server after a cold launch. If that
@@ -968,7 +981,7 @@ final class AppStore: ObservableObject {
         do {
             let value = try await sessions
             guard apiClient === client, platformRefreshID == refreshID else { return }
-            self.sessions = value
+            applySessionSnapshot(value)
             await restoreActiveSessionIfAvailable()
         } catch {
             FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
