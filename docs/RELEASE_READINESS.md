@@ -199,3 +199,10 @@ transcript before permission checks.
 Pure merge tests cover successive partial results, empty text, and whitespace.
 These do not prove on-device recognition, button interaction, or audio-session
 recovery; that phone verification remains required.
+
+The composer no longer requests microphone and speech permissions on appearance.
+Dictation and voice conversation request them through their existing guarded
+start paths when invoked. Voice-page appearance still starts conversation mode
+automatically; this removes duplicate permission requests, not automatic listening
+after an explicit voice-mode entry. First-use permission UI remains unverified
+on a physical device.
