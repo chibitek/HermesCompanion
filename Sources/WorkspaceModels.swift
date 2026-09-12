@@ -122,4 +122,37 @@ struct ServerBoardTask: Decodable, Identifiable {
     let status: String
     let assignee: String?
     let latest_summary: String?
+    let result: String?
+}
+
+struct ServerTaskDetail: Decodable {
+    let board: String
+    let task: ServerBoardTask
+    let comments: [ServerTaskComment]
+    let runs: [ServerTaskRun]
+
+    func matches(board: String, taskID: String) -> Bool {
+        self.board == board && task.id == taskID
+            && comments.allSatisfy { $0.task_id == taskID }
+            && runs.allSatisfy { $0.task_id == taskID }
+    }
+}
+
+struct ServerTaskComment: Decodable, Identifiable {
+    let id: Int
+    let task_id: String
+    let author: String
+    let body: String
+    let created_at: Double
+}
+
+struct ServerTaskRun: Decodable, Identifiable {
+    let id: Int
+    let task_id: String
+    let status: String
+    let profile: String?
+    let outcome: String?
+    let summary: String?
+    let error: String?
+    let started_at: Double
 }

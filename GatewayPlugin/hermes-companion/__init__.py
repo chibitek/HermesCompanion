@@ -83,6 +83,22 @@ def board(query):
                      workflow_template_id=None, current_step_key=None)
 
 
+def task_detail(query):
+    from plugins.kanban.dashboard.plugin_api import get_task, list_boards
+    from fastapi import HTTPException
+
+    slug, task_id = query.get("board", ""), query.get("task_id", "")
+    if not task_id or slug not in {b["slug"] for b in list_boards(include_archived=False)["boards"]}:
+        raise ValueError("Select an existing board and task")
+    try:
+        detail = get_task(task_id, board=slug, run_state_type=None, run_state_name=None)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise ValueError("Task no longer exists on this board") from exc
+        raise
+    return {"board": slug, **detail}
+
+
 READERS = {
     "projects": projects,
     "project": project_detail,
@@ -90,6 +106,7 @@ READERS = {
     "bot-history": bot_history,
     "boards": boards,
     "board": board,
+    "task": task_detail,
 }
 
 

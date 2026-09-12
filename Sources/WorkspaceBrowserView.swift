@@ -100,16 +100,7 @@ struct WorkspaceBrowserView: View {
                                 Section("\(column.name.capitalized) (\(column.tasks.count))") {
                                     ForEach(column.tasks) { task in
                                         NavigationLink {
-                                            List {
-                                                Section { Text(task.title).font(.headline) }
-                                                LabeledContent("Status", value: task.status)
-                                                if let assignee = task.assignee { LabeledContent("Assignee", value: assignee) }
-                                                if let body = task.body, !body.isEmpty { Section("Description") { Text(body) } }
-                                                if let summary = task.latest_summary, !summary.isEmpty {
-                                                    Section("Summary Preview") { Text(summary) }
-                                                }
-                                            }
-                                            .navigationTitle("Task")
+                                            ServerTaskDetailView(client: client, board: board.slug, taskID: task.id)
                                         } label: {
                                             WorkspaceRow(title: task.title, detail: task.assignee, trailing: nil, icon: "checklist")
                                         }
@@ -166,6 +157,58 @@ struct WorkspaceBrowserView: View {
             }
         }
         .navigationTitle(project.label)
+    }
+}
+
+private struct ServerTaskDetailView: View {
+    let client: HermesAPIClient
+    let board: String
+    let taskID: String
+
+    var body: some View {
+        WorkspaceReadView(load: { try await client.workspaceTask(board: board, id: taskID) }) { detail in
+            Section {
+                Text(detail.task.title).font(.headline)
+                LabeledContent("Status", value: detail.task.status)
+                if let assignee = detail.task.assignee { LabeledContent("Assignee", value: assignee) }
+            }
+            if let body = detail.task.body, !body.isEmpty { Section("Description") { Text(body) } }
+            if let summary = detail.task.latest_summary, !summary.isEmpty {
+                Section("Summary") { Text(summary) }
+            }
+            if let result = detail.task.result, !result.isEmpty { Section("Result") { Text(result) } }
+            Section("Comments (\(detail.comments.count))") {
+                ForEach(detail.comments) { comment in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(comment.author).font(.headline)
+                        Text(Date(timeIntervalSince1970: comment.created_at), style: .date)
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(comment.body)
+                    }
+                }
+            }
+            Section("Runs (\(detail.runs.count))") {
+                ForEach(detail.runs) { run in
+                    DisclosureGroup {
+                        if let profile = run.profile { LabeledContent("Profile", value: profile) }
+                        if let outcome = run.outcome { LabeledContent("Outcome", value: outcome) }
+                        if let summary = run.summary, !summary.isEmpty { Text(summary) }
+                        if let error = run.error, !error.isEmpty {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                        }
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text("#\(run.id) \(run.status)")
+                            Text(Date(timeIntervalSince1970: run.started_at), style: .date)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .navigationTitle("Task")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

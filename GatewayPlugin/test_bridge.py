@@ -2,7 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 import types
 
 from aiohttp import web
@@ -102,6 +102,27 @@ class BotHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(history["session_id"])
         self.assertEqual(history["messages"], [])
         module.get_session_messages.assert_not_awaited()
+
+class TaskDetailTests(unittest.TestCase):
+    def testScopesTaskReadAndExplicitlyClearsHTTPQueryDefaults(self):
+        module = types.ModuleType("plugins.kanban.dashboard.plugin_api")
+        module.list_boards = Mock(return_value={"boards": [{"slug": "engineering"}]})
+        module.get_task = Mock(return_value={"task": {"id": "task", "latest_summary": "full"}, "comments": [], "runs": []})
+        with patch.dict("sys.modules", {module.__name__: module}):
+            detail = bridge.task_detail({"board": "engineering", "task_id": "task"})
+        self.assertEqual(detail["board"], "engineering")
+        self.assertEqual(detail["task"]["latest_summary"], "full")
+        module.get_task.assert_called_once_with("task", board="engineering", run_state_type=None, run_state_name=None)
+
+    def testUnknownBoardNeverReadsTask(self):
+        module = types.ModuleType("plugins.kanban.dashboard.plugin_api")
+        module.list_boards = Mock(return_value={"boards": []})
+        module.get_task = Mock()
+        with patch.dict("sys.modules", {module.__name__: module}):
+            with self.assertRaises(ValueError):
+                bridge.task_detail({"board": "../foreign", "task_id": "task"})
+        module.get_task.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

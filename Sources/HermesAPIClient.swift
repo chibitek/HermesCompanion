@@ -115,6 +115,15 @@ final class HermesAPIClient: Sendable {
         ], type: ServerBoardDetail.self)
     }
 
+    func workspaceTask(board: String, id: String) async throws -> ServerTaskDetail {
+        let result = try await get(path: "/api/companion/task", queryItems: [
+            URLQueryItem(name: "board", value: board),
+            URLQueryItem(name: "task_id", value: id)
+        ], type: ServerTaskDetail.self)
+        guard result.matches(board: board, taskID: id) else { throw APIError.invalidResponse }
+        return result
+    }
+
     // MARK: - Health
 
     /// GET /health — no auth required, used for connection test
