@@ -686,13 +686,20 @@ private struct JobEditorView: View {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let payload = HermesJobWrite(
+        var payload = HermesJobWrite(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             schedule: HermesJobWrite.scheduleUpdate(edited: schedule, originalDisplay: existingJob?.scheduleDisplay),
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
             deliver: deliver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "local" : deliver.trimmingCharacters(in: .whitespacesAndNewlines),
             skills: skills
         )
+        if let existingJob {
+            payload = payload.changes(comparedTo: existingJob)
+            guard payload.hasChanges else {
+                dismiss()
+                return
+            }
+        }
         if await store.saveJob(payload, jobId: existingJob?.id) {
             dismiss()
         }
