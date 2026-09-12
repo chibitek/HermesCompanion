@@ -938,14 +938,15 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func saveJob(_ payload: HermesJobWrite, jobId: String? = nil) async {
+    func saveJob(_ payload: HermesJobWrite, jobId: String? = nil) async -> Bool {
         let client: HermesAPIClient
         do {
             client = try self.client()
         } catch {
             platformError = "Not connected"
-            return
+            return false
         }
+        platformError = nil
         do {
             if let jobId {
                 _ = try await client.updateJob(jobId: jobId, updates: payload)
@@ -953,8 +954,10 @@ final class AppStore: ObservableObject {
                 _ = try await client.createJob(payload)
             }
             await refreshJobsOnly()
+            return true
         } catch {
             platformError = "Could not save job: \(error.localizedDescription)"
+            return false
         }
     }
 

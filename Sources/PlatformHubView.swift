@@ -407,14 +407,20 @@ struct PlatformHubView: View {
                             if job.enabled == true {
                                 Button {
                                     activeJobID = job.id
-                                    Task { await store.controlJob(job, action: .pause) }
+                                    Task {
+                                        defer { activeJobID = nil }
+                                        await store.controlJob(job, action: .pause)
+                                    }
                                 } label: {
                                     Label("Pause", systemImage: "pause.circle")
                                 }
                             } else {
                                 Button {
                                     activeJobID = job.id
-                                    Task { await store.controlJob(job, action: .resume) }
+                                    Task {
+                                        defer { activeJobID = nil }
+                                        await store.controlJob(job, action: .resume)
+                                    }
                                 } label: {
                                     Label("Resume", systemImage: "play.circle")
                                 }
@@ -422,14 +428,20 @@ struct PlatformHubView: View {
 
                             Button {
                                 activeJobID = job.id
-                                Task { await store.controlJob(job, action: .run) }
+                                Task {
+                                    defer { activeJobID = nil }
+                                    await store.controlJob(job, action: .run)
+                                }
                             } label: {
                                 Label("Run Now", systemImage: "bolt.circle")
                             }
 
                             Button(role: .destructive) {
                                 activeJobID = job.id
-                                Task { await store.controlJob(job, action: .delete) }
+                                Task {
+                                    defer { activeJobID = nil }
+                                    await store.controlJob(job, action: .delete)
+                                }
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -449,6 +461,7 @@ struct PlatformHubView: View {
                             .padding(.horizontal, 10)
                             .background(Capsule().fill(theme.accent.opacity(0.12)))
                         }
+                        .disabled(activeJobID != nil)
                     }
                     .padding(.vertical, 2)
                 }
@@ -489,11 +502,11 @@ struct PlatformHubView: View {
             )
             platformRow(
                 "Transport",
-                store.capabilities?.features.browserExtensionControl == true ? "Gateway Managed" : "Disabled",
+                store.capabilities?.features.artifactTransport == true ? "Gateway Managed" : "Disabled",
                 icon: "externaldrive"
             )
 
-            if store.capabilities?.features.browserExtensionControl == true {
+            if store.capabilities?.features.artifactTransport == true {
                 Button {
                     showArtifactPicker = true
                 } label: {
@@ -510,7 +523,7 @@ struct PlatformHubView: View {
                 }
                 .disabled(isUploadingArtifact)
             } else {
-                Text("Artifact transport is disabled because browser control is disabled on this Hermes gateway.")
+                Text("Artifact transport is not available on this Hermes gateway.")
                     .font(.caption)
                     .foregroundStyle(theme.textSecondary)
             }
@@ -592,6 +605,12 @@ private struct JobEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if let error = store.platformError, !error.isEmpty {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(theme.danger)
+                    }
+                }
                 Section("Job") {
                     TextField("Name", text: $name)
                     TextField("Schedule (cron or interval)", text: $schedule)
@@ -662,7 +681,8 @@ private struct JobEditorView: View {
             deliver: deliver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "local" : deliver.trimmingCharacters(in: .whitespacesAndNewlines),
             skills: skills
         )
-        await store.saveJob(payload, jobId: existingJob?.id)
-        dismiss()
+        if await store.saveJob(payload, jobId: existingJob?.id) {
+            dismiss()
+        }
     }
 }
