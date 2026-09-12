@@ -77,6 +77,33 @@ final class HermesAPIClient: Sendable {
         try checkHTTPStatus(response)
     }
 
+    // MARK: - Server workspace
+
+    func workspaceProjects() async throws -> WorkspaceProjects {
+        try await get(path: "/api/companion/projects", type: WorkspaceProjects.self)
+    }
+
+    func workspaceProject(profile: String, id: String) async throws -> ServerProjectDetail {
+        try await get(path: "/api/companion/project", queryItems: [
+            URLQueryItem(name: "profile", value: profile),
+            URLQueryItem(name: "project_id", value: id)
+        ], type: ServerProjectDetail.self)
+    }
+
+    func workspaceBots() async throws -> WorkspaceBots {
+        try await get(path: "/api/companion/bots", type: WorkspaceBots.self)
+    }
+
+    func workspaceBoards() async throws -> WorkspaceBoards {
+        try await get(path: "/api/companion/boards", type: WorkspaceBoards.self)
+    }
+
+    func workspaceBoard(slug: String) async throws -> ServerBoardDetail {
+        try await get(path: "/api/companion/board", queryItems: [
+            URLQueryItem(name: "board", value: slug)
+        ], type: ServerBoardDetail.self)
+    }
+
     // MARK: - Health
 
     /// GET /health — no auth required, used for connection test
