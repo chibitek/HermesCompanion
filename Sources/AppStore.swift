@@ -725,13 +725,16 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Not connected")
             return
         }
+        stopStreaming()
+        let creationID = UUID()
+        sessionSelectionID = creationID
         do {
             let session = try await client.createSession(title: title)
-            guard apiClient === client else { return }
+            guard apiClient === client, sessionSelectionID == creationID else { return }
             self.sessions.insert(session, at: 0)
             await selectSession(session)
         } catch {
-            guard apiClient === client else { return }
+            guard apiClient === client, sessionSelectionID == creationID else { return }
             self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
         }
     }
