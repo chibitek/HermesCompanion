@@ -37,6 +37,9 @@ profiles. The plugin uses the gateway's existing authorization check unchanged.
 - `GET /api/companion/task?board=...&task_id=...`: full task detail from the
   selected board, including untruncated summaries, results, comments, and runs.
   Requires bridge 0.1.2; the iOS detail screen rejects mismatched board/task IDs.
+  The native detail screen also traverses dependencies and child tasks on the
+  same board, displaying full child summaries/results. Unlinked child-result
+  records are rejected rather than rendered under an unrelated parent.
 
 There is no arbitrary RPC forwarding, file reader, write route, or new listener.
 The canonical Hermes handlers retain their own schema migration and discovery

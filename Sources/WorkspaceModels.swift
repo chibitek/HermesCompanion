@@ -145,12 +145,20 @@ struct ServerTaskDetail: Decodable {
     let task: ServerBoardTask
     let comments: [ServerTaskComment]
     let runs: [ServerTaskRun]
+    let links: ServerTaskLinks?
+    let child_results: [ServerBoardTask]?
 
     func matches(board: String, taskID: String) -> Bool {
         self.board == board && task.id == taskID
             && comments.allSatisfy { $0.task_id == taskID }
             && runs.allSatisfy { $0.task_id == taskID }
+            && (child_results ?? []).allSatisfy { links?.children.contains($0.id) == true }
     }
+}
+
+struct ServerTaskLinks: Decodable {
+    let parents: [String]
+    let children: [String]
 }
 
 struct ServerTaskComment: Decodable, Identifiable {
