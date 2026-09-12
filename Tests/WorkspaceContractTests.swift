@@ -2,6 +2,22 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testTaskHierarchyPreservesLinksAndRejectsUnlinkedChildResults() throws {
+        let payload: [String: Any] = [
+            "board": "engineering", "task": ["id": "parent", "title": "Parent", "status": "running"],
+            "comments": [], "runs": [], "links": ["parents": ["dependency"], "children": ["child"]],
+            "child_results": [["id": "child", "title": "Child", "status": "done", "latest_summary": "Full child summary", "result": "Child output"]]
+        ]
+        let detail = try JSONDecoder().decode(ServerTaskDetail.self, from: JSONSerialization.data(withJSONObject: payload))
+        XCTAssertTrue(detail.matches(board: "engineering", taskID: "parent"))
+        XCTAssertEqual(detail.links?.parents, ["dependency"])
+        XCTAssertEqual(detail.child_results?.first?.result, "Child output")
+        var invalid = payload
+        invalid["links"] = ["parents": [], "children": []]
+        let unlinked = try JSONDecoder().decode(ServerTaskDetail.self, from: JSONSerialization.data(withJSONObject: invalid))
+        XCTAssertFalse(unlinked.matches(board: "engineering", taskID: "parent"))
+    }
+
     func testProjectHistoryValidatesOwnerAndAllowsServerResolvedResume() throws {
         let data = Data(#"{"project_id":"project","requested_session_id":"original","history":{"profile":"assistant","session_id":"resumed","messages":[],"pagination":{"offset":100,"limit":100,"returned":0}}}"#.utf8)
         let result = try JSONDecoder().decode(ProjectSessionHistory.self, from: data)

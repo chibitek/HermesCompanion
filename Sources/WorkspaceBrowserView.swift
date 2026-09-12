@@ -188,6 +188,39 @@ private struct ServerTaskDetailView: View {
                 Section("Summary") { Text(summary) }
             }
             if let result = detail.task.result, !result.isEmpty { Section("Result") { Text(result) } }
+            if let links = detail.links {
+                if !links.parents.isEmpty {
+                    Section("Dependencies") {
+                        ForEach(links.parents, id: \.self) { parentID in
+                            NavigationLink {
+                                ServerTaskDetailView(client: client, board: board, taskID: parentID)
+                            } label: {
+                                Label(parentID, systemImage: "arrow.up.forward")
+                            }
+                        }
+                    }
+                }
+                if !links.children.isEmpty {
+                    Section("Child Tasks (\(links.children.count))") {
+                        ForEach(links.children, id: \.self) { childID in
+                            let child = detail.child_results?.first { $0.id == childID }
+                            NavigationLink {
+                                ServerTaskDetailView(client: client, board: board, taskID: childID)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(child?.title ?? childID)
+                                    if let child {
+                                        Text(child.status).font(.caption).foregroundStyle(.secondary)
+                                        if let summary = child.latest_summary ?? child.result, !summary.isEmpty {
+                                            Text(summary).font(.callout)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Section("Comments (\(detail.comments.count))") {
                 ForEach(detail.comments) { comment in
                     VStack(alignment: .leading, spacing: 6) {
