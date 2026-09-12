@@ -276,8 +276,10 @@ final class AppStore: ObservableObject {
             await refreshSessions()
             self.isLoadingConnection = false
             hasExplicitlyConnected = true
+            FileLogger.shared.log("AppStore: automatic connection succeeded")
             await refreshCapabilities()
         } catch let e as APIError {
+            FileLogger.shared.log("AppStore: automatic connection failed: \(e.errorDescription ?? "Unknown API error")")
             if await fallbackToReachableServer(excluding: config.baseURL) {
                 self.isLoadingConnection = false
                 return
@@ -285,6 +287,7 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: e.errorDescription ?? "Connection failed. Select a server to retry.")
             self.isLoadingConnection = false
         } catch {
+            FileLogger.shared.log("AppStore: automatic connection failed: \(error.localizedDescription)")
             if await fallbackToReachableServer(excluding: config.baseURL) {
                 self.isLoadingConnection = false
                 return
@@ -329,13 +332,16 @@ final class AppStore: ObservableObject {
             self.capabilities = capabilities
             await refreshSessions()
             hasExplicitlyConnected = true
+            FileLogger.shared.log("AppStore: manual connection succeeded")
             Task { await refreshCapabilities() }
             return true
         } catch let e as APIError {
+            FileLogger.shared.log("AppStore: manual connection failed: \(e.errorDescription ?? "Unknown API error")")
             self.error = AppError(message: e.errorDescription ?? "Connection failed")
             self.apiClient = nil
             return false
         } catch {
+            FileLogger.shared.log("AppStore: manual connection failed: \(error.localizedDescription)")
             self.error = AppError(message: "Connection failed: \(error.localizedDescription)")
             self.apiClient = nil
             return false
