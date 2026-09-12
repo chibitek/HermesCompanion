@@ -1,5 +1,13 @@
 import Foundation
 
+private final class AttachmentRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 /// Handles all HTTP communication with the Hermes Agent API server.
 ///
 /// All endpoints use Bearer token auth. The base URL is user-configured
@@ -94,6 +102,19 @@ final class HermesAPIClient: Sendable {
         try await get(path: "/api/companion/bots", type: WorkspaceBots.self)
     }
 
+    func projectHistory(profile: String, projectID: String, sessionID: String, offset: Int) async throws -> BotHistory {
+        let result = try await get(path: "/api/companion/project-history", queryItems: [
+            URLQueryItem(name: "profile", value: profile),
+            URLQueryItem(name: "project_id", value: projectID),
+            URLQueryItem(name: "session_id", value: sessionID),
+            URLQueryItem(name: "offset", value: String(offset))
+        ], type: ProjectSessionHistory.self)
+        guard result.matches(profile: profile, projectID: projectID, sessionID: sessionID, offset: offset) else {
+            throw APIError.invalidResponse
+        }
+        return result.history
+    }
+
     func botHistory(profile: String, offset: Int) async throws -> BotHistory {
         let result = try await get(path: "/api/companion/bot-history", queryItems: [
             URLQueryItem(name: "profile", value: profile),
@@ -115,7 +136,41 @@ final class HermesAPIClient: Sendable {
         ], type: ServerBoardDetail.self)
     }
 
+    func workspaceTask(board: String, id: String) async throws -> ServerTaskDetail {
+        let result = try await get(path: "/api/companion/task", queryItems: [
+            URLQueryItem(name: "board", value: board),
+            URLQueryItem(name: "task_id", value: id)
+        ], type: ServerTaskDetail.self)
+        guard result.matches(board: board, taskID: id) else { throw APIError.invalidResponse }
+        return result
+    }
+
     // MARK: - Health
+
+    func downloadTaskAttachment(board: String, taskID: String, attachment: ServerTaskAttachment) async throws -> URL {
+        guard attachment.task_id == taskID, attachment.size >= 0 else { throw APIError.invalidResponse }
+        let req = try request(method: "GET", path: "/api/companion/task-attachment", queryItems: [
+            URLQueryItem(name: "board", value: board),
+            URLQueryItem(name: "task_id", value: taskID),
+            URLQueryItem(name: "attachment_id", value: String(attachment.id))
+        ])
+        let (temporary, response) = try await session.download(for: req, delegate: AttachmentRedirectPolicy())
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try checkHTTPStatus(response)
+        try Task.checkCancellation()
+        let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        guard size == attachment.size else { throw APIError.invalidResponse }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-attachment-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        do {
+            let file = directory.appendingPathComponent(attachment.safeFilename)
+            try FileManager.default.moveItem(at: temporary, to: file)
+            return file
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
 
     /// GET /health — no auth required, used for connection test
     func checkHealth() async throws -> HealthResponse {
@@ -198,13 +253,14 @@ final class HermesAPIClient: Sendable {
     // MARK: - Sessions
 
     /// GET /api/sessions
-    func listSessions(limit: Int = 200) async throws -> [HermesSession] {
+    func listSessions() async throws -> [HermesSession] {
         var allSessions: [HermesSession] = []
         var seenIDs = Set<String>()
         let pageSize = 100
         var offset = 0
 
         while true {
+            try Task.checkCancellation()
             let res = try await get(
                 path: "/api/sessions",
                 queryItems: [
@@ -219,14 +275,17 @@ final class HermesAPIClient: Sendable {
             let fresh = res.data.filter { seenIDs.insert($0.id).inserted }
             allSessions.append(contentsOf: fresh)
 
-            let knownTotal = res.total ?? allSessions.count
             offset += res.data.count
-            if res.data.isEmpty || allSessions.count >= knownTotal || fresh.isEmpty {
+            if let total = res.total, allSessions.count >= total { break }
+            if res.data.isEmpty {
+                guard res.total == nil else { throw APIError.invalidResponse }
                 break
             }
+            guard !fresh.isEmpty else { throw APIError.invalidResponse }
+            if res.total == nil && res.data.count < pageSize { break }
         }
 
-        return Array(allSessions.prefix(max(1, limit)))
+        return allSessions
     }
 
     /// POST /api/sessions

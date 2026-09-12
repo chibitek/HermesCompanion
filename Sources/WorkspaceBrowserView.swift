@@ -1,4 +1,5 @@
 import SwiftUI
+import QuickLook
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
     case projects = "Projects", bots = "Bots", kanban = "Kanban"
@@ -62,27 +63,31 @@ struct WorkspaceBrowserView: View {
                 }
                 ForEach(snapshot.profiles) { bot in
                     NavigationLink {
-                        List {
-                            Section("Profile") {
-                                LabeledContent("Name", value: bot.name)
-                                if let value = bot.description, !value.isEmpty { Text(value) }
-                                LabeledContent("Provider", value: bot.provider ?? "Not reported")
-                                LabeledContent("Model", value: bot.model ?? "Not reported")
-                                if let count = bot.skill_count { LabeledContent("Skills", value: "\(count)") }
-                            }
-                            if let session = bot.canonical_session ?? bot.last_session {
-                                Section("Conversation") {
-                                    Text(session.title ?? "Untitled")
-                                    if let preview = session.preview, !preview.isEmpty { Text(preview) }
+                        WorkspaceReadView(load: { try await client.workspaceBots() }) { current in
+                            if let bot = current.profile(named: bot.name) {
+                                Section("Profile") {
+                                    LabeledContent("Name", value: bot.name)
+                                    if let value = bot.description, !value.isEmpty { Text(value) }
+                                    LabeledContent("Provider", value: bot.provider ?? "Not reported")
+                                    LabeledContent("Model", value: bot.model ?? "Not reported")
+                                    if let count = bot.skill_count { LabeledContent("Skills", value: "\(count)") }
                                 }
-                            }
-                            NavigationLink {
-                                BotHistoryView(client: client, bot: bot)
-                            } label: {
-                                Label("Conversation History", systemImage: "bubble.left.and.bubble.right")
+                                if let session = bot.canonical_session {
+                                    Section("Conversation") {
+                                        Text(session.title ?? "Untitled")
+                                        if let preview = session.preview, !preview.isEmpty { Text(preview) }
+                                    }
+                                }
+                                NavigationLink {
+                                    BotHistoryView(client: client, bot: bot)
+                                } label: {
+                                    Label("Conversation History", systemImage: "bubble.left.and.bubble.right")
+                                }
+                            } else {
+                                ContentUnavailableView("Bot No Longer Available", systemImage: "person.crop.circle.badge.questionmark")
                             }
                         }
-                        .navigationTitle(bot.title)
+                        .navigationTitle(bot.name)
                     } label: {
                         WorkspaceRow(title: bot.title, detail: bot.model, trailing: nil, icon: "person.crop.circle")
                     }
@@ -100,16 +105,7 @@ struct WorkspaceBrowserView: View {
                                 Section("\(column.name.capitalized) (\(column.tasks.count))") {
                                     ForEach(column.tasks) { task in
                                         NavigationLink {
-                                            List {
-                                                Section { Text(task.title).font(.headline) }
-                                                LabeledContent("Status", value: task.status)
-                                                if let assignee = task.assignee { LabeledContent("Assignee", value: assignee) }
-                                                if let body = task.body, !body.isEmpty { Section("Description") { Text(body) } }
-                                                if let summary = task.latest_summary, !summary.isEmpty {
-                                                    Section("Summary Preview") { Text(summary) }
-                                                }
-                                            }
-                                            .navigationTitle("Task")
+                                            ServerTaskDetailView(client: client, board: board.slug, taskID: task.id)
                                         } label: {
                                             WorkspaceRow(title: task.title, detail: task.assignee, trailing: nil, icon: "checklist")
                                         }
@@ -129,43 +125,202 @@ struct WorkspaceBrowserView: View {
 
     private func projectDetail(_ project: ServerProject, profile: String, client: HermesAPIClient) -> some View {
         WorkspaceReadView(load: { try await client.workspaceProject(profile: profile, id: project.id) }) { detail in
-            // Discovered empty repositories may not appear in the hydrated response.
-            let current = detail.project ?? project
-            ForEach(current.repos) { repo in
-                Section(repo.label) {
-                    if let path = repo.path { Text(path).font(.caption).foregroundStyle(.secondary) }
-                    ForEach(repo.groups) { lane in
-                        DisclosureGroup {
-                            if let path = lane.path { Text(path).font(.caption).foregroundStyle(.secondary) }
-                            ForEach(lane.sessions) { session in
-                                // A profile's session ID must never be submitted to another profile.
-                                if profile == "default",
-                                   store.connectionConfig?.normalizedBaseURL.contains("/p/") != true,
-                                   let known = store.sessions.first(where: { $0.id == session.id }) {
-                                    Button {
-                                        Task {
-                                            await store.selectSession(known)
-                                            guard store.apiClient === client else { return }
-                                            onSessionSelected?()
+            if let current = detail.project {
+                ForEach(current.repos) { repo in
+                    Section(repo.label) {
+                        if let path = repo.path { Text(path).font(.caption).foregroundStyle(.secondary) }
+                        ForEach(repo.groups) { lane in
+                            DisclosureGroup {
+                                if let path = lane.path { Text(path).font(.caption).foregroundStyle(.secondary) }
+                                ForEach(lane.sessions) { session in
+                                    // A profile's session ID must never be submitted to another profile.
+                                    if profile == "default",
+                                       store.connectionConfig?.normalizedBaseURL.contains("/p/") != true,
+                                       let known = store.sessions.first(where: { $0.id == session.id }) {
+                                        Button {
+                                            Task {
+                                                await store.selectSession(known)
+                                                guard store.apiClient === client else { return }
+                                                onSessionSelected?()
+                                            }
+                                        } label: {
+                                            Label(session.title ?? "Untitled", systemImage: "bubble.left")
                                         }
-                                    } label: {
-                                        Label(session.title ?? "Untitled", systemImage: "bubble.left")
+                                    } else {
+                                        NavigationLink {
+                                            WorkspaceHistoryView(title: session.title ?? "Untitled", identity: "\(profile):\(session.id)") { offset in
+                                                try await client.projectHistory(profile: profile, projectID: project.id,
+                                                                                sessionID: session.id, offset: offset)
+                                            }
+                                        } label: {
+                                            Label(session.title ?? "Untitled", systemImage: "bubble.left")
+                                        }
                                     }
-                                } else {
-                                    Label(session.title ?? "Untitled", systemImage: "bubble.left")
+                                }
+                            } label: {
+                                Text(lane.label)
+                            }
+                        }
+                    }
+                }
+                if current.repos.isEmpty {
+                    ContentUnavailableView("No Folders", systemImage: "folder")
+                }
+            } else {
+                ContentUnavailableView("Project Unavailable", systemImage: "folder.badge.questionmark",
+                                       description: Text("Hermes did not return this project in its current folder tree."))
+            }
+        }
+        .navigationTitle(project.label)
+    }
+}
+
+private struct ServerTaskDetailView: View {
+    let client: HermesAPIClient
+    let board: String
+    let taskID: String
+    @State private var previewURL: URL?
+    @State private var downloadedURL: URL?
+    @State private var downloadError: String?
+    @State private var downloadTask: Task<Void, Never>?
+    @State private var downloadID = UUID()
+
+    var body: some View {
+        WorkspaceReadView(load: { try await client.workspaceTask(board: board, id: taskID) }) { detail in
+            if let downloadError {
+                Label(downloadError, systemImage: "exclamationmark.triangle")
+            }
+            Section {
+                Text(detail.task.title).font(.headline)
+                LabeledContent("Status", value: detail.task.status)
+                if let assignee = detail.task.assignee { LabeledContent("Assignee", value: assignee) }
+            }
+            if let body = detail.task.body, !body.isEmpty { Section("Description") { Text(body) } }
+            if let summary = detail.task.latest_summary, !summary.isEmpty {
+                Section("Summary") { Text(summary) }
+            }
+            if let result = detail.task.result, !result.isEmpty { Section("Result") { Text(result) } }
+            if let attachments = detail.attachments, !attachments.isEmpty {
+                Section("Attachments") {
+                    ForEach(attachments) { attachment in
+                        Button {
+                            download(attachment)
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading) {
+                                    Text(attachment.filename)
+                                    Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.size), countStyle: .file))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: { Image(systemName: "arrow.down.doc") }
+                        }
+                        .disabled(downloadTask != nil)
+                    }
+                    if downloadTask != nil { ProgressView("Downloading...") }
+                }
+            }
+            if let links = detail.links {
+                if !links.parents.isEmpty {
+                    Section("Dependencies") {
+                        ForEach(links.parents, id: \.self) { parentID in
+                            NavigationLink {
+                                ServerTaskDetailView(client: client, board: board, taskID: parentID)
+                            } label: {
+                                Label(parentID, systemImage: "arrow.up.forward")
+                            }
+                        }
+                    }
+                }
+                if !links.children.isEmpty {
+                    Section("Child Tasks (\(links.children.count))") {
+                        ForEach(links.children, id: \.self) { childID in
+                            let child = detail.child_results?.first { $0.id == childID }
+                            NavigationLink {
+                                ServerTaskDetailView(client: client, board: board, taskID: childID)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(child?.title ?? childID)
+                                    if let child {
+                                        Text(child.status).font(.caption).foregroundStyle(.secondary)
+                                        if let summary = child.latest_summary ?? child.result, !summary.isEmpty {
+                                            Text(summary).font(.callout)
+                                        }
+                                    }
                                 }
                             }
-                        } label: {
-                            Text(lane.label)
                         }
                     }
                 }
             }
-            if current.repos.isEmpty {
-                ContentUnavailableView("No Folders", systemImage: "folder")
+            Section("Comments (\(detail.comments.count))") {
+                ForEach(detail.comments) { comment in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(comment.author).font(.headline)
+                        Text(Date(timeIntervalSince1970: comment.created_at), style: .date)
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(comment.body)
+                    }
+                }
+            }
+            Section("Runs (\(detail.runs.count))") {
+                ForEach(detail.runs) { run in
+                    DisclosureGroup {
+                        if let profile = run.profile { LabeledContent("Profile", value: profile) }
+                        if let outcome = run.outcome { LabeledContent("Outcome", value: outcome) }
+                        if let summary = run.summary, !summary.isEmpty { Text(summary) }
+                        if let error = run.error, !error.isEmpty {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                        }
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text("#\(run.id) \(run.status)")
+                            Text(Date(timeIntervalSince1970: run.started_at), style: .date)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
         }
-        .navigationTitle(project.label)
+        .textSelection(.enabled)
+        .navigationTitle("Task")
+        .navigationBarTitleDisplayMode(.inline)
+        .quickLookPreview($previewURL)
+        .onChange(of: previewURL) { _, url in
+            if url == nil { clearDownload() }
+        }
+        .onDisappear {
+            downloadID = UUID()
+            downloadTask?.cancel()
+            downloadTask = nil
+            if previewURL == nil { clearDownload() }
+        }
+    }
+
+    private func clearDownload() {
+        if let downloadedURL { try? FileManager.default.removeItem(at: downloadedURL.deletingLastPathComponent()) }
+        downloadedURL = nil
+    }
+
+    private func download(_ attachment: ServerTaskAttachment) {
+        downloadError = nil
+        clearDownload()
+        let requestID = UUID()
+        downloadID = requestID
+        downloadTask = Task { @MainActor in
+            defer { if downloadID == requestID { downloadTask = nil } }
+            do {
+                let file = try await client.downloadTaskAttachment(board: board, taskID: taskID, attachment: attachment)
+                guard !Task.isCancelled, downloadID == requestID else {
+                    try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+                    return
+                }
+                downloadedURL = file
+                previewURL = file
+            } catch {
+                guard !Task.isCancelled, downloadID == requestID else { return }
+                downloadError = "Attachment download failed: \(error.localizedDescription)"
+            }
+        }
     }
 }
 
@@ -234,6 +389,8 @@ struct WorkspaceReadView<Value, Content: View>: View {
             error = nil
         } catch {
             guard !Task.isCancelled, requestID == id else { return }
+            // Do not leave removed server resources actionable beneath a sync error.
+            value = nil
             if case APIError.notFound = error {
                 self.error = "This workspace endpoint is unavailable on the server."
             } else {

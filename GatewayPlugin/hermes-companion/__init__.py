@@ -45,13 +45,24 @@ async def bot_history(query):
                                       offset=offset, order="latest", include_compacted=False)
 
 
+def project_session_limit(profile):
+    from hermes_cli.web_routers.sessions import _with_db
+
+    # Count all rows (including archived/children) as an upper bound on the
+    # native tree's filtered roots. Keep LIMIT positive even for an empty DB.
+    count = _with_db(profile, lambda db: db.session_count(include_archived=True), read_only=True)
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        raise RuntimeError("Hermes returned an invalid session count")
+    return count + 1
+
+
 def projects(_query):
     roster = rpc("profiles.list", {"include_sessions": False})
     groups, errors = [], []
     for profile in roster["profiles"]:
         name = profile["name"]
         try:
-            tree = rpc("projects.tree", {"profile": name})
+            tree = rpc("projects.tree", {"profile": name, "session_limit": project_session_limit(name)})
             groups.append({"profile": name, "projects": tree["projects"]})
         except Exception:
             log.exception("Companion project tree unavailable for a profile")
@@ -64,13 +75,42 @@ def project_detail(query):
     names = {p["name"] for p in rpc("profiles.list", {"include_sessions": False})["profiles"]}
     if profile not in names or not project_id:
         raise ValueError("A valid profile and project_id are required")
-    return rpc("projects.project_sessions", {"profile": profile, "project_id": project_id})
+    limit = project_session_limit(profile)
+    detail = rpc("projects.project_sessions", {"profile": profile, "project_id": project_id,
+                                                "session_limit": limit})
+    if detail.get("project") is not None:
+        return detail
+    # Native drill-in skips the discovered-repository tier. Preserve an empty
+    # folder from the authoritative overview, but never pass a preview off as
+    # fully hydrated history for a project containing sessions.
+    tree = rpc("projects.tree", {"profile": profile, "session_limit": limit})
+    project = next((p for p in tree["projects"]
+                    if p["id"] == project_id and p.get("sessionCount") == 0), None)
+    return {**detail, "project": project}
 
 
 def boards(_query):
     from plugins.kanban.dashboard.plugin_api import list_boards
 
     return list_boards(include_archived=False)
+
+
+async def project_history(query):
+    from hermes_cli.web_routers.sessions import get_session_messages
+
+    offset = int(query.get("offset", "0"))
+    session_id = query.get("session_id", "")
+    if offset < 0 or not session_id:
+        raise ValueError("A session and nonnegative offset are required")
+    detail = await asyncio.to_thread(project_detail, query)
+    project = detail.get("project") or {}
+    sessions = {s["id"] for repo in project.get("repos", [])
+                for group in repo.get("groups", []) for s in group.get("sessions", [])}
+    if session_id not in sessions:
+        raise ValueError("Session is not in the selected project")
+    history = await get_session_messages(session_id, profile=query["profile"], limit=100,
+                                         offset=offset, order="latest", include_compacted=False)
+    return {"project_id": query["project_id"], "requested_session_id": session_id, "history": history}
 
 
 def board(query):
@@ -83,13 +123,52 @@ def board(query):
                      workflow_template_id=None, current_step_key=None)
 
 
+def task_detail(query):
+    from plugins.kanban.dashboard.plugin_api import get_task, list_boards
+    from fastapi import HTTPException
+
+    slug, task_id = query.get("board", ""), query.get("task_id", "")
+    if not task_id or slug not in {b["slug"] for b in list_boards(include_archived=False)["boards"]}:
+        raise ValueError("Select an existing board and task")
+    try:
+        detail = get_task(task_id, board=slug, run_state_type=None, run_state_name=None)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise ValueError("Task no longer exists on this board") from exc
+        raise
+    return {"board": slug, **detail}
+
+
+def task_attachment(query):
+    from aiohttp import web
+    from plugins.kanban.dashboard.plugin_api import download_attachment
+
+    attachment_id = int(query.get("attachment_id", "0"))
+    detail = task_detail(query)
+    if attachment_id <= 0 or not any(
+        a["id"] == attachment_id and a["task_id"] == query["task_id"]
+        for a in detail.get("attachments", [])
+    ):
+        raise ValueError("Attachment is not in the selected task")
+    # Hermes validates the resolved path against this board's attachment root.
+    native = download_attachment(attachment_id, board=query["board"])
+    return web.FileResponse(native.path, headers={
+        "Content-Type": native.media_type or "application/octet-stream",
+        "Content-Disposition": native.headers["content-disposition"],
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+    })
+
+
 READERS = {
     "projects": projects,
     "project": project_detail,
+    "project-history": project_history,
     "bots": bots,
     "bot-history": bot_history,
     "boards": boards,
     "board": board,
+    "task": task_detail,
+    "task-attachment": task_attachment,
 }
 
 
@@ -106,6 +185,8 @@ def wire(app, adapter):
                 result = await asyncio.to_thread(reader, dict(request.query))
                 if inspect.isawaitable(result):
                     result = await result
+                if isinstance(result, web.StreamResponse):
+                    return result
                 return web.json_response(result, headers={"Cache-Control": "no-store"})
             except ValueError as exc:
                 return web.json_response({"error": str(exc)}, status=400)

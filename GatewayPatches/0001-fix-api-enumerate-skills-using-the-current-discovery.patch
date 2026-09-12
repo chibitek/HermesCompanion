@@ -1,0 +1,64 @@
+From e171798ebe5079b89cd83948764a822fb3efb3a8 Mon Sep 17 00:00:00 2001
+From: Chibitek Contributors <contributors@users.noreply.github.com>
+Date: Fri, 11 Sep 2026 21:24:55 -0400
+Subject: [PATCH] fix(api): enumerate skills using the current discovery
+ contract
+
+---
+ gateway/platforms/api_server.py  |  6 +-----
+ tests/gateway/test_api_server.py | 15 +++++++++++++++
+ 2 files changed, 16 insertions(+), 5 deletions(-)
+
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 6cc5964c0d..8f6bdf73f5 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -2638,11 +2638,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+         category), the same set ``/skills list`` shows."""
+         try:
+             from tools.skills_tool import _find_all_skills, _sort_skills
+-            skills = _sort_skills(
+-                _find_all_skills(
+-                    skip_disabled=False, include_editorial=True
+-                )
+-            )
++            skills = _sort_skills(_find_all_skills(skip_disabled=False))
+         except Exception:
+             logger.exception("GET /v1/skills failed")
+             return _error_response("Failed to enumerate skills", 500, err_type="server_error")
+diff --git a/tests/gateway/test_api_server.py b/tests/gateway/test_api_server.py
+index 8abb8daf90..91cb6ea48a 100644
+--- a/tests/gateway/test_api_server.py
++++ b/tests/gateway/test_api_server.py
+@@ -942,6 +942,7 @@ class TestSkillsEndpoint:
+         ]
+         with patch(
+             "tools.skills_tool._find_all_skills",
++            autospec=True,
+             return_value=list(fake_skills),
+         ):
+             app = _create_app(adapter)
+@@ -955,6 +956,20 @@ class TestSkillsEndpoint:
+                 for entry in data["data"]:
+                     assert set(entry.keys()) >= {"name", "description", "category"}
+ 
++    @pytest.mark.asyncio
++    async def test_skills_reads_real_profile_skill_directory(self, adapter, tmp_path, monkeypatch):
++        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
++        skill = tmp_path / "skills" / "endpoint-contract"
++        skill.mkdir(parents=True)
++        (skill / "SKILL.md").write_text(
++            "---\nname: endpoint-contract\ndescription: Endpoint integration test\n---\n# Contract\n")
++        app = _create_app(adapter)
++        async with TestClient(TestServer(app)) as cli:
++            response = await cli.get("/v1/skills")
++            assert response.status == 200
++            data = await response.json()
++        assert any(row["name"] == "endpoint-contract" for row in data["data"])
++
+ 
+ class TestToolsetsEndpoint:
+     @pytest.mark.asyncio
+-- 
+2.55.0
+

@@ -16,8 +16,7 @@ struct AppearanceSettingsView: View {
                         .padding(.horizontal, 4)
 
                     LazyVGrid(columns: [
-                        GridItem(.flexible(), spacing: 12),
-                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.adaptive(minimum: 140), spacing: 12),
                     ], spacing: 12) {
                         ForEach(ThemeRegistry.allThemes, id: \.id) { theme in
                             themeCard(theme)
@@ -214,7 +213,6 @@ struct AppearanceSettingsView: View {
     private func glassCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         let theme = appearance.activeTheme
         content()
-            .padding(theme.spacingL)
             .if(theme.usesGlass) { view in
                 view.glassEffect(.regular)
             }

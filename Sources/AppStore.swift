@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import AVFoundation
 import UserNotifications
 
 /// Manages app state: connection config, active session, chat messages, streaming state.
@@ -21,13 +20,11 @@ final class AppStore: ObservableObject {
     @Published private(set) var toolEvents: [ToolEvent] = [] {
        didSet { if toolEvents.count > 50 { toolEvents.removeFirst(toolEvents.count - 50) } }
     }
-    /// True while a voice conversation is active — prevents stopSilentAudio
-    /// from deactivating the shared AVAudioSession mid-conversation.
-    @Published var isVoiceConversationActive = false
     @Published var skills: [Skill] = []
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
     @Published var modelInfos: [String: ModelInfo] = [:]
+    @Published var modelCatalog: [ModelInfo] = []
     @Published var configuredProviders: [String] = []
     @Published var activeRuntime: SessionRuntime?
     @Published private(set) var gatewayDefaultModel = ""
@@ -139,13 +136,17 @@ final class AppStore: ObservableObject {
             gatewayDefaultModel = ""
             gatewayDefaultProvider = ""
             modelInfos = [:]
+            modelCatalog = []
             availableModels = []
             configuredProviders = []
         }
     }
     private var platformRefreshID: UUID?
     private var sessionSelectionID = UUID()
+    private var modelSelectionID = UUID()
+    private var sessionRefreshID = UUID()
     private var streamTask: Task<Void, Never>?
+    private var chatTurnID = UUID()
     private let activeSessionPersistence = ActiveSessionPersistence()
 
     // MARK: - Init
@@ -536,6 +537,7 @@ final class AppStore: ObservableObject {
             self.gatewayDefaultModel = options.model
             self.gatewayDefaultProvider = options.provider ?? ""
             self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            self.modelCatalog = infos
             let models = infos.map(\.id)
             self.availableModels = modelsIncludingCurrent(models)
         } catch {
@@ -544,6 +546,7 @@ final class AppStore: ObservableObject {
                 let infos = try await client.getModels()
                 guard apiClient === client else { return }
                 self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                self.modelCatalog = infos
                 let models = infos.map(\.id)
                 self.availableModels = modelsIncludingCurrent(models)
             } catch {
@@ -555,7 +558,9 @@ final class AppStore: ObservableObject {
     }
 
     func selectPreferredModel(_ model: String, provider: String? = nil) async {
-        preferredModel = model
+        let requestID = UUID()
+        modelSelectionID = requestID
+        let selectionID = sessionSelectionID
         // Resolve provider ONLY from explicit arg or model ID prefix (e.g. "openai/gpt-4").
         // Do NOT fall back to capabilities.currentProvider — that's the gateway's
         // current state, not necessarily where this model lives. Sending a stale
@@ -563,21 +568,39 @@ final class AppStore: ObservableObject {
             ?? ProviderUtils.providerOf(model)
             ?? nonEmpty(modelInfos[model]?.provider)
             ?? ""
-        if !resolvedProvider.isEmpty {
+        guard let sessionId = activeSession?.id else {
+            preferredModel = model
             preferredProvider = resolvedProvider
+            sessionModelOverride = model
+            sessionProviderOverride = resolvedProvider.isEmpty ? nil : resolvedProvider
+            return
         }
-        sessionModelOverride = model
-        sessionProviderOverride = resolvedProvider.isEmpty ? nil : resolvedProvider
         // Lock the model on the active Hermes session. This is the server-backed
         // equivalent of opening a chat in the desktop; it never rewrites the
         // gateway's global provider config.
-        guard let sessionId = activeSession?.id else { return }
+        guard let client = apiClient else {
+            error = AppError(message: "Connect to Hermes before changing this session's model.")
+            return
+        }
         do {
-            activeRuntime = try await apiClient?.lockSessionModel(
+            let runtime = try await client.lockSessionModel(
                 sessionId: sessionId, model: model,
                 provider: resolvedProvider.isEmpty ? nil : resolvedProvider
             )
+            guard apiClient === client, sessionSelectionID == selectionID,
+                  activeSession?.id == sessionId, modelSelectionID == requestID,
+                  !Task.isCancelled else { return }
+            activeRuntime = runtime
+            // An acknowledged session lock, not a picker preview, owns the
+            // displayed and persisted selection. Preserve server normalization.
+            preferredModel = runtime.effectiveModel ?? model
+            preferredProvider = runtime.effectiveProvider ?? resolvedProvider
+            sessionModelOverride = preferredModel
+            sessionProviderOverride = nonEmpty(preferredProvider)
         } catch {
+            guard apiClient === client, sessionSelectionID == selectionID,
+                  activeSession?.id == sessionId, modelSelectionID == requestID,
+                  !Task.isCancelled else { return }
             self.error = AppError(message: "Could not lock this session's model: \(error.localizedDescription)")
         }
     }
@@ -674,13 +697,17 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Not connected")
             return
         }
+        let refreshID = UUID()
+        sessionRefreshID = refreshID
         do {
             let sessions = try await client.listSessions()
-            guard apiClient === client else { return }
+            guard !Task.isCancelled, apiClient === client, sessionRefreshID == refreshID else { return }
             applySessionSnapshot(sessions)
+            await reconcileMissingActiveSession(client: client, refreshID: refreshID)
+            guard apiClient === client, sessionRefreshID == refreshID else { return }
             await restoreActiveSessionIfAvailable()
         } catch {
-            guard apiClient === client else { return }
+            guard !Task.isCancelled, apiClient === client, sessionRefreshID == refreshID else { return }
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
             FileLogger.shared.log("AppStore: refreshSessions failed for \(connectionConfig?.baseURL ?? "unknown") — \(error.localizedDescription)")
         }
@@ -697,6 +724,32 @@ final class AppStore: ObservableObject {
             sessionProviderOverride = nil
         }
         activeSession = updated
+    }
+
+    private func reconcileMissingActiveSession(client: HermesAPIClient, refreshID: UUID) async {
+        guard apiClient === client, sessionRefreshID == refreshID, !isStreaming,
+              let current = activeSession, !sessions.contains(where: { $0.id == current.id }) else { return }
+        let selectionID = sessionSelectionID
+        do {
+            _ = try await client.getSession(sessionId: current.id)
+        } catch APIError.notFound {
+            guard apiClient === client, sessionRefreshID == refreshID,
+                  sessionSelectionID == selectionID, activeSession?.id == current.id,
+                  !isStreaming, !Task.isCancelled else { return }
+            sessionSelectionID = UUID()
+            stopStreaming()
+            activeSession = nil
+            activeRuntime = nil
+            sessionModelOverride = nil
+            sessionProviderOverride = nil
+            toolEvents = []
+            messages = []
+            if let baseURL = connectionConfig?.normalizedBaseURL {
+                activeSessionPersistence.clear(for: baseURL)
+            }
+        } catch {
+            // A failed probe is not evidence of deletion.
+        }
     }
 
     /// Restores the last chat used on this server after a cold launch. If that
@@ -724,16 +777,23 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Not connected")
             return
         }
+        stopStreaming()
+        let creationID = UUID()
+        sessionSelectionID = creationID
         do {
             let session = try await client.createSession(title: title)
+            guard apiClient === client, sessionSelectionID == creationID else { return }
+            sessionRefreshID = UUID()
             self.sessions.insert(session, at: 0)
             await selectSession(session)
         } catch {
+            guard apiClient === client, sessionSelectionID == creationID else { return }
             self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
         }
     }
 
     func selectSession(_ session: HermesSession) async {
+        stopStreaming()
         let selectionID = UUID()
         sessionSelectionID = selectionID
         // ponytail: demo mode — switch active session, keep seeded messages for first session.
@@ -819,15 +879,24 @@ final class AppStore: ObservableObject {
         }
         do {
             try await client.deleteSession(sessionId: session.id)
+            guard apiClient === client else { return }
+            sessionRefreshID = UUID()
             self.sessions.removeAll { $0.id == session.id }
             if activeSession?.id == session.id {
+                sessionSelectionID = UUID()
+                stopStreaming()
                 activeSession = nil
+                activeRuntime = nil
+                sessionModelOverride = nil
+                sessionProviderOverride = nil
+                toolEvents = []
                 messages = []
                 if let baseURL = connectionConfig?.normalizedBaseURL {
                     activeSessionPersistence.clear(for: baseURL)
                 }
             }
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Failed to delete session: \(error.localizedDescription)")
         }
     }
@@ -842,6 +911,8 @@ final class AppStore: ObservableObject {
         }
         do {
             let updated = try await client.patchSession(sessionId: session.id, title: newTitle)
+            guard apiClient === client else { return }
+            sessionRefreshID = UUID()
             if let idx = self.sessions.firstIndex(where: { $0.id == session.id }) {
                 self.sessions[idx] = updated
             }
@@ -849,6 +920,7 @@ final class AppStore: ObservableObject {
                 self.activeSession = updated
             }
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Failed to rename session: \(error.localizedDescription)")
         }
     }
@@ -873,8 +945,11 @@ final class AppStore: ObservableObject {
                 isArchived: isArchived,
                 isHidden: isHidden
             )
+            guard apiClient === client else { return }
+            sessionRefreshID = UUID()
             replaceSession(updated)
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Could not update chat: \(error.localizedDescription)")
         }
     }
@@ -887,7 +962,13 @@ final class AppStore: ObservableObject {
             activeSession = updated
         }
         if updated.isArchived == true && activeSession?.id == updated.id {
+            sessionSelectionID = UUID()
+            stopStreaming()
             activeSession = nil
+            activeRuntime = nil
+            sessionModelOverride = nil
+            sessionProviderOverride = nil
+            toolEvents = []
             messages = []
             if let baseURL = connectionConfig?.normalizedBaseURL {
                 activeSessionPersistence.clear(for: baseURL)
@@ -903,11 +984,15 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Not connected")
             return
         }
+        let selectionID = sessionSelectionID
         do {
             let forked = try await client.forkSession(sessionId: session.id, title: forkTitle(for: session))
+            guard apiClient === client, sessionSelectionID == selectionID else { return }
+            sessionRefreshID = UUID()
             self.sessions.insert(forked, at: 0)
             await selectSession(forked)
         } catch {
+            guard apiClient === client, sessionSelectionID == selectionID else { return }
             self.error = AppError(message: "Failed to fork session: \(error.localizedDescription)")
         }
     }
@@ -954,6 +1039,8 @@ final class AppStore: ObservableObject {
         platformError = nil
         let refreshID = UUID()
         platformRefreshID = refreshID
+        let sessionsID = UUID()
+        sessionRefreshID = sessionsID
         defer {
             if platformRefreshID == refreshID { isLoadingPlatform = false }
         }
@@ -988,8 +1075,13 @@ final class AppStore: ObservableObject {
         do {
             let value = try await sessions
             guard apiClient === client, platformRefreshID == refreshID else { return }
-            applySessionSnapshot(value)
-            await restoreActiveSessionIfAvailable()
+            if sessionRefreshID == sessionsID, !Task.isCancelled {
+                applySessionSnapshot(value)
+                await reconcileMissingActiveSession(client: client, refreshID: sessionsID)
+                if apiClient === client, sessionRefreshID == sessionsID {
+                    await restoreActiveSessionIfAvailable()
+                }
+            }
         } catch {
             FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
         }
@@ -1112,8 +1204,11 @@ final class AppStore: ObservableObject {
             return nil
         }
 
+        let turnID = UUID()
+        chatTurnID = turnID
+        streamTask?.cancel()
         let session = await ensureSession(client: client)
-        guard let session else { return nil }
+        guard let session, apiClient === client, chatTurnID == turnID else { return nil }
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
         let userMsg = ChatDisplayMessage(
@@ -1137,7 +1232,8 @@ final class AppStore: ObservableObject {
         // After that, 60s with no events AND no keepalives means a dead socket
         // (keepalive comments reset the timer via onKeepalive).
         watchdog.arm(after: 60, initialTimeout: 180) { [weak self] in
-            guard let self, self.isStreaming else { return }
+            guard let self, self.isStreaming, self.chatTurnID == turnID,
+                  self.apiClient === client, self.activeSession?.id == session.id else { return }
             self.streamTask?.cancel()
             self.isStreaming = false
             self.streamingText = ""
@@ -1153,11 +1249,15 @@ final class AppStore: ObservableObject {
 
         let task = Task { [weak self] in
             guard let self = self else { return }
+            defer { watchdog.cancel() }
             do {
                 if images.isEmpty && attachments.isEmpty {
                     let (streamedMsg, streamedCompletion) = try await self.streamMessage(
                         client: client, session: session, text: text, watchdog: watchdog
                     )
+                    try Task.checkCancellation()
+                    guard self.chatTurnID == turnID, self.apiClient === client,
+                          self.activeSession?.id == session.id else { return }
                     assistantMessage = streamedMsg
                     if streamedCompletion { receivedCompletion = true }
                     if !self.streamingText.isEmpty {
@@ -1186,10 +1286,17 @@ final class AppStore: ObservableObject {
                     client: client, session: session, skipPostReload: skipPostReload,
                     assistantMessage: assistantMessage, receivedCompletion: receivedCompletion
                 )
+                try Task.checkCancellation()
+                guard self.chatTurnID == turnID, self.apiClient === client,
+                      self.activeSession?.id == session.id else { return }
 
                 if assistantMessage == nil {
-                    assistantMessage = self.messages.last(where: \.isAssistant)
-                    FileLogger.shared.log("AppStore: fell back to reloaded assistant message: \(String(describing: assistantMessage?.content.prefix(60)))")
+                    let assistants = self.messages.filter(\.isAssistant)
+                    // A reload can recover a missing completion, but an unchanged
+                    // transcript must never replay an earlier answer as this turn.
+                    if assistants.count > existingAssistantCount {
+                        assistantMessage = assistants.last
+                    }
                 }
 
                 self.emptyStreamGuard(
@@ -1200,41 +1307,57 @@ final class AppStore: ObservableObject {
                 // Cancelled on purpose (barge-in, stop tap, new turn superseding
                 // this one). Not an error — don't surface "Message failed".
             } catch let e as APIError {
-                self.error = AppError(message: e.errorDescription ?? "Message failed")
+                if !Task.isCancelled, self.chatTurnID == turnID, self.apiClient === client {
+                    self.error = AppError(message: e.errorDescription ?? "Message failed")
+                }
             } catch {
-                self.error = AppError(message: "Message failed: \(error.localizedDescription)")
+                if !Task.isCancelled, self.chatTurnID == turnID, self.apiClient === client {
+                    self.error = AppError(message: "Message failed: \(error.localizedDescription)")
+                }
             }
+            guard self.chatTurnID == turnID, self.apiClient === client,
+                  self.activeSession?.id == session.id else { return }
             self.streamingText = ""
             self.streamingThinking = ""
             self.isStreaming = false
             self.endBackgroundTask()
-            watchdog.cancel()
 
             if !self.queuedMessages.isEmpty {
                 let next = self.queuedMessages.removeFirst()
-                Task { await self.sendMessage(next.payload, displayText: next.display) }
+                Task {
+                    guard self.chatTurnID == turnID, self.apiClient === client,
+                          self.activeSession?.id == session.id else { return }
+                    await self.sendMessage(next.payload, displayText: next.display)
+                }
             }
 
-            if let assistantMessage,
+            if assistantMessage != nil, !Task.isCancelled,
                UIApplication.shared.applicationState != .active {
                 sendBackgroundNotification()
             }
         }
         streamTask = task
         await task.value
+        guard chatTurnID == turnID, apiClient === client, activeSession?.id == session.id,
+              !task.isCancelled else { return nil }
         return assistantMessage
     }
 
     // MARK: - sendMessage Helpers
 
     private func ensureSession(client: HermesAPIClient) async -> HermesSession? {
+        let selectionID = sessionSelectionID
+        let turnID = chatTurnID
         if let active = activeSession { return active }
         do {
             let newSession = try await client.createSession(title: nil)
+            guard apiClient === client, sessionSelectionID == selectionID, chatTurnID == turnID else { return nil }
+            sessionRefreshID = UUID()
             self.sessions.insert(newSession, at: 0)
             self.activeSession = newSession
             return newSession
         } catch {
+            guard apiClient === client, sessionSelectionID == selectionID, chatTurnID == turnID else { return nil }
             self.error = AppError(message: "Failed to create session: \(error.localizedDescription)")
             return nil
         }
@@ -1252,7 +1375,8 @@ final class AppStore: ObservableObject {
             onKeepalive: { watchdog.recordActivity() }
         )
         for try await event in stream {
-            if Task.isCancelled { return (nil, false) }
+            try Task.checkCancellation()
+            guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
             watchdog.recordActivity()
             if event.event == "assistant.completed" || event.event == "run.completed" {
                 receivedCompletion = true
@@ -1273,7 +1397,8 @@ final class AppStore: ObservableObject {
             model: sessionModelLockAvailable ? nil : sessionModelOverride,
             images: images, attachments: attachments
         )
-        if Task.isCancelled { return nil }
+        try Task.checkCancellation()
+        guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
         let content = response.message.content
         guard !content.isEmpty else { return nil }
         let message = ChatDisplayMessage(
@@ -1293,6 +1418,8 @@ final class AppStore: ObservableObject {
 
         if !skipPostReload && msg == nil {
             let history = try await client.getMessages(sessionId: session.id)
+            try Task.checkCancellation()
+            guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
             self.messages = history
                 .filter { $0.isUser || $0.isAssistant }
                 .map { ChatDisplayMessage(from: $0) }
@@ -1305,6 +1432,8 @@ final class AppStore: ObservableObject {
         if skipPostReload && msg == nil && !completion {
             FileLogger.shared.log("AppStore: voice mode fallback — reloading from server")
             let history = try await client.getMessages(sessionId: session.id)
+            try Task.checkCancellation()
+            guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
             self.messages = history
                 .filter { $0.isUser || $0.isAssistant }
                 .map { ChatDisplayMessage(from: $0) }
@@ -1323,8 +1452,14 @@ final class AppStore: ObservableObject {
     }
 
     func stopStreaming() {
+        chatTurnID = UUID()
         streamTask?.cancel()
+        streamTask = nil
         isStreaming = false
+        streamingText = ""
+        streamingThinking = ""
+        queuedMessages.removeAll()
+        endBackgroundTask()
     }
 
     // MARK: - SSE Event Handler
@@ -1626,106 +1761,19 @@ final class AppStore: ObservableObject {
     }
 
     private var backgroundTaskId: UIBackgroundTaskIdentifier?
-    private var silentPlayer: AVAudioPlayer?
-    private var isBackgroundAudioActive = false
 
     /// Begins a short background task to keep the network connection alive
     /// during quick app switches (e.g., checking a message in another app).
-    /// iOS will eventually kill the task, but this buys ~30 seconds.
-    /// Additionally, activates a silent audio loop to leverage the `audio`
-    /// background mode, which keeps the app alive indefinitely as long as
-    /// the audio session is active.
+    /// iOS controls the available background time. Text networking must not
+    /// activate audio or change the user's playback route to extend it.
     func beginBackgroundKeepAlive() {
         endBackgroundTask()
         backgroundTaskId = UIApplication.shared.beginBackgroundTask(expirationHandler: { [weak self] in
             self?.endBackgroundTask()
         })
-
-        // Start a silent audio loop to keep the audio session active in the
-        // background. This leverages the `audio` UIBackgroundModes entry to
-        // prevent iOS from suspending the app during SSE streaming or TTS
-        // playback when the user switches to another app.
-        startSilentAudioForBackground()
-    }
-    
-    /// Starts a looping silent audio player to keep the audio session active
-    /// in the background. This leverages the `audio` UIBackgroundModes entry
-    /// to prevent iOS from suspending the app during SSE streaming.
-    private func startSilentAudioForBackground() {
-        guard !isBackgroundAudioActive else { return }
-        
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-            
-            // Generate a 0.5-second silent WAV file in memory
-            let sampleRate = 44100.0
-            let numSamples = Int(sampleRate * 0.5)
-            let dataSize = numSamples
-            var wavData = Data()
-            // WAV header
-            let riffSizeBytes = withUnsafeBytes(of: UInt32(36 + dataSize).littleEndian) { Data($0) }
-            let header: [UInt8] = [
-                0x52, 0x49, 0x46, 0x46, // "RIFF"
-                riffSizeBytes[0], riffSizeBytes[1], riffSizeBytes[2], riffSizeBytes[3], // chunk size (36 + data size)
-                0x57, 0x41, 0x56, 0x45, // "WAVE"
-                0x66, 0x6D, 0x74, 0x20, // "fmt "
-                0x10, 0x00, 0x00, 0x00, // subchunk size (16)
-                0x01, 0x00,             // audio format (1 = PCM)
-                0x01, 0x00,             // num channels (1)
-                0x44, 0xAC, 0x00, 0x00, // sample rate (44100)
-                0x44, 0xAC, 0x00, 0x00, // byte rate (44100)
-                0x01, 0x00,             // block align (1)
-                0x08, 0x00,             // bits per sample (8)
-                0x64, 0x61, 0x74, 0x61, // "data"
-            ]
-            wavData.append(contentsOf: header)
-            // data size
-            let dataSizeBytes = withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Data($0) }
-            wavData.append(dataSizeBytes)
-            // Silent audio data (all zeros = silence for 8-bit PCM)
-            wavData.append(contentsOf: [UInt8](repeating: 128, count: dataSize)) // 128 = silence for unsigned 8-bit
-            
-            silentPlayer = try AVAudioPlayer(data: wavData)
-            silentPlayer?.numberOfLoops = -1 // infinite loop
-            silentPlayer?.volume = 0
-            silentPlayer?.play()
-            isBackgroundAudioActive = true
-        } catch {
-            // Non-fatal — the background task still runs without it,
-            // but iOS may suspend audio sooner.
-        }
-    }
-    
-    /// Stops the silent audio player and deactivates the background audio session.
-    private func stopSilentAudio() {
-        silentPlayer?.stop()
-        silentPlayer = nil
-        isBackgroundAudioActive = false
-        // Don't deactivate the shared session if a voice conversation is active —
-        // VoiceConversationManager needs .playAndRecord active.
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
-    }
-
-    /// Public method to stop silent background audio before voice mode starts.
-    /// Called from ChatView/VoiceView before starting a voice conversation
-    /// to prevent audio session category conflicts (.playback vs .playAndRecord).
-    func stopSilentAudioForVoice() {
-        if isBackgroundAudioActive {
-            stopSilentAudio()
-        }
     }
 
     func endBackgroundTask() {
-        // Don't stop silent audio while streaming — the background audio
-        // session is what keeps the SSE stream alive when the app is
-        // backgrounded. Only stop it when truly idle.
-        if !isStreaming {
-            stopSilentAudio()
-        }
         if let taskId = backgroundTaskId {
             UIApplication.shared.endBackgroundTask(taskId)
             backgroundTaskId = nil
@@ -1733,12 +1781,8 @@ final class AppStore: ObservableObject {
     }
     
     /// Called when the app returns to the foreground. Ends the background task
-    /// but keeps streaming alive — the SSE stream works fine in the foreground
-    /// without the silent audio workaround.
+    /// without changing audio or cancelling an active foreground stream.
     func handleForegroundReturn() {
-        if !isStreaming {
-            stopSilentAudio()
-        }
         endBackgroundTask()
     }
     
