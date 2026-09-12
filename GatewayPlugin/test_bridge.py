@@ -126,6 +126,11 @@ class TaskDetailTests(unittest.TestCase):
 
 
 class ProjectDetailTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.object(bridge, "project_session_limit", return_value=9001)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def testDiscoveredEmptyFolderUsesSameProfilesAuthoritativeOverview(self):
         project = {"id": "/repo", "sessionCount": 0, "repos": [{"groups": []}]}
         with patch.object(bridge, "rpc", side_effect=[
@@ -133,7 +138,8 @@ class ProjectDetailTests(unittest.TestCase):
         ]) as rpc:
             detail = bridge.project_detail({"profile": "assistant", "project_id": "/repo"})
         self.assertEqual(detail["project"], project)
-        self.assertEqual(rpc.call_args_list[-1].args, ("projects.tree", {"profile": "assistant"}))
+        self.assertEqual(rpc.call_args_list[-1].args, ("projects.tree", {"profile": "assistant", "session_limit": 9001}))
+        self.assertEqual(rpc.call_args_list[1].args[1]["session_limit"], 9001)
 
     def testMissingOrNonemptyOverviewCannotMasqueradeAsHydratedHistory(self):
         for projects in [[], [{"id": "/other", "sessionCount": 0}],
@@ -151,6 +157,34 @@ class ProjectDetailTests(unittest.TestCase):
         ]) as rpc:
             self.assertEqual(bridge.project_detail({"profile": "assistant", "project_id": "/repo"}), detail)
         self.assertEqual(rpc.call_count, 2)
+
+
+class ProjectSessionLimitTests(unittest.TestCase):
+    def testCountUsesSelectedProfileReadOnlyAndIncludesAllRows(self):
+        module = types.ModuleType("hermes_cli.web_routers.sessions")
+        db = Mock()
+        db.session_count.return_value = 12000
+        module._with_db = Mock(side_effect=lambda profile, fn, **kwargs: fn(db))
+        with patch.dict("sys.modules", {module.__name__: module}):
+            self.assertEqual(bridge.project_session_limit("assistant"), 12001)
+            db.session_count.return_value = 0
+            self.assertEqual(bridge.project_session_limit("assistant"), 1)
+        self.assertEqual(module._with_db.call_args.args[0], "assistant")
+        self.assertEqual(module._with_db.call_args.kwargs, {"read_only": True})
+        db.session_count.assert_called_with(include_archived=True)
+
+    def testOverviewUsesEachProfilesCountRatherThanDefaultCap(self):
+        def rpc(method, params):
+            if method == "profiles.list":
+                return {"profiles": [{"name": "first"}, {"name": "second"}]}
+            self.assertEqual(params["session_limit"], {"first": 8001, "second": 12001}[params["profile"]])
+            return {"projects": []}
+        with patch.object(bridge, "rpc", side_effect=rpc), patch.object(
+            bridge, "project_session_limit", side_effect=lambda name: {"first": 8001, "second": 12001}[name]
+        ):
+            result = bridge.projects({})
+        self.assertEqual(len(result["groups"]), 2)
+        self.assertEqual(result["errors"], [])
 
 
 class ProjectHistoryTests(unittest.IsolatedAsyncioTestCase):

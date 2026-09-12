@@ -54,8 +54,10 @@ There is no arbitrary RPC forwarding, arbitrary file reader, write route, or new
 The canonical Hermes handlers retain their own schema migration and discovery
 behavior. Browser responses use `Cache-Control: no-store`. Source/profile identity
 is retained rather than combining same-named projects from different profiles.
-The project handlers retain Hermes's native session limits: the overview is not
-a full-history export. Cross-profile Bot chat, project mutations, and Kanban
+Bridge 0.1.6 sizes native tree requests using each profile's read-only total
+session count instead of the 2,000/5,000-row defaults. Native filtering and
+grouping still apply; counts and trees are separate reads, not an atomic
+cross-profile snapshot or full-history export. Cross-profile Bot chat, project mutations, and Kanban
 editing remain future work; Companion does not silently route these to default.
 Project history is limited to sessions Hermes includes in the hydrated project
 tree. Membership is rechecked on each page; moving a session out of that project
