@@ -3,8 +3,7 @@ import SwiftUI
 import Speech
 import AVFoundation
 
-/// Voice-to-text transcription using iOS 26 SpeechAnalyzer (on-device).
-/// Falls back to SFSpeechRecognizer on older iOS.
+/// On-device voice-to-text transcription using SFSpeechRecognizer.
 ///
 /// Usage:
 /// 1. Call requestAuthorization() once on first use.
@@ -16,6 +15,7 @@ final class VoiceTranscriber: ObservableObject {
     @Published var isRecording = false
     @Published var transcribedText = ""
     @Published var hasPermission = false
+    @Published var errorMessage: String?
 
     // SFSpeechRecognizer fallback (works on all iOS versions)
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
@@ -23,6 +23,7 @@ final class VoiceTranscriber: ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private var hasInputTap = false
+    private var recordingID: UUID?
 
     func requestAuthorization() async {
         // Request microphone permission
@@ -46,20 +47,28 @@ final class VoiceTranscriber: ObservableObject {
     }
 
     func startTranscription() {
+        stopTranscription()
+        let recordingID = UUID()
+        self.recordingID = recordingID
+        errorMessage = nil
         guard hasPermission else {
             Task {
                 await requestAuthorization()
+                guard self.recordingID == recordingID else { return }
                 if hasPermission {
                     startTranscription()
+                } else {
+                    errorMessage = "Microphone and speech recognition permissions are required."
                 }
             }
             return
         }
 
-        guard let speechRecognizer, speechRecognizer.isAvailable else { return }
-
-        // Cancel any existing task
-        cancelTask()
+        guard let speechRecognizer, speechRecognizer.isAvailable,
+              speechRecognizer.supportsOnDeviceRecognition else {
+            errorMessage = "On-device speech recognition is unavailable for this language."
+            return
+        }
 
         // Reset text
         transcribedText = ""
@@ -73,7 +82,8 @@ final class VoiceTranscriber: ObservableObject {
             try? audioSession.setPreferredInputNumberOfChannels(1)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            isRecording = false
+            errorMessage = "Could not activate the microphone: \(error.localizedDescription)"
+            stopTranscription()
             return
         }
 
@@ -82,34 +92,34 @@ final class VoiceTranscriber: ObservableObject {
         guard let recognitionRequest else { return }
         recognitionRequest.shouldReportPartialResults = true
         recognitionRequest.addsPunctuation = true
-        // Prefer on-device recognition when available for lower latency
-        recognitionRequest.requiresOnDeviceRecognition = false
+        recognitionRequest.requiresOnDeviceRecognition = true
         recognitionRequest.taskHint = .dictation
 
         // Start recognition task
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            guard let self = self else { return }
-
-            if error != nil {
-                self.stopTranscription()
-                return
-            }
-
-            if let result = result {
-                let text = result.bestTranscription.formattedString
-                Task { @MainActor [weak self] in
-                    self?.transcribedText = text
+            let text = result?.bestTranscription.formattedString
+            let isFinal = result?.isFinal == true
+            let errorDescription = error?.localizedDescription
+            Task { @MainActor [weak self] in
+                guard let self, self.recordingID == recordingID else { return }
+                if let text { self.transcribedText = text }
+                if let errorDescription {
+                    self.errorMessage = errorDescription
+                    self.stopTranscription()
+                } else if isFinal {
+                    self.stopTranscription()
                 }
-            }
-
-            if result?.isFinal == true {
-                self.stopTranscription()
             }
         }
 
         // Set up audio engine for live microphone input
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        guard recordingFormat.sampleRate > 0, recordingFormat.channelCount > 0 else {
+            errorMessage = "No microphone input is available."
+            stopTranscription()
+            return
+        }
 
         // ponytail: guard against double installTap — ObjC exception is uncatchable.
         // A tap can outlive the engine (iOS stops the engine in background), so
@@ -118,8 +128,7 @@ final class VoiceTranscriber: ObservableObject {
             inputNode.removeTap(onBus: 0)
             hasInputTap = false
         }
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            guard let self = self, let recognitionRequest = self.recognitionRequest else { return }
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
             recognitionRequest.append(buffer)
         }
         hasInputTap = true
@@ -128,11 +137,14 @@ final class VoiceTranscriber: ObservableObject {
             audioEngine.prepare()
             try audioEngine.start()
         } catch {
+            errorMessage = "Could not start the microphone: \(error.localizedDescription)"
             stopTranscription()
         }
     }
 
     func stopTranscription() {
+        recordingID = nil
+        let wasRecording = isRecording || hasInputTap || recognitionTask != nil
         isRecording = false
 
         // Remove the tap whenever one is installed (flag-tracked): a tap can
@@ -151,14 +163,10 @@ final class VoiceTranscriber: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
 
+        guard wasRecording else { return }
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
      }
 
-    private func cancelTask() {
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        recognitionRequest = nil
-    }
 }

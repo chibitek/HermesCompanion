@@ -368,9 +368,10 @@ final class VoiceConversationManager: ObservableObject {
             audioEngine.stop()
         }
         removeInputTapIfNeeded()
-        guard let speechRecognizer, speechRecognizer.isAvailable else {
+        guard let speechRecognizer, speechRecognizer.isAvailable,
+              speechRecognizer.supportsOnDeviceRecognition else {
             FileLogger.shared.log("VoiceManager: startListening bail — recognizer unavailable (nil: \(speechRecognizer == nil))")
-            voiceError = "Speech recognition is unavailable."
+            voiceError = "On-device speech recognition is unavailable for this language."
             return
         }
         isStoppingListening = false
@@ -431,28 +432,15 @@ final class VoiceConversationManager: ObservableObject {
         }
         recognitionRequest.shouldReportPartialResults = true
         recognitionRequest.addsPunctuation = true
-        // Force server-based recognition to free up the CPU for the Matrix rain
-        // animation. On-device recognition runs a neural net on the CPU/GPU
-        // which competes with the Canvas rendering and causes UI freezes.
-        // Server recognition sends audio to Apple's servers, leaving the
-        // device CPU free for the visualizer.
-        recognitionRequest.requiresOnDeviceRecognition = false
+        recognitionRequest.requiresOnDeviceRecognition = true
 
         // Recognition task with final result detection
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 
-                // Guard against callbacks after stopListening — the recognition
-                // request may be nil if we already cancelled. This prevents the
-                // crash that happens when the callback fires during the
-                // listen->think transition.
-                guard self.recognitionRequest != nil || self.isListening else {
-                    if self.isStoppingListening {
-                        self.isStoppingListening = false
-                    }
-                    return
-                }
+                // A canceled recognizer may report after a replacement has started.
+                guard self.recognitionRequest === recognitionRequest else { return }
 
                 if let error {
                     if self.isStoppingListening || self.isBenignRecognitionCancellation(error) {
@@ -635,12 +623,8 @@ final class VoiceConversationManager: ObservableObject {
 
     private func removeInputTapIfNeeded() {
         guard hasInstalledInputTap else { return }
-        // CRITICAL: Only remove the tap if the engine is running.
-        // removeTap on a stopped engine throws an uncatchable ObjC
-        // exception that crashes the app.
-        if audioEngine.isRunning {
-            audioEngine.inputNode.removeTap(onBus: 0)
-        }
+        // Taps remain installed when an interruption stops the engine.
+        audioEngine.inputNode.removeTap(onBus: 0)
         hasInstalledInputTap = false
     }
 
