@@ -707,6 +707,8 @@ final class AppStore: ObservableObject {
             let sessions = try await client.listSessions()
             guard !Task.isCancelled, apiClient === client, sessionRefreshID == refreshID else { return }
             applySessionSnapshot(sessions)
+            await reconcileMissingActiveSession(client: client, refreshID: refreshID)
+            guard apiClient === client, sessionRefreshID == refreshID else { return }
             await restoreActiveSessionIfAvailable()
         } catch {
             guard !Task.isCancelled, apiClient === client, sessionRefreshID == refreshID else { return }
@@ -726,6 +728,32 @@ final class AppStore: ObservableObject {
             sessionProviderOverride = nil
         }
         activeSession = updated
+    }
+
+    private func reconcileMissingActiveSession(client: HermesAPIClient, refreshID: UUID) async {
+        guard apiClient === client, sessionRefreshID == refreshID, !isStreaming,
+              let current = activeSession, !sessions.contains(where: { $0.id == current.id }) else { return }
+        let selectionID = sessionSelectionID
+        do {
+            _ = try await client.getSession(sessionId: current.id)
+        } catch APIError.notFound {
+            guard apiClient === client, sessionRefreshID == refreshID,
+                  sessionSelectionID == selectionID, activeSession?.id == current.id,
+                  !isStreaming, !Task.isCancelled else { return }
+            sessionSelectionID = UUID()
+            stopStreaming()
+            activeSession = nil
+            activeRuntime = nil
+            sessionModelOverride = nil
+            sessionProviderOverride = nil
+            toolEvents = []
+            messages = []
+            if let baseURL = connectionConfig?.normalizedBaseURL {
+                activeSessionPersistence.clear(for: baseURL)
+            }
+        } catch {
+            // A failed probe is not evidence of deletion.
+        }
     }
 
     /// Restores the last chat used on this server after a cold launch. If that
@@ -1053,7 +1081,10 @@ final class AppStore: ObservableObject {
             guard apiClient === client, platformRefreshID == refreshID else { return }
             if sessionRefreshID == sessionsID, !Task.isCancelled {
                 applySessionSnapshot(value)
-                await restoreActiveSessionIfAvailable()
+                await reconcileMissingActiveSession(client: client, refreshID: sessionsID)
+                if apiClient === client, sessionRefreshID == sessionsID {
+                    await restoreActiveSessionIfAvailable()
+                }
             }
         } catch {
             FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
