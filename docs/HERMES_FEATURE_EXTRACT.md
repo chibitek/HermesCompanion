@@ -1,8 +1,25 @@
 # Hermes Agent Feature Extraction
 
-Source: `NousResearch/hermes-agent` at `04dd80a977`, current `main`.
-Live gateway checked against Hermes Agent 0.21.1 on port 8642.
-Target: Hermes Companion 1.8.48 (134).
+Original analysis: `NousResearch/hermes-agent` at `04dd80a977`, Hermes 0.21.1,
+Companion 1.8.48 (134). The tables below are the historical extraction plan,
+not a claim that every listed capability has shipped.
+
+## September 11 Update
+
+Verified installed Hermes `53e32d0581` (0.21.2) against Companion 1.8.62 (155).
+The API listener still does not natively mount the complete project/Bot/Kanban
+interfaces. `GatewayPlugin/hermes-companion` now exposes five read endpoints
+using existing Hermes project/profile RPC and Kanban domain handlers. Native
+Projects, Bots, and Kanban tabs consume these endpoints, retaining profile IDs
+and showing errors instead of guessing from session counts. The bridge is an
+operator-installed component, not an assumption about hosted Hermes support.
+
+Live verification: ten profile project trees without read errors, ten Bot
+profiles, two boards, successful project/board detail decoding, and HTTP 401
+without authorization. Test coverage: 54 iOS unit tests and three bridge route
+tests pass. Cross-profile Bot conversation, project mutations, full task results,
+and Kanban editing remain open. See `GatewayPlugin/README.md` for installation,
+access scope, upstream dependencies, and native session-limit caveats.
 
 ## Decision framework
 

@@ -10,6 +10,7 @@ struct PlatformHubView: View {
     @State private var showJobEditor = false
     @State private var isUploadingArtifact = false
     @State private var showArtifactPicker = false
+    @State private var workspaceSection: WorkspaceSection?
 
     private var theme: any HermesTheme { appearance.activeTheme }
 
@@ -66,15 +67,19 @@ struct PlatformHubView: View {
                     capabilitiesSection
                     endpointsSection
                     messagingSection
-                    projectsSection
+                    Section("Workspace") {
+                        ForEach(WorkspaceSection.allCases) { section in
+                            Button { workspaceSection = section } label: {
+                                Label(section.rawValue, systemImage: section.icon)
+                            }
+                        }
+                    }
                     sessionsSection
                     modelsSection
                     toolsetsSection
                     skillsSection
                     jobsSection
                     artifactsSection
-                    kanbanSection
-                    botsSection
                 }
                 .sheet(isPresented: $showArtifactPicker) {
                     FilePickerView { data, fileName, mimeType in
@@ -87,6 +92,13 @@ struct PlatformHubView: View {
                         }
                     }
                     .withActiveTheme(appearance)
+                }
+                .sheet(item: $workspaceSection) { section in
+                    WorkspaceBrowserView(store: store, section: section, onSessionSelected: {
+                        workspaceSection = nil
+                        dismiss()
+                    })
+                        .withActiveTheme(appearance)
                 }
                 .sheet(isPresented: $showJobEditor) {
                     JobEditorView(store: store, existingJob: editingJob)

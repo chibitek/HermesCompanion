@@ -11,6 +11,7 @@
 		03CBDC20873F48BEB4EBFE38 /* GlassComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4712C7DBDC790F10EB108C21 /* GlassComponents.swift */; };
 		06BDC2D2907A6188CDF10CDE /* VoiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */; };
 		090713634A1A6AA642140833 /* HermesAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497EB3A78A1FA95B37C99AB4 /* HermesAPIClient.swift */; };
+		0A03DE64CC9B002638D2B4F9 /* WorkspaceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005F8CE7582CC42517DDCD84 /* WorkspaceModels.swift */; };
 		149052C798A239F946342A23 /* ReleaseNotesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */; };
 		159D645ED21E0A0B268E972B /* AppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73744DD7755B96A455966F0B /* AppearanceSettings.swift */; };
 		1618F80A2436071857B0BFA0 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA6D2DC303D9ABB53D3A9D4 /* ProjectStore.swift */; };
@@ -34,11 +35,13 @@
 		4F5C3B8B82D3CF74CFCF1D47 /* StreamWatchdogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0462220C6A7891E8E42F07B /* StreamWatchdogManager.swift */; };
 		538D0CA3818BBDB92BB6A232 /* ModelSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */; };
 		5A1B76115F8835F7DB19A51E /* WakePhraseListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7FD753E4E2095A6295A052 /* WakePhraseListener.swift */; };
+		5ABD02FC530F7782E8AA5012 /* WorkspaceBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3519C458459B5A7097B43D19 /* WorkspaceBrowserView.swift */; };
 		5DC81AF16C507C454840EB47 /* VoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */; };
 		61377F4AC5E3A85BA6402496 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A7511EED5D149EE15F396D2F /* Assets.xcassets */; };
 		65563F266A0294EAAF0008E5 /* GlassTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53907E499DA24C590A36DA7A /* GlassTheme.swift */; };
 		67280C486BF59EDE78845066 /* VoiceConversationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6346FF829FB3BF801B8602B2 /* VoiceConversationManager.swift */; };
 		6880344859436CE0F8CC146A /* VoiceConversationPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86EA7AA684EE78863AEC2F0A /* VoiceConversationPage.swift */; };
+		693E5B3C1B652B2DF6375008 /* WorkspaceContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7AD3E21499E1E3513A5C91 /* WorkspaceContractTests.swift */; };
 		6C8D9A43ECE7F733424865C8 /* VoiceActivationControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9EAA579429A6A3919F30F5 /* VoiceActivationControl.swift */; };
 		729747F4166DD4BD7E0AA89F /* CarPlayVoiceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B063172039210054C110721D /* CarPlayVoiceController.swift */; };
 		72AF988EA78894068E1D19E3 /* HermesControlWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 416FCF6114F2020D743351BA /* HermesControlWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -104,6 +107,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		005F8CE7582CC42517DDCD84 /* WorkspaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceModels.swift; sourceTree = "<group>"; };
 		03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillCommandLogicTests.swift; sourceTree = "<group>"; };
 		0877A3D2AFE7F4721ADA17AF /* GlassBubble.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassBubble.swift; sourceTree = "<group>"; };
 		0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotes.swift; sourceTree = "<group>"; };
@@ -124,6 +128,7 @@
 		323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriber.swift; sourceTree = "<group>"; };
 		347A8180AE6F941EDF51CFEE /* ConnectionSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSetupView.swift; sourceTree = "<group>"; };
 		35151811693B501BC71EA9C5 /* ComposerCommandLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerCommandLogic.swift; sourceTree = "<group>"; };
+		3519C458459B5A7097B43D19 /* WorkspaceBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceBrowserView.swift; sourceTree = "<group>"; };
 		3A2B9FEF6B128A23C90B7CA5 /* SharedDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDefaults.swift; sourceTree = "<group>"; };
 		3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSessionPersistenceTests.swift; sourceTree = "<group>"; };
 		406D0DC3A11F86B29F05F06A /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
@@ -164,6 +169,7 @@
 		C65133D88E05ED712E002D1E /* GlassAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassAnimations.swift; sourceTree = "<group>"; };
 		C6CC0110AB94C4C9331E73C4 /* ComposerSubmissionLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSubmissionLogicTests.swift; sourceTree = "<group>"; };
 		CB9EAA579429A6A3919F30F5 /* VoiceActivationControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivationControl.swift; sourceTree = "<group>"; };
+		CD7AD3E21499E1E3513A5C91 /* WorkspaceContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceContractTests.swift; sourceTree = "<group>"; };
 		CE746186A15D314B390ECCF0 /* HermesControlWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesControlWidgetBundle.swift; sourceTree = "<group>"; };
 		EDDAD1C9B988CFE76287C44B /* GlassInputBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassInputBar.swift; sourceTree = "<group>"; };
 		F7A1BB077B5C9F7833608AA0 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
@@ -243,6 +249,8 @@
 				111BD0D7A61F24FDA7ED165C /* VoiceSettingsView.swift */,
 				323B4CE9CDC63D3E124F051B /* VoiceTranscriber.swift */,
 				1B7FD753E4E2095A6295A052 /* WakePhraseListener.swift */,
+				3519C458459B5A7097B43D19 /* WorkspaceBrowserView.swift */,
+				005F8CE7582CC42517DDCD84 /* WorkspaceModels.swift */,
 				862E65AB22578E282334728E /* Themes */,
 			);
 			path = Sources;
@@ -269,6 +277,7 @@
 				03573073F9544007F1F2B422 /* SkillCommandLogicTests.swift */,
 				AD348F4EBB40BD3B6F3F2C74 /* StreamWatchdogTests.swift */,
 				15CE235401C5CF4AA8838394 /* VoiceActivationLogicTests.swift */,
+				CD7AD3E21499E1E3513A5C91 /* WorkspaceContractTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -375,8 +384,8 @@
 			projectRoot = "";
 			targets = (
 				2FCC291CB54A965A8FBCF67F /* HermesCompanion */,
-				AD2A6E878BB701551F5B3818 /* HermesCompanionTests */,
 				BBF08EA3BDC297DC7001FB84 /* HermesControlWidget */,
+				AD2A6E878BB701551F5B3818 /* HermesCompanionTests */,
 			);
 		};
 /* End PBXProject section */
@@ -406,6 +415,7 @@
 				80E40DCA3AE420F927877943 /* SkillCommandLogicTests.swift in Sources */,
 				43DD09E6024E5D9B9C5968DF /* StreamWatchdogTests.swift in Sources */,
 				CFE8A23CD2204761B0C7F288 /* VoiceActivationLogicTests.swift in Sources */,
+				693E5B3C1B652B2DF6375008 /* WorkspaceContractTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -462,6 +472,8 @@
 				06BDC2D2907A6188CDF10CDE /* VoiceSettingsView.swift in Sources */,
 				5DC81AF16C507C454840EB47 /* VoiceTranscriber.swift in Sources */,
 				5A1B76115F8835F7DB19A51E /* WakePhraseListener.swift in Sources */,
+				5ABD02FC530F7782E8AA5012 /* WorkspaceBrowserView.swift in Sources */,
+				0A03DE64CC9B002638D2B4F9 /* WorkspaceModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -515,7 +527,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 151;
+				CURRENT_PROJECT_VERSION = 155;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -526,7 +538,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = YES;
-				MARKETING_VERSION = 1.8.61;
+				MARKETING_VERSION = 1.8.62;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -541,7 +553,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 151;
+				CURRENT_PROJECT_VERSION = 155;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -552,7 +564,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.8.61;
+				MARKETING_VERSION = 1.8.62;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -633,7 +645,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 151;
+				CURRENT_PROJECT_VERSION = 155;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -641,7 +653,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.61;
+				MARKETING_VERSION = 1.8.62;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -715,7 +727,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 151;
+				CURRENT_PROJECT_VERSION = 155;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -723,7 +735,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.61;
+				MARKETING_VERSION = 1.8.62;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

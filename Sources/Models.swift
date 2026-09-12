@@ -149,6 +149,45 @@ struct CapabilitiesResponse: Codable {
         let sessionFork: Bool
         let skillsAPI: Bool
 
+        private struct BrowserControl: Decodable {
+            let enabled: Bool
+            let artifactTransport: [String: AnyCodable]?
+
+            enum CodingKeys: String, CodingKey {
+                case enabled
+                case artifactTransport = "artifact_transport"
+            }
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            let browser: BrowserControl?
+            if let flag = try? values.decode(Bool.self, forKey: .browserExtensionControl) {
+                browserExtensionControl = flag
+                browser = nil
+            } else {
+                browser = try values.decodeIfPresent(BrowserControl.self, forKey: .browserExtensionControl)
+                browserExtensionControl = browser?.enabled
+            }
+            modelOptions = try values.decodeIfPresent(Bool.self, forKey: .modelOptions)
+            sessionModelLock = try values.decodeIfPresent(Bool.self, forKey: .sessionModelLock)
+            artifactTransport = try values.decodeIfPresent(Bool.self, forKey: .artifactTransport)
+                ?? browser.map { $0.enabled && $0.artifactTransport != nil }
+            chatCompletions = try values.decodeIfPresent(Bool.self, forKey: .chatCompletions) ?? false
+            chatCompletionsStreaming = try values.decodeIfPresent(Bool.self, forKey: .chatCompletionsStreaming) ?? false
+            sessionChat = try values.decodeIfPresent(Bool.self, forKey: .sessionChat) ?? false
+            sessionChatStreaming = try values.decodeIfPresent(Bool.self, forKey: .sessionChatStreaming) ?? false
+            runSubmission = try values.decodeIfPresent(Bool.self, forKey: .runSubmission) ?? false
+            runEventsSSE = try values.decodeIfPresent(Bool.self, forKey: .runEventsSSE) ?? false
+            runStop = try values.decodeIfPresent(Bool.self, forKey: .runStop) ?? false
+            runApprovalResponse = try values.decodeIfPresent(Bool.self, forKey: .runApprovalResponse) ?? false
+            toolProgressEvents = try values.decodeIfPresent(Bool.self, forKey: .toolProgressEvents) ?? false
+            approvalEvents = try values.decodeIfPresent(Bool.self, forKey: .approvalEvents) ?? false
+            sessionResources = try values.decodeIfPresent(Bool.self, forKey: .sessionResources) ?? false
+            sessionFork = try values.decodeIfPresent(Bool.self, forKey: .sessionFork) ?? false
+            skillsAPI = try values.decodeIfPresent(Bool.self, forKey: .skillsAPI) ?? false
+        }
+
         enum CodingKeys: String, CodingKey {
             case chatCompletions = "chat_completions"
             case browserExtensionControl = "browser_extension_control"
@@ -775,7 +814,16 @@ struct HermesPlatformStatus: Codable, Identifiable, Hashable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = try container.decode(String.self, forKey: .name)
+        if let explicitName = try container.decodeIfPresent(String.self, forKey: .name) {
+            name = explicitName
+        } else if let platformKey = decoder.codingPath.last?.stringValue {
+            name = platformKey
+        } else {
+            throw DecodingError.keyNotFound(CodingKeys.name, .init(
+                codingPath: decoder.codingPath,
+                debugDescription: "Platform status requires a name or dictionary key"
+            ))
+        }
         state = try container.decodeIfPresent(String.self, forKey: .state)
         errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)

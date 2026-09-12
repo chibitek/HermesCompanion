@@ -14,6 +14,14 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.62":
+            return [
+                "Projects now browse server-owned folders through the Companion workspace bridge.",
+                "Bots now show the Hermes profile roster and configured models.",
+                "Kanban now browses server boards, columns, and task details.",
+                "Workspace views refresh while open and reset when the connection changes.",
+                "Bot chat across profiles and Kanban editing are not included in this release."
+            ]
         case "1.8.61":
             return [
                 "History now groups pinned chats into their own section.",
