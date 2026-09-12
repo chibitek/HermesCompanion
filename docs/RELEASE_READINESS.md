@@ -164,3 +164,16 @@ and tree reads are not covered by an atomic snapshot guarantee.
 Sixteen bridge tests pass. A real read counted 10 profiles and 857 session rows
 (largest profile: 833), so the former caps did not explain this host's reported
 missing folders. Deployment and further sync verification remain necessary.
+
+## Full Project Detail Audit
+
+A subsequent real-domain audit attempted every one of the 437 overview entries
+across all 10 profiles: 436 returned matching project details; one returned no
+project. The missing entry is a discovered parent workspace with three sessions
+in child working directories. Its native grouping/detail mismatch remains
+unresolved; this is not proof of full folder parity.
+
+The iOS detail view no longer substitutes its prior overview snapshot when the
+server returns no project. It displays Project Unavailable instead of presenting
+stale folder data as a successful refresh. Bridge 0.1.5 and later still preserve
+genuinely empty discovered folders from the current server overview.
