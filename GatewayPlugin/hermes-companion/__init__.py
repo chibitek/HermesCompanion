@@ -5,6 +5,7 @@ not registered: a profile-scoped key must never acquire an all-profile roster.
 """
 
 import asyncio
+import inspect
 import logging
 
 log = logging.getLogger(__name__)
@@ -21,6 +22,27 @@ def rpc(method, params):
 
 def bots(_query):
     return rpc("profiles.list", {"include_sessions": True})
+
+
+async def bot_history(query):
+    from hermes_cli.web_routers.sessions import get_session_messages
+
+    profile = query.get("profile", "")
+    offset = int(query.get("offset", "0"))
+    if offset < 0:
+        raise ValueError("offset must be nonnegative")
+    roster = await asyncio.to_thread(rpc, "profiles.list", {"include_sessions": True})
+    bot = next((p for p in roster["profiles"] if p["name"] == profile), None)
+    if bot is None:
+        raise ValueError("Select an existing Bot profile")
+    # Resolve the canonical pointer on the server on every read, including after
+    # compaction. Never accept a client's session pointer for a different Bot.
+    session = bot.get("canonical_session")
+    if not session:
+        return {"profile": profile, "session_id": None, "messages": [],
+                "pagination": {"offset": offset, "limit": 100, "returned": 0}}
+    return await get_session_messages(session["id"], profile=profile, limit=100,
+                                      offset=offset, order="latest", include_compacted=False)
 
 
 def projects(_query):
@@ -65,6 +87,7 @@ READERS = {
     "projects": projects,
     "project": project_detail,
     "bots": bots,
+    "bot-history": bot_history,
     "boards": boards,
     "board": board,
 }
@@ -81,6 +104,8 @@ def wire(app, adapter):
                 return denied
             try:
                 result = await asyncio.to_thread(reader, dict(request.query))
+                if inspect.isawaitable(result):
+                    result = await result
                 return web.json_response(result, headers={"Cache-Control": "no-store"})
             except ValueError as exc:
                 return web.json_response({"error": str(exc)}, status=400)

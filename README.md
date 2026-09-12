@@ -33,6 +33,9 @@ The History sidebar now includes **Projects**, **Bots**, and **Kanban** tabs.
 These read Hermes's actual project trees, Bot profiles with configured models,
 and Kanban boards and tasks. Empty project folders and profile ownership are
 preserved. Open views refresh every 30 seconds and reset on a server change.
+Build 156 adds paginated canonical Bot conversation history, including Hermes's
+display projection for compacted messages. Sending to another profile remains
+unimplemented; no default-profile credential is silently reused for another Bot.
 
 This requires the [Companion workspace bridge](GatewayPlugin/README.md) on each
 connected server. The bridge uses Hermes's existing domain handlers and root

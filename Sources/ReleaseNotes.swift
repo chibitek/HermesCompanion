@@ -18,6 +18,7 @@ enum ReleaseNotes {
             return [
                 "Projects now browse server-owned folders through the Companion workspace bridge.",
                 "Bots now show the Hermes profile roster and configured models.",
+                "Bot conversation history reads the canonical server conversation with pagination.",
                 "Kanban now browses server boards, columns, and task details.",
                 "Workspace views refresh while open and reset when the connection changes.",
                 "Bot chat across profiles and Kanban editing are not included in this release."
