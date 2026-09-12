@@ -73,6 +73,24 @@ def boards(_query):
     return list_boards(include_archived=False)
 
 
+async def project_history(query):
+    from hermes_cli.web_routers.sessions import get_session_messages
+
+    offset = int(query.get("offset", "0"))
+    session_id = query.get("session_id", "")
+    if offset < 0 or not session_id:
+        raise ValueError("A session and nonnegative offset are required")
+    detail = await asyncio.to_thread(project_detail, query)
+    project = detail.get("project") or {}
+    sessions = {s["id"] for repo in project.get("repos", [])
+                for group in repo.get("groups", []) for s in group.get("sessions", [])}
+    if session_id not in sessions:
+        raise ValueError("Session is not in the selected project")
+    history = await get_session_messages(session_id, profile=query["profile"], limit=100,
+                                         offset=offset, order="latest", include_compacted=False)
+    return {"project_id": query["project_id"], "requested_session_id": session_id, "history": history}
+
+
 def board(query):
     from plugins.kanban.dashboard.plugin_api import get_board, list_boards
 
@@ -102,6 +120,7 @@ def task_detail(query):
 READERS = {
     "projects": projects,
     "project": project_detail,
+    "project-history": project_history,
     "bots": bots,
     "bot-history": bot_history,
     "boards": boards,

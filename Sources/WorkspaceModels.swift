@@ -76,6 +76,17 @@ struct BotHistory: Decodable {
     let pagination: HistoryPagination
 }
 
+struct ProjectSessionHistory: Decodable {
+    let project_id: String
+    let requested_session_id: String
+    let history: BotHistory
+
+    func matches(profile: String, projectID: String, sessionID: String, offset: Int) -> Bool {
+        project_id == projectID && requested_session_id == sessionID
+            && history.profile == profile && history.pagination.offset == offset
+    }
+}
+
 struct HistoryPagination: Decodable {
     let offset: Int
     let limit: Int

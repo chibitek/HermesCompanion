@@ -2,6 +2,16 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testProjectHistoryValidatesOwnerAndAllowsServerResolvedResume() throws {
+        let data = Data(#"{"project_id":"project","requested_session_id":"original","history":{"profile":"assistant","session_id":"resumed","messages":[],"pagination":{"offset":100,"limit":100,"returned":0}}}"#.utf8)
+        let result = try JSONDecoder().decode(ProjectSessionHistory.self, from: data)
+        XCTAssertTrue(result.matches(profile: "assistant", projectID: "project", sessionID: "original", offset: 100))
+        XCTAssertFalse(result.matches(profile: "default", projectID: "project", sessionID: "original", offset: 100))
+        XCTAssertFalse(result.matches(profile: "assistant", projectID: "other", sessionID: "original", offset: 100))
+        XCTAssertFalse(result.matches(profile: "assistant", projectID: "project", sessionID: "other", offset: 100))
+        XCTAssertFalse(result.matches(profile: "assistant", projectID: "project", sessionID: "original", offset: 0))
+    }
+
     func testRefreshedBotRosterDoesNotSubstituteOrRetainRemovedProfile() throws {
         let data = Data(#"{"profiles":[{"name":"local","display_name":"Local","model":"updated-model","provider":"custom","last_session":{"id":"unrelated","title":"Other conversation"},"canonical_session":null}]}"#.utf8)
         let snapshot = try JSONDecoder().decode(WorkspaceBots.self, from: data)

@@ -147,7 +147,14 @@ struct WorkspaceBrowserView: View {
                                         Label(session.title ?? "Untitled", systemImage: "bubble.left")
                                     }
                                 } else {
-                                    Label(session.title ?? "Untitled", systemImage: "bubble.left")
+                                    NavigationLink {
+                                        WorkspaceHistoryView(title: session.title ?? "Untitled", identity: "\(profile):\(session.id)") { offset in
+                                            try await client.projectHistory(profile: profile, projectID: project.id,
+                                                                            sessionID: session.id, offset: offset)
+                                        }
+                                    } label: {
+                                        Label(session.title ?? "Untitled", systemImage: "bubble.left")
+                                    }
                                 }
                             }
                         } label: {
