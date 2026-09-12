@@ -400,6 +400,14 @@ struct GlassInputBar: View {
         .onChange(of: voiceTranscriber.isRecording) { _, isRecording in
             onDictationStateChange?(isRecording)
         }
+        .alert("Dictation Unavailable", isPresented: Binding(
+            get: { voiceTranscriber.errorMessage != nil },
+            set: { if !$0 { voiceTranscriber.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { voiceTranscriber.errorMessage = nil }
+        } message: {
+            Text(voiceTranscriber.errorMessage ?? "")
+        }
     }
 
     private var skillSuggestionMenu: some View {

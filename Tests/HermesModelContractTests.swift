@@ -3,6 +3,37 @@ import XCTest
 
 final class HermesModelContractTests: XCTestCase {
     @MainActor
+    func testSessionRefreshUpdatesOpenChatFromServerAfterStreamFinishes() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(
+            config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+            session: URLSession(configuration: config)
+        )
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(
+            #"{"id":"current","title":"Old title","model":"old-model","provider":"old-provider"}"#.utf8
+        ))
+        store.activeRuntime = SessionRuntime(provider: "old-provider", model: "old-model", routeSource: "stream", requested: nil, modelLock: nil)
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body:
+                #"{"object":"list","data":[{"id":"current","title":"Updated on Mac","model":"qwen3.8:27b-mlx","provider":"local","pinned":true}]}"#
+            )
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.isStreaming = true
+        await store.refreshSessions()
+        XCTAssertEqual(store.effectiveCurrentModel, "old-model")
+        store.isStreaming = false
+        await store.refreshSessions()
+        XCTAssertEqual(store.effectiveCurrentModel, "qwen3.8:27b-mlx")
+        XCTAssertEqual(store.effectiveCurrentProvider, "local")
+        XCTAssertEqual(store.activeSession?.title, "Updated on Mac")
+        XCTAssertEqual(store.activeSession?.isPinned, true)
+        XCTAssertNil(store.activeRuntime)
+    }
+
+    @MainActor
     func testLateHistoryCannotReplaceNewSessionOrItsModel() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]
@@ -177,12 +208,10 @@ private final class SessionHistoryURLProtocol: URLProtocol, @unchecked Sendable 
     override func startLoading() { Self.handler?(self) }
     override func stopLoading() {}
 
-    func succeed() {
+    func succeed(body: String = #"{"object":"list","data":[{"id":1,"role":"assistant","content":"Old session reply"}]}"#) {
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(
-            #"{"object":"list","data":[{"id":1,"role":"assistant","content":"Old session reply"}]}"#.utf8
-        ))
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 
