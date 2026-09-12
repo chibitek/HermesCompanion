@@ -71,7 +71,7 @@ new gateway routes. No multi-profile serving configuration change was made.
 
 Cross-profile Bot message submission, project mutations, Kanban editing, and full
 artifact browsing/download workflows remain unfinished. Project history is
-limited by Hermes's hydrated-tree membership and native listing limits. Physical
+limited by Hermes's hydrated-tree membership and native filtering. Physical
 voice stability and complete desktop feature parity have not been established.
 Do not describe this development branch as bug-free or fully synchronized across
 every Hermes feature based on the focused tests above.
@@ -152,3 +152,15 @@ active source using both values. Duplicate rows for the same pair are collapsed.
 Older gateways retain their existing metadata fallback without inferring an
 inference provider from the model author's name. This is unreleased and still
 requires interactive multi-provider verification on the phone.
+
+## Project Count Development Update
+
+Bridge 0.1.6 reads each profile's total session count through Hermes's read-only
+session domain helper and supplies a positive upper bound to both native project
+tree calls. This removes dependence on the 2,000/5,000-row default caps. Native
+grouping/filtering remain authoritative; concurrent additions between the count
+and tree reads are not covered by an atomic snapshot guarantee.
+
+Sixteen bridge tests pass. A real read counted 10 profiles and 857 session rows
+(largest profile: 833), so the former caps did not explain this host's reported
+missing folders. Deployment and further sync verification remain necessary.

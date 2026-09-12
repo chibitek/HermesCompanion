@@ -45,13 +45,24 @@ async def bot_history(query):
                                       offset=offset, order="latest", include_compacted=False)
 
 
+def project_session_limit(profile):
+    from hermes_cli.web_routers.sessions import _with_db
+
+    # Count all rows (including archived/children) as an upper bound on the
+    # native tree's filtered roots. Keep LIMIT positive even for an empty DB.
+    count = _with_db(profile, lambda db: db.session_count(include_archived=True), read_only=True)
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        raise RuntimeError("Hermes returned an invalid session count")
+    return count + 1
+
+
 def projects(_query):
     roster = rpc("profiles.list", {"include_sessions": False})
     groups, errors = [], []
     for profile in roster["profiles"]:
         name = profile["name"]
         try:
-            tree = rpc("projects.tree", {"profile": name})
+            tree = rpc("projects.tree", {"profile": name, "session_limit": project_session_limit(name)})
             groups.append({"profile": name, "projects": tree["projects"]})
         except Exception:
             log.exception("Companion project tree unavailable for a profile")
@@ -64,13 +75,15 @@ def project_detail(query):
     names = {p["name"] for p in rpc("profiles.list", {"include_sessions": False})["profiles"]}
     if profile not in names or not project_id:
         raise ValueError("A valid profile and project_id are required")
-    detail = rpc("projects.project_sessions", {"profile": profile, "project_id": project_id})
+    limit = project_session_limit(profile)
+    detail = rpc("projects.project_sessions", {"profile": profile, "project_id": project_id,
+                                                "session_limit": limit})
     if detail.get("project") is not None:
         return detail
     # Native drill-in skips the discovered-repository tier. Preserve an empty
     # folder from the authoritative overview, but never pass a preview off as
     # fully hydrated history for a project containing sessions.
-    tree = rpc("projects.tree", {"profile": profile})
+    tree = rpc("projects.tree", {"profile": profile, "session_limit": limit})
     project = next((p for p in tree["projects"]
                     if p["id"] == project_id and p.get("sessionCount") == 0), None)
     return {**detail, "project": project}
