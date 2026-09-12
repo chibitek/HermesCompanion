@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import AVFoundation
 import UserNotifications
 
 /// Manages app state: connection config, active session, chat messages, streaming state.
@@ -21,9 +20,6 @@ final class AppStore: ObservableObject {
     @Published private(set) var toolEvents: [ToolEvent] = [] {
        didSet { if toolEvents.count > 50 { toolEvents.removeFirst(toolEvents.count - 50) } }
     }
-    /// True while a voice conversation is active — prevents stopSilentAudio
-    /// from deactivating the shared AVAudioSession mid-conversation.
-    @Published var isVoiceConversationActive = false
     @Published var skills: [Skill] = []
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
@@ -1765,106 +1761,19 @@ final class AppStore: ObservableObject {
     }
 
     private var backgroundTaskId: UIBackgroundTaskIdentifier?
-    private var silentPlayer: AVAudioPlayer?
-    private var isBackgroundAudioActive = false
 
     /// Begins a short background task to keep the network connection alive
     /// during quick app switches (e.g., checking a message in another app).
-    /// iOS will eventually kill the task, but this buys ~30 seconds.
-    /// Additionally, activates a silent audio loop to leverage the `audio`
-    /// background mode, which keeps the app alive indefinitely as long as
-    /// the audio session is active.
+    /// iOS controls the available background time. Text networking must not
+    /// activate audio or change the user's playback route to extend it.
     func beginBackgroundKeepAlive() {
         endBackgroundTask()
         backgroundTaskId = UIApplication.shared.beginBackgroundTask(expirationHandler: { [weak self] in
             self?.endBackgroundTask()
         })
-
-        // Start a silent audio loop to keep the audio session active in the
-        // background. This leverages the `audio` UIBackgroundModes entry to
-        // prevent iOS from suspending the app during SSE streaming or TTS
-        // playback when the user switches to another app.
-        startSilentAudioForBackground()
-    }
-    
-    /// Starts a looping silent audio player to keep the audio session active
-    /// in the background. This leverages the `audio` UIBackgroundModes entry
-    /// to prevent iOS from suspending the app during SSE streaming.
-    private func startSilentAudioForBackground() {
-        guard !isBackgroundAudioActive else { return }
-        
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-            
-            // Generate a 0.5-second silent WAV file in memory
-            let sampleRate = 44100.0
-            let numSamples = Int(sampleRate * 0.5)
-            let dataSize = numSamples
-            var wavData = Data()
-            // WAV header
-            let riffSizeBytes = withUnsafeBytes(of: UInt32(36 + dataSize).littleEndian) { Data($0) }
-            let header: [UInt8] = [
-                0x52, 0x49, 0x46, 0x46, // "RIFF"
-                riffSizeBytes[0], riffSizeBytes[1], riffSizeBytes[2], riffSizeBytes[3], // chunk size (36 + data size)
-                0x57, 0x41, 0x56, 0x45, // "WAVE"
-                0x66, 0x6D, 0x74, 0x20, // "fmt "
-                0x10, 0x00, 0x00, 0x00, // subchunk size (16)
-                0x01, 0x00,             // audio format (1 = PCM)
-                0x01, 0x00,             // num channels (1)
-                0x44, 0xAC, 0x00, 0x00, // sample rate (44100)
-                0x44, 0xAC, 0x00, 0x00, // byte rate (44100)
-                0x01, 0x00,             // block align (1)
-                0x08, 0x00,             // bits per sample (8)
-                0x64, 0x61, 0x74, 0x61, // "data"
-            ]
-            wavData.append(contentsOf: header)
-            // data size
-            let dataSizeBytes = withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Data($0) }
-            wavData.append(dataSizeBytes)
-            // Silent audio data (all zeros = silence for 8-bit PCM)
-            wavData.append(contentsOf: [UInt8](repeating: 128, count: dataSize)) // 128 = silence for unsigned 8-bit
-            
-            silentPlayer = try AVAudioPlayer(data: wavData)
-            silentPlayer?.numberOfLoops = -1 // infinite loop
-            silentPlayer?.volume = 0
-            silentPlayer?.play()
-            isBackgroundAudioActive = true
-        } catch {
-            // Non-fatal — the background task still runs without it,
-            // but iOS may suspend audio sooner.
-        }
-    }
-    
-    /// Stops the silent audio player and deactivates the background audio session.
-    private func stopSilentAudio() {
-        silentPlayer?.stop()
-        silentPlayer = nil
-        isBackgroundAudioActive = false
-        // Don't deactivate the shared session if a voice conversation is active —
-        // VoiceConversationManager needs .playAndRecord active.
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
-    }
-
-    /// Public method to stop silent background audio before voice mode starts.
-    /// Called from ChatView/VoiceView before starting a voice conversation
-    /// to prevent audio session category conflicts (.playback vs .playAndRecord).
-    func stopSilentAudioForVoice() {
-        if isBackgroundAudioActive {
-            stopSilentAudio()
-        }
     }
 
     func endBackgroundTask() {
-        // Don't stop silent audio while streaming — the background audio
-        // session is what keeps the SSE stream alive when the app is
-        // backgrounded. Only stop it when truly idle.
-        if !isStreaming {
-            stopSilentAudio()
-        }
         if let taskId = backgroundTaskId {
             UIApplication.shared.endBackgroundTask(taskId)
             backgroundTaskId = nil
@@ -1872,12 +1781,8 @@ final class AppStore: ObservableObject {
     }
     
     /// Called when the app returns to the foreground. Ends the background task
-    /// but keeps streaming alive — the SSE stream works fine in the foreground
-    /// without the silent audio workaround.
+    /// without changing audio or cancelling an active foreground stream.
     func handleForegroundReturn() {
-        if !isStreaming {
-            stopSilentAudio()
-        }
         endBackgroundTask()
     }
     
