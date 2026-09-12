@@ -2,6 +2,17 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testRefreshedBotRosterDoesNotSubstituteOrRetainRemovedProfile() throws {
+        let data = Data(#"{"profiles":[{"name":"local","display_name":"Local","model":"updated-model","provider":"custom","last_session":{"id":"unrelated","title":"Other conversation"},"canonical_session":null}]}"#.utf8)
+        let snapshot = try JSONDecoder().decode(WorkspaceBots.self, from: data)
+        XCTAssertEqual(snapshot.profile(named: "local")?.model, "updated-model")
+        XCTAssertNil(snapshot.profile(named: "local")?.canonical_session)
+        XCTAssertNil(snapshot.profile(named: "removed"))
+        XCTAssertNil(snapshot.profile(named: "Local"))
+        let removed = try JSONDecoder().decode(WorkspaceBots.self, from: Data(#"{"profiles":[]}"#.utf8))
+        XCTAssertNil(removed.profile(named: "local"))
+    }
+
     func testTaskDetailRetainsFullTextAndValidatesOwnership() throws {
         let text = String(repeating: "Full result. ", count: 100)
         let payload: [String: Any] = [

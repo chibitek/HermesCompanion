@@ -44,6 +44,10 @@ struct ServerProjectDetail: Decodable {
 
 struct WorkspaceBots: Decodable {
     let profiles: [ServerBot]
+
+    func profile(named name: String) -> ServerBot? {
+        profiles.first { $0.name == name }
+    }
 }
 
 struct ServerBot: Decodable, Identifiable {
