@@ -387,10 +387,6 @@ struct GlassInputBar: View {
             .padding(.horizontal, theme.spacingL)
             .padding(.bottom, theme.spacingS)
         }
-        .onAppear {
-            Task { await voiceTranscriber.requestAuthorization() }
-            Task { await voiceConversation.requestAuthorization() }
-        }
         .onChange(of: voiceTranscriber.transcribedText) { _, newValue in
             if voiceTranscriber.isRecording, let original = dictationOriginalText {
                 text = ComposerDictationLogic.mergedText(original: original, transcription: newValue)

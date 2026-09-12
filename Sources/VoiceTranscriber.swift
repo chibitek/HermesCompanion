@@ -6,10 +6,9 @@ import AVFoundation
 /// On-device voice-to-text transcription using SFSpeechRecognizer.
 ///
 /// Usage:
-/// 1. Call requestAuthorization() once on first use.
-/// 2. Call startTranscription() to begin recording + transcribing.
-/// 3. Observe `transcribedText` for live results.
-/// 4. Call stopTranscription() to stop.
+/// 1. Call startTranscription() to request permission and begin recording.
+/// 2. Observe `transcribedText` for live results.
+/// 3. Call stopTranscription() to stop or cancel a pending start.
 @MainActor
 final class VoiceTranscriber: ObservableObject {
     @Published var isRecording = false
