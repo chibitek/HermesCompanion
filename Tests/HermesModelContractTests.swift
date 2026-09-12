@@ -2,6 +2,30 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testBotHistoryRejectsResponsesForAnotherProfileOrPage() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(
+            config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+            session: URLSession(configuration: config)
+        )
+        defer { SessionHistoryURLProtocol.handler = nil }
+        for (profile, offset) in [("other", 0), ("assistant", 100)] {
+            SessionHistoryURLProtocol.handler = { request in
+                XCTAssertEqual(request.request.url?.path, "/api/companion/bot-history")
+                request.succeed(body: """
+                {"profile":"\(profile)","session_id":"chat","messages":[],"pagination":{"offset":\(offset),"limit":100,"returned":0}}
+                """)
+            }
+            do {
+                _ = try await client.botHistory(profile: "assistant", offset: 0)
+                XCTFail("A foreign profile or page must not be displayed")
+            } catch APIError.invalidResponse {
+                // Expected: the response does not belong to this view.
+            }
+        }
+    }
+
     func testDetailedHealthUsesServerPlatformKeysAsNames() throws {
         let data = Data(#"{"status":"ok","platforms":{"telegram":{"state":"connected"},"discord":{"state":"error","error_code":"unavailable"}}}"#.utf8)
         let health = try JSONDecoder().decode(PlatformHealthResponse.self, from: data)
