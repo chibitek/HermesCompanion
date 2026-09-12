@@ -1,5 +1,19 @@
 # Development Release Readiness
 
+## Text-Only Audio Isolation Follow-Up
+
+Wake listening now defaults off. Shared defaults perform a one-time reset of
+the previous automatic setting before views read it; later explicit opt-ins
+are preserved. The legacy defaults migration no longer restores the old value.
+Backgrounding pauses wake listening instead of unconditionally activating a
+recording audio session. Idle listener cleanup does not deactivate an audio
+session it never acquired; voice handoff transfers ownership.
+
+All 8 VoiceActivationLogicTests passed on the dedicated iOS 26.5 simulator in
+`Test-HermesCompanion-2026.09.11_23-34-43--0400.xcresult`, including fresh-install,
+upgrade-consent, and idle audio cleanup regressions. Music continuity on a
+physical iPhone remains unverified; this change has not been installed there.
+
 As of September 11, 2026. This is a verification record, not a release approval
 or a claim that the full product goal is complete.
 

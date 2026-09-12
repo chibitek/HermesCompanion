@@ -21,7 +21,7 @@ struct ChatView: View {
     @StateObject private var voiceConversation = VoiceConversationManager()
     @State private var showVoicePage = false
     @StateObject private var wakePhraseListener = WakePhraseListener()
-    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = true
+    @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -153,7 +153,7 @@ struct ChatView: View {
                     }
                  }
            case .background:
-               wakePhraseListener.startBackgroundMode()
+               wakePhraseListener.pause()
            case .inactive:
                break
             @unknown default:
