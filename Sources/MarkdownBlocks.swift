@@ -40,7 +40,7 @@ enum MarkdownBlocks {
             }
         }
 
-        var lines = markdown.components(separatedBy: "\n")
+        let lines = markdown.components(separatedBy: "\n")
         var i = 0
         while i < lines.count {
             let line = lines[i]
