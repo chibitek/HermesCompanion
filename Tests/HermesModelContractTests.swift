@@ -202,6 +202,37 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertTrue(store.queuedMessages.isEmpty)
     }
 
+    @MainActor
+    func testManualCreationCannotOverrideLaterSelection() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        let selected = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"selected","model":"local-model"}"#.utf8))
+        let creationStarted = expectation(description: "Manual creation pending")
+        var creation: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                if request.request.httpMethod == "POST" {
+                    creation = request
+                    creationStarted.fulfill()
+                } else {
+                    request.succeed(body: #"{"object":"list","data":[]}"#)
+                }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let create = Task { await store.createSession(title: "New conversation") }
+        await fulfillment(of: [creationStarted], timeout: 3)
+        await store.selectSession(selected)
+        try XCTUnwrap(creation).succeed(body: #"{"object":"hermes.session","session":{"id":"late-created","model":"old-model"}}"#)
+        await create.value
+        XCTAssertEqual(store.activeSession?.id, "selected")
+        XCTAssertEqual(store.effectiveCurrentModel, "local-model")
+        XCTAssertNil(store.error)
+    }
+
     func testDecodesFullModelOptionsCatalog() throws {
         let json = """
         {
