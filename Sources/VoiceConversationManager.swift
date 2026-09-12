@@ -2,7 +2,6 @@ import Foundation
 import SwiftUI
 import AVFoundation
 import Speech
-import Network
 
 /// Voice conversation manager for live 2-way voice interaction with Hermes.
 ///
@@ -758,7 +757,6 @@ final class VoiceConversationManager: ObservableObject {
         if synthesizer.isSpeaking || synthesizer.isPaused {
             synthesizer.stopSpeaking(at: .immediate)
         }
-        ElevenLabsTTS.shared.stop()
         isSpeaking = false
     }
 
@@ -793,7 +791,6 @@ final class VoiceConversationManager: ObservableObject {
     /// Reload voice settings from UserDefaults. Call this when the voice page
     /// appears, in case the user changed settings in Settings > Voice.
     func syncVoiceSettings() {
-        TTSProvider.selected = .apple
         voiceSpeed = UserDefaults.standard.float(forKey: "voice_speed")
         if voiceSpeed == 0 { voiceSpeed = 0.5 }
         voicePitch = UserDefaults.standard.float(forKey: "voice_pitch")

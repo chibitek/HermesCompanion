@@ -94,7 +94,6 @@ struct VoiceSettingsView: View {
 
     @State private var availableVoices: [AVSpeechSynthesisVoice] = []
     @State private var filterQuality: Bool = true
-    @State private var selectedProvider: TTSProvider = TTSProvider.selected
     @EnvironmentObject var appearance: AppearanceSettings
 
     private var accent: Color { appearance.accent }
@@ -196,8 +195,6 @@ struct VoiceSettingsView: View {
         .navigationTitle("Voice")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            TTSProvider.selected = .apple
-            selectedProvider = .apple
             refreshVoices()
             selectedVoiceId = VoiceDefaults.ensureBestVoiceSelected()
         }
