@@ -1,8 +1,47 @@
 import XCTest
 import SwiftUI
+import AVFoundation
 @testable import HermesCompanion
 
 final class MarkdownBlocksTests: XCTestCase {
+    @MainActor
+    func testOldSpeechCallbacksCannotChangeReplacementPlayback() async {
+        let manager = VoiceConversationManager()
+        let old = AVSpeechUtterance(string: "First reply")
+        let current = AVSpeechUtterance(string: "Current reply")
+        manager.isConversing = true
+        manager.registerSystemUtterance(old)
+        manager.registerSystemUtterance(current)
+        manager.systemSpeechDidStart(current)
+        XCTAssertTrue(manager.isSpeaking)
+        await manager.systemSpeechDidEnd(old, resumeListening: true)
+        await manager.systemSpeechDidEnd(old, resumeListening: false)
+        XCTAssertTrue(manager.isSpeaking)
+        XCTAssertFalse(manager.isListening)
+        manager.stopSpeaking()
+        manager.systemSpeechDidStart(current)
+        XCTAssertFalse(manager.isSpeaking)
+        await manager.systemSpeechDidEnd(current, resumeListening: true)
+        XCTAssertFalse(manager.isListening)
+        manager.isConversing = false
+    }
+
+    @MainActor
+    func testCurrentSpeechCancellationClearsSpeakingState() async {
+        let manager = VoiceConversationManager()
+        let utterance = AVSpeechUtterance(string: "Reply")
+        manager.isConversing = true
+        manager.registerSystemUtterance(utterance)
+        manager.systemSpeechDidStart(utterance)
+        XCTAssertTrue(manager.isSpeaking)
+        await manager.systemSpeechDidEnd(utterance, resumeListening: false)
+        XCTAssertFalse(manager.isSpeaking)
+        XCTAssertFalse(manager.isListening)
+        manager.systemSpeechDidStart(utterance)
+        XCTAssertFalse(manager.isSpeaking)
+        manager.isConversing = false
+    }
+
     func testVoicePreservesServerAnswersAboutLatencyAndWarnings() {
         let response = "Latency is 300 milliseconds.\nResponse time includes tool execution.\nWarning: wait a second before retrying."
         XCTAssertEqual(VoiceConversationManager.normalizedRemoteResponse("\n " + response + " \n"), response)

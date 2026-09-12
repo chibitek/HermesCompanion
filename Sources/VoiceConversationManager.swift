@@ -42,6 +42,8 @@ final class VoiceConversationManager: ObservableObject {
     // TTS
     private let synthesizer = AVSpeechSynthesizer()
     private let delegateBridge = SpeechDelegateBridge()
+    private var activeSystemUtterance: AVSpeechUtterance?
+    private var speechGeneration = UUID()
 
     // Conversation flow
     private var onTranscriptionComplete: ((String) -> Void)?
@@ -761,28 +763,12 @@ final class VoiceConversationManager: ObservableObject {
         // via syncVoiceSettings() when the voice page appears.
         // Avoid reading UserDefaults on every speak call (synchronous I/O).
 
+        stopSpeaking()
         isFinalizing = false
         spokenResponse = cleanText
         isSpeaking = true
         voiceError = nil
-
-        // Premium TTS when the selected provider is live; system TTS otherwise.
-        let provider = TTSProvider.selected
-        if provider == .elevenlabs, let key = TTSKeyStore.load(provider: .elevenlabs) {
-            startBargeInMonitoring()
-            ElevenLabsTTS.shared.speak(text: cleanText, apiKey: key) { [weak self] in
-                guard let self else { return }
-                self.isSpeaking = false
-                if self.isConversing {
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 50_000_000)
-                        self.startListening()
-                    }
-                }
-            }
-        } else {
-            speakWithSystemTTS(cleanText)
-        }
+        speakWithSystemTTS(cleanText)
     }
     
     /// Speak using the system's built-in AVSpeechSynthesizer
@@ -812,6 +798,7 @@ final class VoiceConversationManager: ObservableObject {
         utterance.preUtteranceDelay = 0  // No dead air before speech
         utterance.postUtteranceDelay = 0.05  // Minimal gap after speech
 
+        registerSystemUtterance(utterance)
         synthesizer.speak(utterance)
 
         // Start monitoring mic for barge-in (user interrupting the AI)
@@ -819,12 +806,40 @@ final class VoiceConversationManager: ObservableObject {
     }
     
     func stopSpeaking() {
+        speechGeneration = UUID()
+        activeSystemUtterance = nil
         stopBargeInMonitoring()
-        if synthesizer.isSpeaking {
+        if synthesizer.isSpeaking || synthesizer.isPaused {
             synthesizer.stopSpeaking(at: .immediate)
         }
         ElevenLabsTTS.shared.stop()
         isSpeaking = false
+    }
+
+    func registerSystemUtterance(_ utterance: AVSpeechUtterance) {
+        speechGeneration = UUID()
+        activeSystemUtterance = utterance
+    }
+
+    func systemSpeechDidStart(_ utterance: AVSpeechUtterance) {
+        guard isConversing, activeSystemUtterance === utterance else { return }
+        isSpeaking = true
+    }
+
+    func systemSpeechDidEnd(_ utterance: AVSpeechUtterance, resumeListening: Bool) async {
+        guard activeSystemUtterance === utterance else { return }
+        let generation = speechGeneration
+        activeSystemUtterance = nil
+        isSpeaking = false
+        stopBargeInMonitoring()
+        guard resumeListening, isConversing else { return }
+        do {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        } catch { return }
+        // A stop, replacement reply, or new conversation owns subsequent audio.
+        guard generation == speechGeneration, isConversing,
+              !isSpeaking, !isListening, !isThinking else { return }
+        startListening()
     }
 
     // MARK: - Voice Settings Sync
@@ -867,26 +882,19 @@ private final class SpeechDelegateBridge: NSObject, AVSpeechSynthesizerDelegate 
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         Task { @MainActor in
-            manager?.isSpeaking = true
+            manager?.systemSpeechDidStart(utterance)
         }
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
-            guard let manager = manager else { return }
-            manager.isSpeaking = false
-            // Resume listening after the response is spoken.
-            // Minimal delay to let the audio session switch from playback to recording.
-            if manager.isConversing {
-                try? await Task.sleep(nanoseconds: 50_000_000)  // 0.05s
-                manager.startListening()
-            }
+            await manager?.systemSpeechDidEnd(utterance, resumeListening: true)
         }
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor in
-            manager?.isSpeaking = false
+            await manager?.systemSpeechDidEnd(utterance, resumeListening: false)
         }
     }
 }
