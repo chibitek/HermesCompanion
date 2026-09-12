@@ -112,11 +112,47 @@ final class AppStore: ObservableObject {
 
     // MARK: - Private
 
-    private(set) var apiClient: HermesAPIClient?
+    private(set) var apiClient: HermesAPIClient? {
+        didSet {
+            guard oldValue !== apiClient else { return }
+            streamTask?.cancel()
+            sessionSelectionID = UUID()
+            capabilities = nil
+            sessions = []
+            activeSession = nil
+            messages = []
+            skills = []
+            toolsets = []
+            toolEvents = []
+            streamingText = ""
+            streamingThinking = ""
+            isStreaming = false
+            platformRefreshID = nil
+            platformHealth = nil
+            platformJobs = []
+            artifactReceipt = nil
+            platformError = nil
+            isLoadingPlatform = false
+            activeRuntime = nil
+            sessionModelOverride = nil
+            sessionProviderOverride = nil
+            gatewayDefaultModel = ""
+            gatewayDefaultProvider = ""
+            modelInfos = [:]
+            availableModels = []
+            configuredProviders = []
+        }
+    }
+    private var platformRefreshID: UUID?
+    private var sessionSelectionID = UUID()
     private var streamTask: Task<Void, Never>?
     private let activeSessionPersistence = ActiveSessionPersistence()
 
     // MARK: - Init
+
+    init(client: HermesAPIClient) {
+        apiClient = client
+    }
 
     init() {
         // Load all saved connections for the multi-connection picker
@@ -471,14 +507,18 @@ final class AppStore: ObservableObject {
             return
         }
         do {
-            self.capabilities = try await client.getCapabilities()
+            let capabilities = try await client.getCapabilities()
+            guard apiClient === client else { return }
+            self.capabilities = capabilities
         } catch {
             // Non-fatal — capabilities are optional
         }
         // Load the configured-provider catalog first. This is the full list the
         // desktop sees; /v1/models is only a fallback for older gateways.
+        guard apiClient === client else { return }
         do {
             let options = try await client.getModelOptions()
+            guard apiClient === client else { return }
             var infos: [ModelInfo] = []
             for provider in options.providers {
                 infos += provider.models.map {
@@ -492,12 +532,15 @@ final class AppStore: ObservableObject {
             let models = infos.map(\.id)
             self.availableModels = modelsIncludingCurrent(models)
         } catch {
+            guard apiClient === client else { return }
             do {
                 let infos = try await client.getModels()
+                guard apiClient === client else { return }
                 self.modelInfos = Dictionary(infos.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
                 let models = infos.map(\.id)
                 self.availableModels = modelsIncludingCurrent(models)
             } catch {
+                guard apiClient === client else { return }
                 self.availableModels = modelsIncludingCurrent([])
                 self.error = AppError(message: "Failed to load models: \(error.localizedDescription)")
             }
@@ -625,9 +668,12 @@ final class AppStore: ObservableObject {
             return
         }
         do {
-            self.sessions = try await client.listSessions()
+            let sessions = try await client.listSessions()
+            guard apiClient === client else { return }
+            self.sessions = sessions
             await restoreActiveSessionIfAvailable()
         } catch {
+            guard apiClient === client else { return }
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
             FileLogger.shared.log("AppStore: refreshSessions failed for \(connectionConfig?.baseURL ?? "unknown") — \(error.localizedDescription)")
         }
@@ -668,6 +714,8 @@ final class AppStore: ObservableObject {
     }
 
     func selectSession(_ session: HermesSession) async {
+        let selectionID = UUID()
+        sessionSelectionID = selectionID
         // ponytail: demo mode — switch active session, keep seeded messages for first session.
         if connectionConfig?.isDemoMode == true {
             if self.activeSession?.id != session.id {
@@ -693,12 +741,15 @@ final class AppStore: ObservableObject {
             self.streamingThinking = ""
         sessionModelOverride = nil
         sessionProviderOverride = nil
+        activeRuntime = nil
         do {
             let history = try await client.getMessages(sessionId: session.id)
+            guard apiClient === client, sessionSelectionID == selectionID else { return }
             self.messages = history
                 .filter { $0.isUser || $0.isAssistant }
                 .map { ChatDisplayMessage(from: $0) }
         } catch {
+            guard apiClient === client, sessionSelectionID == selectionID else { return }
             self.error = AppError(message: "Failed to load messages: \(error.localizedDescription)")
         }
         // Session model is the server's durable row value. Use it to show a
@@ -729,7 +780,7 @@ final class AppStore: ObservableObject {
             let history = try await client.getMessages(sessionId: session.id)
             // Re-check: the user may have switched sessions or started a
             // stream while the request was in flight.
-            guard activeSession?.id == session.id, !isStreaming else { return }
+            guard apiClient === client, activeSession?.id == session.id, !isStreaming else { return }
             self.messages = history
                 .filter { $0.isUser || $0.isAssistant }
                 .map { ChatDisplayMessage(from: $0) }
@@ -851,7 +902,9 @@ final class AppStore: ObservableObject {
     func refreshSkills() async {
         guard let client = try? self.client() else { return }
         do {
-            self.skills = try await client.listSkills()
+            let skills = try await client.listSkills()
+            guard apiClient === client else { return }
+            self.skills = skills
         } catch {
             // Non-fatal
         }
@@ -860,7 +913,9 @@ final class AppStore: ObservableObject {
     func refreshToolsets() async {
         guard let client = try? self.client() else { return }
         do {
-            self.toolsets = try await client.getToolsets()
+            let toolsets = try await client.getToolsets()
+            guard apiClient === client else { return }
+            self.toolsets = toolsets
         } catch {
             // Non-fatal
         }
@@ -877,7 +932,11 @@ final class AppStore: ObservableObject {
         }
         isLoadingPlatform = true
         platformError = nil
-        defer { isLoadingPlatform = false }
+        let refreshID = UUID()
+        platformRefreshID = refreshID
+        defer {
+            if platformRefreshID == refreshID { isLoadingPlatform = false }
+        }
         async let health = client.getDetailedHealth()
         async let jobs = client.listJobs()
         async let capabilities = client.getCapabilities()
@@ -885,33 +944,46 @@ final class AppStore: ObservableObject {
         async let toolsets = client.getToolsets()
         async let skills = client.listSkills()
         do {
-            platformHealth = try await health
+            let value = try await health
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            platformHealth = value
         } catch {
+            guard apiClient === client, platformRefreshID == refreshID else { return }
             platformError = error.localizedDescription
         }
         do {
-            platformJobs = try await jobs
+            let value = try await jobs
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            platformJobs = value
         } catch {
             FileLogger.shared.log("AppStore: platform jobs failed — \(error.localizedDescription)")
         }
         do {
-            self.capabilities = try await capabilities
+            let value = try await capabilities
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            self.capabilities = value
         } catch {
             // Keep the cached capabilities; they remain useful on transient errors.
         }
         do {
-            self.sessions = try await sessions
+            let value = try await sessions
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            self.sessions = value
             await restoreActiveSessionIfAvailable()
         } catch {
             FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
         }
         do {
-            self.toolsets = try await toolsets
+            let value = try await toolsets
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            self.toolsets = value
         } catch {
             // Non-fatal.
         }
         do {
-            self.skills = try await skills
+            let value = try await skills
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            self.skills = value
         } catch {
             // Non-fatal.
         }
@@ -932,8 +1004,10 @@ final class AppStore: ObservableObject {
             case .run: try await client.runJob(jobId: job.id)
             case .delete: try await client.deleteJob(jobId: job.id)
             }
+            guard apiClient === client else { return }
             await refreshJobsOnly()
         } catch {
+            guard apiClient === client else { return }
             platformError = "Job \(action.rawValue) failed: \(error.localizedDescription)"
         }
     }
@@ -953,18 +1027,24 @@ final class AppStore: ObservableObject {
             } else {
                 _ = try await client.createJob(payload)
             }
+            guard apiClient === client else { return false }
             await refreshJobsOnly()
             return true
         } catch {
+            guard apiClient === client else { return false }
             platformError = "Could not save job: \(error.localizedDescription)"
             return false
         }
     }
 
     private func refreshJobsOnly() async {
+        guard let client = apiClient else { return }
         do {
-            platformJobs = try await apiClient?.listJobs() ?? platformJobs
+            let jobs = try await client.listJobs()
+            guard apiClient === client else { return }
+            platformJobs = jobs
         } catch {
+            guard apiClient === client else { return }
             platformError = "Could not refresh jobs: \(error.localizedDescription)"
         }
     }
@@ -978,11 +1058,14 @@ final class AppStore: ObservableObject {
             return
         }
         do {
-            artifactReceipt = try await client.uploadArtifact(
+            let receipt = try await client.uploadArtifact(
                 data: data, fileName: fileName, mimeType: mimeType
             )
+            guard apiClient === client else { return }
+            artifactReceipt = receipt
             platformError = nil
         } catch {
+            guard apiClient === client else { return }
             platformError = "Artifact upload failed: \(error.localizedDescription)"
         }
     }
