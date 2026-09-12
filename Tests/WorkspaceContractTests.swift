@@ -2,6 +2,13 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testConnectionConfigRejectsDemoAndEmptyGatewayConfigurations() {
+        XCTAssertFalse(ConnectionConfig(baseURL: "demo://local", apiKey: "demo", label: "Demo").isValid)
+        XCTAssertFalse(ConnectionConfig(baseURL: "", apiKey: "secret", label: "Hermes").isValid)
+        XCTAssertFalse(ConnectionConfig(baseURL: "https://hermes.local:8642", apiKey: "", label: "Hermes").isValid)
+        XCTAssertTrue(ConnectionConfig(baseURL: "https://hermes.local:8642", apiKey: "secret", label: "Hermes").isValid)
+    }
+
     func testAttachmentNamesCannotEscapeDownloadDirectory() throws {
         for (name, expected) in [("../../report.txt", "report.txt"), ("C:\\private\\report.txt", "report.txt"), ("..", "attachment"), ("", "attachment")] {
             let data = try JSONSerialization.data(withJSONObject: ["id": 1, "task_id": "task", "filename": name, "size": 10])

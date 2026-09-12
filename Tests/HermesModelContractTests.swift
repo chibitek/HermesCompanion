@@ -2,6 +2,15 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testConnectionConfigRequiresARealGateway() {
+        let demo = ConnectionConfig(baseURL: "demo://local", apiKey: "demo", label: "Demo")
+        let missingKey = ConnectionConfig(baseURL: "https://hermes.local:8642", apiKey: "", label: "Hermes")
+        let valid = ConnectionConfig(baseURL: "https://hermes.local:8642", apiKey: "secret", label: "Hermes")
+        XCTAssertFalse(demo.isValid)
+        XCTAssertFalse(missingKey.isValid)
+        XCTAssertTrue(valid.isValid)
+    }
+
     @MainActor
     func testMissingActiveSessionIsClearedOnlyWhenDirectLookupReturnsNotFound() async throws {
         let config = URLSessionConfiguration.ephemeral
