@@ -64,7 +64,10 @@ final class HermesAPIClient: Sendable {
     }
 
     private func get<T: Decodable>(path: String, queryItems: [URLQueryItem]? = nil, type: T.Type) async throws -> T {
-        let (data, response) = try await session.data(for: try request(method: "GET", path: path, queryItems: queryItems))
+        let request = try request(method: "GET", path: path, queryItems: queryItems)
+        let (data, response) = try await withTimeout(seconds: 20) { [session] in
+            try await session.data(for: request)
+        }
         try checkHTTPStatus(response)
         return try JSONDecoder().decode(type, from: data)
     }
@@ -78,7 +81,10 @@ final class HermesAPIClient: Sendable {
 
     /// GET /health — no auth required, used for connection test
     func checkHealth() async throws -> HealthResponse {
-        let (data, response) = try await session.data(from: try makeURL(path: "/health"))
+        let url = try makeURL(path: "/health")
+        let (data, response) = try await withTimeout(seconds: 5) { [session] in
+            try await session.data(from: url)
+        }
         try checkHTTPStatus(response)
         return try JSONDecoder().decode(HealthResponse.self, from: data)
     }
@@ -461,6 +467,7 @@ final class HermesAPIClient: Sendable {
 /// Run an async operation with a hard timeout. Throws URLError.timedOut on expiry.
 func withTimeout<T>(seconds: Double, operation: @escaping @Sendable () async throws -> T) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
+        defer { group.cancelAll() }
         group.addTask(operation: operation)
         group.addTask {
             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
