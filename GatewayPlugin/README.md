@@ -29,6 +29,9 @@ profiles. The plugin uses the gateway's existing authorization check unchanged.
   are not accepted. Missing canonical chats do not fall back to unrelated chats.
 - `GET /api/companion/boards`: existing Kanban boards.
 - `GET /api/companion/board?board=...`: columns and tasks on one existing board.
+- `GET /api/companion/task?board=...&task_id=...`: full task detail from the
+  selected board, including untruncated summaries, results, comments, and runs.
+  Requires bridge 0.1.2; the iOS detail screen rejects mismatched board/task IDs.
 
 There is no arbitrary RPC forwarding, file reader, write route, or new listener.
 The canonical Hermes handlers retain their own schema migration and discovery
@@ -52,3 +55,9 @@ domain handlers. Revalidate it after upstream updates. Unavailable handlers retu
 an error, not a fabricated empty workspace. The iOS views show failures and retry,
 poll every 30 seconds while active, and discard responses from replaced views.
 Older Bot history pages refresh manually to avoid shifting while being read.
+
+Bridge 0.1.2 verification: nine route/domain contract tests passed. The new task
+reader was also exercised against all six existing tasks across the live server's
+boards, checking returned board, task, comment, and run ownership. This was a
+direct domain read, not a claim that the new route has been deployed. The iOS
+test suite passed with full-text retention and ownership regression coverage.

@@ -2,6 +2,28 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testTaskDetailRetainsFullTextAndValidatesOwnership() throws {
+        let text = String(repeating: "Full result. ", count: 100)
+        let payload: [String: Any] = [
+            "board": "engineering",
+            "task": ["id": "task", "title": "Review", "status": "done", "result": text, "latest_summary": text],
+            "comments": [["id": 1, "task_id": "task", "author": "reviewer", "body": text, "created_at": 1]],
+            "runs": [["id": 2, "task_id": "task", "status": "completed", "summary": text, "started_at": 1]]
+        ]
+        let detail = try JSONDecoder().decode(ServerTaskDetail.self, from: JSONSerialization.data(withJSONObject: payload))
+        XCTAssertEqual(detail.task.result, text)
+        XCTAssertEqual(detail.task.latest_summary, text)
+        XCTAssertEqual(detail.comments[0].body, text)
+        XCTAssertEqual(detail.runs[0].summary, text)
+        XCTAssertTrue(detail.matches(board: "engineering", taskID: "task"))
+        XCTAssertFalse(detail.matches(board: "other", taskID: "task"))
+        XCTAssertFalse(detail.matches(board: "engineering", taskID: "other"))
+        var foreign = payload
+        foreign["comments"] = [["id": 1, "task_id": "foreign", "author": "reviewer", "body": text, "created_at": 1]]
+        let mismatched = try JSONDecoder().decode(ServerTaskDetail.self, from: JSONSerialization.data(withJSONObject: foreign))
+        XCTAssertFalse(mismatched.matches(board: "engineering", taskID: "task"))
+    }
+
     func testBotHistoryPreservesDisplayProjectionAndHidesCompactionInternals() throws {
         let data = Data(#"{"profile":"assistant","session_id":"canonical","messages":[{"id":1,"role":"user","content":"internal summary","display_content":"Original question"},{"id":2,"role":"system","content":"hidden summary","display_kind":"hidden"}],"pagination":{"offset":0,"limit":100,"returned":2}}"#.utf8)
         let history = try JSONDecoder().decode(BotHistory.self, from: data)
