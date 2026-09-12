@@ -41,7 +41,13 @@ profiles. The plugin uses the gateway's existing authorization check unchanged.
   same board, displaying full child summaries/results. Unlinked child-result
   records are rejected rather than rendered under an unrelated parent.
 
-There is no arbitrary RPC forwarding, file reader, write route, or new listener.
+- `GET /api/companion/task-attachment?board=...&task_id=...&attachment_id=...`:
+  downloads an attachment belonging to that task. Requires bridge 0.1.4. Hermes's
+  native download handler retains its board-directory containment checks. The
+  client does not follow redirects, verifies the reported byte count, uses an
+  isolated temporary directory, and previews with Quick Look.
+
+There is no arbitrary RPC forwarding, arbitrary file reader, write route, or new listener.
 The canonical Hermes handlers retain their own schema migration and discovery
 behavior. Browser responses use `Cache-Control: no-store`. Source/profile identity
 is retained rather than combining same-named projects from different profiles.

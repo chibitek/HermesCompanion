@@ -1,4 +1,5 @@
 import SwiftUI
+import QuickLook
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
     case projects = "Projects", bots = "Bots", kanban = "Kanban"
@@ -175,9 +176,17 @@ private struct ServerTaskDetailView: View {
     let client: HermesAPIClient
     let board: String
     let taskID: String
+    @State private var previewURL: URL?
+    @State private var downloadedURL: URL?
+    @State private var downloadError: String?
+    @State private var downloadTask: Task<Void, Never>?
+    @State private var downloadID = UUID()
 
     var body: some View {
         WorkspaceReadView(load: { try await client.workspaceTask(board: board, id: taskID) }) { detail in
+            if let downloadError {
+                Label(downloadError, systemImage: "exclamationmark.triangle")
+            }
             Section {
                 Text(detail.task.title).font(.headline)
                 LabeledContent("Status", value: detail.task.status)
@@ -188,6 +197,25 @@ private struct ServerTaskDetailView: View {
                 Section("Summary") { Text(summary) }
             }
             if let result = detail.task.result, !result.isEmpty { Section("Result") { Text(result) } }
+            if let attachments = detail.attachments, !attachments.isEmpty {
+                Section("Attachments") {
+                    ForEach(attachments) { attachment in
+                        Button {
+                            download(attachment)
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading) {
+                                    Text(attachment.filename)
+                                    Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.size), countStyle: .file))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            } icon: { Image(systemName: "arrow.down.doc") }
+                        }
+                        .disabled(downloadTask != nil)
+                    }
+                    if downloadTask != nil { ProgressView("Downloading...") }
+                }
+            }
             if let links = detail.links {
                 if !links.parents.isEmpty {
                     Section("Dependencies") {
@@ -253,6 +281,43 @@ private struct ServerTaskDetailView: View {
         .textSelection(.enabled)
         .navigationTitle("Task")
         .navigationBarTitleDisplayMode(.inline)
+        .quickLookPreview($previewURL)
+        .onChange(of: previewURL) { _, url in
+            if url == nil { clearDownload() }
+        }
+        .onDisappear {
+            downloadID = UUID()
+            downloadTask?.cancel()
+            downloadTask = nil
+            if previewURL == nil { clearDownload() }
+        }
+    }
+
+    private func clearDownload() {
+        if let downloadedURL { try? FileManager.default.removeItem(at: downloadedURL.deletingLastPathComponent()) }
+        downloadedURL = nil
+    }
+
+    private func download(_ attachment: ServerTaskAttachment) {
+        downloadError = nil
+        clearDownload()
+        let requestID = UUID()
+        downloadID = requestID
+        downloadTask = Task { @MainActor in
+            defer { if downloadID == requestID { downloadTask = nil } }
+            do {
+                let file = try await client.downloadTaskAttachment(board: board, taskID: taskID, attachment: attachment)
+                guard !Task.isCancelled, downloadID == requestID else {
+                    try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+                    return
+                }
+                downloadedURL = file
+                previewURL = file
+            } catch {
+                guard !Task.isCancelled, downloadID == requestID else { return }
+                downloadError = "Attachment download failed: \(error.localizedDescription)"
+            }
+        }
     }
 }
 

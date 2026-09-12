@@ -117,6 +117,26 @@ def task_detail(query):
     return {"board": slug, **detail}
 
 
+def task_attachment(query):
+    from aiohttp import web
+    from plugins.kanban.dashboard.plugin_api import download_attachment
+
+    attachment_id = int(query.get("attachment_id", "0"))
+    detail = task_detail(query)
+    if attachment_id <= 0 or not any(
+        a["id"] == attachment_id and a["task_id"] == query["task_id"]
+        for a in detail.get("attachments", [])
+    ):
+        raise ValueError("Attachment is not in the selected task")
+    # Hermes validates the resolved path against this board's attachment root.
+    native = download_attachment(attachment_id, board=query["board"])
+    return web.FileResponse(native.path, headers={
+        "Content-Type": native.media_type or "application/octet-stream",
+        "Content-Disposition": native.headers["content-disposition"],
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+    })
+
+
 READERS = {
     "projects": projects,
     "project": project_detail,
@@ -126,6 +146,7 @@ READERS = {
     "boards": boards,
     "board": board,
     "task": task_detail,
+    "task-attachment": task_attachment,
 }
 
 
@@ -142,6 +163,8 @@ def wire(app, adapter):
                 result = await asyncio.to_thread(reader, dict(request.query))
                 if inspect.isawaitable(result):
                     result = await result
+                if isinstance(result, web.StreamResponse):
+                    return result
                 return web.json_response(result, headers={"Cache-Control": "no-store"})
             except ValueError as exc:
                 return web.json_response({"error": str(exc)}, status=400)
