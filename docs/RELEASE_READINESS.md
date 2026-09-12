@@ -177,3 +177,11 @@ The iOS detail view no longer substitutes its prior overview snapshot when the
 server returns no project. It displays Project Unavailable instead of presenting
 stale folder data as a successful refresh. Bridge 0.1.5 and later still preserve
 genuinely empty discovered folders from the current server overview.
+
+Follow-up native grouping verification located all three sessions from the
+unavailable parent entry in two explicit, user-created projects (two sessions
+in one, one in the other). Each returned through its existing hydrated detail.
+The parent is an additional discovery-tier listing; no missing transcript was
+demonstrated by this mismatch. Do not duplicate/reassign those sessions to the
+parent just to make its displayed count match. The native parent overview/detail
+inconsistency still needs an upstream-compatible resolution.
