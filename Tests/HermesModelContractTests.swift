@@ -2,6 +2,15 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testDetailedHealthUsesServerPlatformKeysAsNames() throws {
+        let data = Data(#"{"status":"ok","platforms":{"telegram":{"state":"connected"},"discord":{"state":"error","error_code":"unavailable"}}}"#.utf8)
+        let health = try JSONDecoder().decode(PlatformHealthResponse.self, from: data)
+        XCTAssertEqual(health.platforms?["telegram"]?.name, "telegram")
+        XCTAssertEqual(health.platforms?["telegram"]?.state, "connected")
+        XCTAssertEqual(health.platforms?["discord"]?.id, "discord")
+        XCTAssertEqual(health.platforms?["discord"]?.errorCode, "unavailable")
+    }
+
     func testCapabilitiesAcceptStructuredBrowserControl() throws {
         for enabled in [false, true] {
             let data = Data("""

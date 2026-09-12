@@ -814,7 +814,16 @@ struct HermesPlatformStatus: Codable, Identifiable, Hashable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        name = try container.decode(String.self, forKey: .name)
+        if let explicitName = try container.decodeIfPresent(String.self, forKey: .name) {
+            name = explicitName
+        } else if let platformKey = decoder.codingPath.last?.stringValue {
+            name = platformKey
+        } else {
+            throw DecodingError.keyNotFound(CodingKeys.name, .init(
+                codingPath: decoder.codingPath,
+                debugDescription: "Platform status requires a name or dictionary key"
+            ))
+        }
         state = try container.decodeIfPresent(String.self, forKey: .state)
         errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
