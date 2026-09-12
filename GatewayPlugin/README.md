@@ -54,6 +54,10 @@ The native plugin depends on Hermes's current project/profile RPC and Kanban
 domain handlers. Revalidate it after upstream updates. Unavailable handlers return
 an error, not a fabricated empty workspace. The iOS views show failures and retry,
 poll every 30 seconds while active, and discard responses from replaced views.
+Open Bot details also refresh their model/profile metadata from the roster.
+Missing profiles are shown as unavailable, and conversation previews use only
+the canonical Bot Chat, never an unrelated last session. A failed workspace
+refresh clears the old snapshot so removed resources do not remain actionable.
 Older Bot history pages refresh manually to avoid shifting while being read.
 
 Bridge 0.1.2 verification: nine route/domain contract tests passed. The new task

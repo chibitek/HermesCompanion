@@ -62,27 +62,31 @@ struct WorkspaceBrowserView: View {
                 }
                 ForEach(snapshot.profiles) { bot in
                     NavigationLink {
-                        List {
-                            Section("Profile") {
-                                LabeledContent("Name", value: bot.name)
-                                if let value = bot.description, !value.isEmpty { Text(value) }
-                                LabeledContent("Provider", value: bot.provider ?? "Not reported")
-                                LabeledContent("Model", value: bot.model ?? "Not reported")
-                                if let count = bot.skill_count { LabeledContent("Skills", value: "\(count)") }
-                            }
-                            if let session = bot.canonical_session ?? bot.last_session {
-                                Section("Conversation") {
-                                    Text(session.title ?? "Untitled")
-                                    if let preview = session.preview, !preview.isEmpty { Text(preview) }
+                        WorkspaceReadView(load: { try await client.workspaceBots() }) { current in
+                            if let bot = current.profile(named: bot.name) {
+                                Section("Profile") {
+                                    LabeledContent("Name", value: bot.name)
+                                    if let value = bot.description, !value.isEmpty { Text(value) }
+                                    LabeledContent("Provider", value: bot.provider ?? "Not reported")
+                                    LabeledContent("Model", value: bot.model ?? "Not reported")
+                                    if let count = bot.skill_count { LabeledContent("Skills", value: "\(count)") }
                                 }
-                            }
-                            NavigationLink {
-                                BotHistoryView(client: client, bot: bot)
-                            } label: {
-                                Label("Conversation History", systemImage: "bubble.left.and.bubble.right")
+                                if let session = bot.canonical_session {
+                                    Section("Conversation") {
+                                        Text(session.title ?? "Untitled")
+                                        if let preview = session.preview, !preview.isEmpty { Text(preview) }
+                                    }
+                                }
+                                NavigationLink {
+                                    BotHistoryView(client: client, bot: bot)
+                                } label: {
+                                    Label("Conversation History", systemImage: "bubble.left.and.bubble.right")
+                                }
+                            } else {
+                                ContentUnavailableView("Bot No Longer Available", systemImage: "person.crop.circle.badge.questionmark")
                             }
                         }
-                        .navigationTitle(bot.title)
+                        .navigationTitle(bot.name)
                     } label: {
                         WorkspaceRow(title: bot.title, detail: bot.model, trailing: nil, icon: "person.crop.circle")
                     }
@@ -277,6 +281,8 @@ struct WorkspaceReadView<Value, Content: View>: View {
             error = nil
         } catch {
             guard !Task.isCancelled, requestID == id else { return }
+            // Do not leave removed server resources actionable beneath a sync error.
+            value = nil
             if case APIError.notFound = error {
                 self.error = "This workspace endpoint is unavailable on the server."
             } else {
