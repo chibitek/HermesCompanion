@@ -117,10 +117,7 @@ struct RootView: View {
             } else if showServerPicker {
                 ServerPickerView(store: store, appearance: appearance) { config in
                     Task {
-                        if config.isDemoMode {
-                            // Demo mode: connect directly (seeds mock state)
-                            _ = await store.connect(config: config)
-                        } else if config.baseURL.isEmpty {
+                        if config.baseURL.isEmpty {
                             // "Add New Server" — show full setup form
                             showServerPicker = false
                         } else {
@@ -231,9 +228,6 @@ struct ServerPickerView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
 
-                    // Demo Mode card — available for all users
-                    demoModeRow
-
                     // Server list
                     ForEach(store.savedConnections, id: \.baseURL) { config in
                         serverRow(config)
@@ -279,52 +273,6 @@ struct ServerPickerView: View {
                 .padding(.vertical, 24)
             }
         }
-    }
-
-    // MARK: - Demo Mode Row
-
-    private var demoModeRow: some View {
-        Button {
-            let config = ConnectionConfig(baseURL: "demo://local", apiKey: "demo", label: "Demo Mode", isDemoMode: true)
-            onSelect(config)
-        } label: {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(theme.accent.opacity(0.15))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18))
-                        .foregroundStyle(theme.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Demo Mode")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(theme.textPrimary)
-                    Text("Explore all features without a server")
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.textSecondary)
-                }
-
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(theme.textSecondary)
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(theme.bgSurface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(theme.accent.opacity(0.3), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 24)
     }
 
     // MARK: - Auto-Reconnect Toggle

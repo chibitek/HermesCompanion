@@ -239,8 +239,6 @@ final class AppStore: ObservableObject {
         guard let config = connectionConfig else {
             throw APIError.connectionRefused
         }
-        // ponytail: demo mode short-circuits — no real client needed.
-        if config.isDemoMode { throw APIError.connectionRefused }
         let c = HermesAPIClient(config: config)
         apiClient = c
         return c
@@ -251,8 +249,6 @@ final class AppStore: ObservableObject {
     /// sessions so the user goes straight to chat without re-entering credentials.
     func autoConnect() async {
         guard !isLoadingConnection, let config = connectionConfig else { return }
-        // ponytail: demo mode skips network entirely, seeds mock state.
-        if config.isDemoMode { await seedDemoState(); hasExplicitlyConnected = true; return }
         isLoadingConnection = true
         let client = HermesAPIClient(config: config)
         do {
@@ -299,13 +295,6 @@ final class AppStore: ObservableObject {
     }
 
     func connect(config: ConnectionConfig) async -> Bool {
-        // ponytail: demo mode skips network, seeds mock state.
-        if config.isDemoMode {
-            self.connectionConfig = config
-            await seedDemoState()
-            hasExplicitlyConnected = true
-            return true
-        }
         let client = HermesAPIClient(config: config)
         self.apiClient = client
         // An explicit (re)connect supersedes any pending background retry.
@@ -351,7 +340,7 @@ final class AppStore: ObservableObject {
 
     private func fallbackToReachableServer(excluding baseURL: String) async -> Bool {
         let candidates = savedConnections.filter {
-            !$0.isDemoMode && $0.baseURL != baseURL
+            $0.baseURL != baseURL
         }
         for candidate in candidates {
             FileLogger.shared.log("AppStore: autoConnect fallback trying \(candidate.baseURL)")
@@ -377,85 +366,6 @@ final class AppStore: ObservableObject {
         skills = []
         toolsets = []
         KeychainManager.shared.deleteActive()
-    }
-
-    // MARK: - Demo Mode (App Store review: Guideline 2.1a)
-
-    /// Seeds mock sessions, messages, skills, and toolsets so reviewers can
-    /// exercise every UI surface without a live Hermes server.
-    func seedDemoState() async {
-        let now = Date().timeIntervalSince1970
-        self.sessions = [
-            HermesSession(id: "demo-session-1", title: "Welcome to Hermes", source: "demo", startedAt: now - 3600, lastActive: now - 60, messageCount: 4, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
-            HermesSession(id: "demo-session-2", title: "Project Planning", source: "demo", startedAt: now - 7200, lastActive: now - 3600, messageCount: 8, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
-            HermesSession(id: "demo-session-3", title: "Code Review", source: "demo", startedAt: now - 86400, lastActive: now - 80000, messageCount: 12, cwd: nil, gitRepoRoot: nil, billingProvider: nil),
-        ]
-        self.activeSession = self.sessions.first
-        self.messages = [
-            ChatDisplayMessage(id: "demo-msg-1", role: "user", content: "What can Hermes do?", timestamp: Date(timeIntervalSinceNow: -120)),
-            ChatDisplayMessage(id: "demo-msg-2", role: "assistant", content: "## Hermes AI Companion\n\nHermes is your AI agent. It can:\n\n- **Chat** with streaming responses\n- **Run tools** (terminal, web search, file I/O)\n- **Manage skills** and cron jobs\n- **Voice conversation** mode\n\nTry sending a message to see a demo response!", timestamp: Date(timeIntervalSinceNow: -110)),
-        ]
-        self.skills = [
-            Skill(name: "web-search", description: "Search the web for information", category: "research"),
-            Skill(name: "hermes-agent", description: "Configure and extend Hermes Agent", category: "devops"),
-            Skill(name: "github-pr-workflow", description: "GitHub PR lifecycle: branch, commit, open, CI, merge", category: "github"),
-        ]
-        self.toolsets = [
-            ToolsetInfo(name: "web", label: "Web", description: "Web search and extraction", enabled: true, configured: true, tools: ["web_search", "web_extract"]),
-            ToolsetInfo(name: "terminal", label: "Terminal", description: "Shell command execution", enabled: true, configured: true, tools: ["terminal"]),
-            ToolsetInfo(name: "file", label: "File", description: "File read/write/edit", enabled: true, configured: true, tools: ["read_file", "write_file", "patch"]),
-        ]
-        self.availableModels = ["demo-model", "claude-sonnet-4", "gpt-4o"]
-        self.modelInfos = [
-            "demo-model": ModelInfo(id: "demo-model", object: "model", ownedBy: "demo", provider: "demo"),
-            "claude-sonnet-4": ModelInfo(id: "claude-sonnet-4", object: "model", ownedBy: "anthropic", provider: "anthropic"),
-            "gpt-4o": ModelInfo(id: "gpt-4o", object: "model", ownedBy: "openai", provider: "openai"),
-        ]
-        self.preferredModel = "demo-model"
-        self.preferredProvider = "demo"
-        self.isLoadingConnection = false
-    }
-
-    /// Returns a canned assistant response for demo mode. Simulates streaming
-    /// delay so the UI exercises the same code paths as a real connection.
-    private func sendDemoMessage(_ text: String, displayText: String? = nil) async -> ChatDisplayMessage? {
-        let userMsg = ChatDisplayMessage(
-            id: UUID().uuidString, role: "user",
-            content: displayText ?? text, timestamp: Date()
-        )
-        messages.append(userMsg)
-
-        isStreaming = true
-        streamingText = ""
-        toolEvents = [ToolEvent(id: UUID().uuidString, type: .started, toolName: "demo", detail: "Processing your request")]
-
-        // Simulate streaming
-        let demoResponse = """
-        This is a **demo response**. You said: "\(text)"
-
-        In demo mode, Hermes Companion shows all UI features:
-
-        - Chat with **markdown** rendering
-        - Skills and toolsets management
-        - Session history
-        - Voice conversation mode
-        - Model selection
-
-        Connect to a real Hermes server for live AI responses.
-        """
-        for chunk in demoResponse.split(separator: " ", omittingEmptySubsequences: false) {
-            streamingText += chunk + " "
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        let assistantMsg = ChatDisplayMessage(
-            id: UUID().uuidString, role: "assistant",
-            content: streamingText, timestamp: Date()
-        )
-        messages.append(assistantMsg)
-        streamingText = ""
-        toolEvents = [ToolEvent(id: UUID().uuidString, type: .completed, toolName: "demo", detail: "Done")]
-        isStreaming = false
-        return assistantMsg
     }
 
     // MARK: - Multi-connection helpers
@@ -505,8 +415,6 @@ final class AppStore: ObservableObject {
     // MARK: - Capabilities
 
     func refreshCapabilities() async {
-        // ponytail: demo mode has no server — skip.
-        if connectionConfig?.isDemoMode == true { return }
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -688,8 +596,6 @@ final class AppStore: ObservableObject {
     // MARK: - Sessions
 
     func refreshSessions() async {
-        // ponytail: demo mode has no server — skip.
-        if connectionConfig?.isDemoMode == true { return }
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -768,8 +674,6 @@ final class AppStore: ObservableObject {
     }
 
     func createSession(title: String? = nil) async {
-        // ponytail: demo mode already has seeded sessions — no-op.
-        if connectionConfig?.isDemoMode == true { return }
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -796,14 +700,6 @@ final class AppStore: ObservableObject {
         stopStreaming()
         let selectionID = UUID()
         sessionSelectionID = selectionID
-        // ponytail: demo mode — switch active session, keep seeded messages for first session.
-        if connectionConfig?.isDemoMode == true {
-            if self.activeSession?.id != session.id {
-                self.messages = []
-            }
-            self.activeSession = session
-            return
-        }
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -1027,7 +923,6 @@ final class AppStore: ObservableObject {
     }
 
     func refreshPlatform() async {
-        guard connectionConfig?.isDemoMode != true else { return }
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -1192,10 +1087,6 @@ final class AppStore: ObservableObject {
 
     @discardableResult
     func sendMessage(_ text: String, displayText: String? = nil, images: [Data] = [], attachments: [AttachmentData] = [], skipPostReload: Bool = false) async -> ChatDisplayMessage? {
-        // ponytail: demo mode returns a canned response, no network.
-        if connectionConfig?.isDemoMode == true {
-            return await sendDemoMessage(text, displayText: displayText)
-        }
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -1680,8 +1571,6 @@ final class AppStore: ObservableObject {
 
     func reconnectIfNeeded() async {
         guard connectionConfig != nil, !isReconnecting else { return }
-        // ponytail: demo mode never reconnects — no server to reach.
-        if connectionConfig?.isDemoMode == true { return }
         isReconnecting = true
         defer { isReconnecting = false }
 
