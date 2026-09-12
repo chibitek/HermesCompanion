@@ -63,10 +63,7 @@ final class VoiceConversationManager: ObservableObject {
     private var pendingConversationStartID: UUID?
     private var recognitionRetryCount = 0
 
-    // Safety net: if thinking lasts too long, cancel and resume listening.
-    // 20s — long enough for tool calls, short enough to not feel dead.
-    private var thinkingSafetyTimer: Timer?
-    private let thinkingSafetyTimeout: TimeInterval = 20
+    private var remoteTurnID: UUID?
 
     init() {
         delegateBridge.manager = self
@@ -216,6 +213,7 @@ final class VoiceConversationManager: ObservableObject {
     }
 
     func stopConversation() {
+        remoteTurnID = nil
         pendingConversationStartID = nil
         isConversing = false
         stopListening()
@@ -229,45 +227,23 @@ final class VoiceConversationManager: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    /// Start speaking the first sentence of a response while the rest is still
-    /// streaming from the server. This cuts perceived latency — the user hears
-    /// the response start while the model is still generating.
-    func startEarlySpeaking(text: String) {
-        FileLogger.shared.log("VoiceManager: startEarlySpeaking with: \(text.prefix(80))")
-        isThinking = false
-        isFinalizing = false
-        invalidateThinkingSafetyTimer()
+    func beginRemoteTurn() -> UUID {
+        let id = UUID()
+        remoteTurnID = id
+        isThinking = true
         voiceError = nil
-        // Stop any active listening/recording before TTS to prevent
-        // audio engine conflicts that crash the app.
-        if isListening {
-            stopListening(resetFinalizing: true)
-        }
-        // Ensure audio engine is fully stopped
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            removeInputTapIfNeeded()
-        }
-        spokenResponse = text
-        speakResponse(text)
+        return id
+    }
+
+    func isCurrentRemoteTurn(_ id: UUID) -> Bool {
+        isConversing && remoteTurnID == id
     }
 
     func completeRemoteTurn(response: String?) {
         FileLogger.shared.log("completeRemoteTurn called with response: \(String(describing: response?.prefix(120)))")
+        remoteTurnID = nil
         isThinking = false
         isFinalizing = false
-        invalidateThinkingSafetyTimer()
-        
-        // If we already started speaking via startEarlySpeaking, just update
-        // the displayed text with the full response. Don't restart TTS.
-        if isSpeaking {
-            FileLogger.shared.log("completeRemoteTurn: already speaking from early TTS, updating text only")
-            let cleanResponse = Self.normalizedRemoteResponse(response)
-            if !cleanResponse.isEmpty {
-                spokenResponse = cleanResponse
-            }
-            return
-        }
         
         let cleanResponse = Self.normalizedRemoteResponse(response)
         
@@ -277,8 +253,6 @@ final class VoiceConversationManager: ObservableObject {
             return
         }
         voiceError = nil
-        // Guard against double-stop crash: only stop listening if currently active.
-        // startEarlySpeaking may have already torn down the audio engine.
         if isListening {
             stopListening()
         }
@@ -296,9 +270,9 @@ final class VoiceConversationManager: ObservableObject {
     /// returning to listening after the error is surfaced.
     func failRemoteTurn(message: String) {
         FileLogger.shared.log("failRemoteTurn called: \(message)")
+        remoteTurnID = nil
         isThinking = false
         isFinalizing = false
-        invalidateThinkingSafetyTimer()
         voiceError = message
 
         // Only speak the error if the voice conversation is still active.
@@ -323,7 +297,7 @@ final class VoiceConversationManager: ObservableObject {
     /// a remote response.
     func cancelThinking() {
         guard isConversing else { return }
-        invalidateThinkingSafetyTimer()
+        remoteTurnID = nil
         isThinking = false
         isFinalizing = false
         voiceError = nil
@@ -663,7 +637,6 @@ final class VoiceConversationManager: ObservableObject {
 
         FileLogger.shared.log("VoiceManager: remote mode finalize for '\(finalText)'")
         isThinking = true
-        scheduleThinkingSafetyTimer()
         FileLogger.shared.log("VoiceManager: calling onTranscriptionComplete with '\(finalText)'")
         onTranscriptionComplete?(finalText)
         // isFinalizing will be reset when speakResponse is called
@@ -680,26 +653,6 @@ final class VoiceConversationManager: ObservableObject {
                 self?.finalizeTranscription(self?.transcribedText ?? "")
             }
         }
-    }
-
-    // MARK: - Thinking safety timer
-
-    private func scheduleThinkingSafetyTimer() {
-        invalidateThinkingSafetyTimer()
-        thinkingSafetyTimer = Timer.scheduledTimer(withTimeInterval: thinkingSafetyTimeout, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                FileLogger.shared.log("VoiceManager: thinking safety timer fired, isConversing=\(self.isConversing), isThinking=\(self.isThinking)")
-                if self.isConversing && self.isThinking {
-                    self.failRemoteTurn(message: "Hermes didn't respond in time. Try again.")
-                }
-            }
-        }
-    }
-
-    private func invalidateThinkingSafetyTimer() {
-        thinkingSafetyTimer?.invalidate()
-        thinkingSafetyTimer = nil
     }
 
     private func stopSilenceTimer() {

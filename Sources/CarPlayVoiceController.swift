@@ -90,23 +90,12 @@ final class CarPlayVoiceController: ObservableObject {
         let priorErrorID = store.error?.id
         Task { @MainActor [weak self] in
             guard let self, self.isActive, self.turnID == currentTurn else { return }
-            self.voice.isThinking = true
-
-            // 60s hard timeout. do/catch, never try? — see ios-voice skill.
-            let timeoutTask = Task {
-                do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { return }
-                guard !Task.isCancelled else { return }
-                await MainActor.run { [weak self] in
-                    guard let self, self.isActive, self.turnID == currentTurn,
-                          self.voice.isThinking else { return }
-                    self.voice.failRemoteTurn(message: "Hermes took too long to respond.")
-                }
-            }
+            let voiceTurn = self.voice.beginRemoteTurn()
 
             let responseMessage = await store.sendMessage(transcription, skipPostReload: true)
-            timeoutTask.cancel()
 
-            guard self.isActive, self.turnID == currentTurn, self.voice.isThinking else { return }
+            guard self.isActive, self.turnID == currentTurn,
+                  self.voice.isCurrentRemoteTurn(voiceTurn) else { return }
             guard let responseMessage else {
                 if let error = store.error, error.id != priorErrorID {
                     self.voice.failRemoteTurn(message: error.message)
