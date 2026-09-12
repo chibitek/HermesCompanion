@@ -25,6 +25,10 @@ new gateway routes. No multi-profile serving configuration change was made.
   warnings include captured weak references in dormant ElevenLabs code, the
   deprecated screen-size lookup in `GlassBubble`, and a duplicate provider icon
   pattern. This does not verify signing, phone installation, or Swift 6 mode.
+- Subsequent bubble-layout work removes that deprecated screen-size lookup.
+  Hosting-controller checks cover long user/assistant text at 240- and 700-point
+  container widths, verifying bounded width and vertical reflow. These are layout
+  measurements, not physical-device screenshots or a complete visual review.
 - Direct real-domain reads verified six task details and project history in four
   profiles containing project sessions. This does not establish HTTP deployment
   of the new routes or visual verification of the new iOS screens.
