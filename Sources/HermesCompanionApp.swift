@@ -33,7 +33,12 @@ struct HermesCompanionApp: App {
                     // silently reconnects when the socket died while the app sat
                     // open (Tailscale rekey, gateway restart, network switch).
                     while !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(60))
+                        do {
+                            try await Task.sleep(for: .seconds(60))
+                        } catch {
+                            return
+                        }
+                        guard !Task.isCancelled else { return }
                         guard scenePhase == .active, !store.isStreaming else { continue }
                         await store.reconnectIfNeeded()
                     }
