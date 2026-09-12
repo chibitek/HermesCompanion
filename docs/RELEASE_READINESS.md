@@ -84,3 +84,11 @@ a thread-priority inversion during the speech-stop test. This warning is not
 resolved by the passing assertions and needs performance validation on a phone.
 Tests do not establish actual audio quality, uninterrupted microphone recovery,
 or physical-device voice stability. These changes remain unreleased.
+
+## Empty Project Folder Update
+
+Bridge 0.1.5 preserves discovered zero-session repositories when the native
+drill-in omits them. It uses only the same profile's current overview, requires
+an exact project ID and an explicit zero session count, and never substitutes
+a nonempty preview for hydrated history. Fourteen bridge tests pass. This does
+not remove the native session-list limits and has not been deployed.
