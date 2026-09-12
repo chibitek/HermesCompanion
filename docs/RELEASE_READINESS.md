@@ -106,3 +106,18 @@ closed conversations. All 78 iOS tests passed in the September 11 22:42 run,
 including ownership across cancellation/restart and existing stream-watchdog
 tests. Slow real-device tool turns, audible completeness, and network loss still
 require end-to-end phone validation before release.
+
+## Model Selection Development Update
+
+Settings catalog browsing no longer writes model/provider preferences; explicit
+model selection remains the mutation. Provider changes request a refreshed
+catalog, and catalog responses are checked against the current request,
+connection, and picker provider. A session model missing from the catalog uses
+the session's effective provider metadata, not the gateway's global provider.
+
+Model-lock success/error callbacks are scoped to the connection, session
+selection, and newest model-selection request. Regression tests cover reversed
+responses and a success/failure arriving after switching sessions. These guards
+protect the client display; they do not establish ordering of competing writes
+from different devices on the server. Interactive picker and phone verification
+remain required.
