@@ -27,30 +27,30 @@ Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://git
 
 ## Hermes Talk
 
-### Unreleased Development Changes
+### Release Status (1.8.63)
 
-`Dev_Erick` adds profile-owned project history, full Kanban task results/comments/
-runs, and navigation through task dependencies and children. These require the
-updated [workspace bridge](GatewayPlugin/README.md), version 0.1.3. The branch
-also adds Kanban attachment downloads and Quick Look previews with bridge 0.1.4.
-The branch
-also addresses stale session/model refreshes, delayed session creation, stream
-ownership after session changes, CarPlay disconnect cleanup, old voice-answer
-replay, and unchanged job schedules being resubmitted during edits.
+Build 157 adds profile-owned project history, full Kanban task results, comments,
+runs, and navigation through task dependencies and children. It also adds
+Kanban attachment downloads and Quick Look previews. Companion fixes cover stale
+session/model refreshes, delayed session creation, stream ownership after
+session changes, CarPlay disconnect cleanup, old voice-answer replay, unchanged
+job schedules during edits, and audio isolation for text-only use.
 
-These changes are not part of the installed build 156. See
-[release verification and remaining gaps](docs/RELEASE_READINESS.md) before
-deploying. Development test results are not a claim of full platform parity.
+The local bridge is [version 0.1.6](GatewayPlugin/README.md). This is installed
+on the development Mac, but other servers still need their own bridge update.
+See [release verification and remaining gaps](docs/RELEASE_READINESS.md) for
+what remains unverified.
 
 ### Server Workspace Browsing (1.8.62)
 
-The History sidebar now includes **Projects**, **Bots**, and **Kanban** tabs.
-These read Hermes's actual project trees, Bot profiles with configured models,
-and Kanban boards and tasks. Empty project folders and profile ownership are
+The History sidebar includes **Projects**, **Bots**, and **Kanban** tabs. These
+read Hermes's actual project trees, Bot profiles with configured models, and
+Kanban boards and tasks. Empty project folders and profile ownership are
 preserved. Open views refresh every 30 seconds and reset on a server change.
-Build 156 adds paginated canonical Bot conversation history, including Hermes's
-display projection for compacted messages. Sending to another profile remains
-unimplemented; no default-profile credential is silently reused for another Bot.
+Builds 156 and later add paginated canonical Bot conversation history, including
+Hermes's display projection for compacted messages. Sending to another profile
+remains unimplemented; no default-profile credential is silently reused for
+another Bot.
 
 This requires the [Companion workspace bridge](GatewayPlugin/README.md) on each
 connected server. The bridge uses Hermes's existing domain handlers and root
