@@ -142,3 +142,13 @@ successful locks use the server's normalized model/provider identity. New-chat
 selection remains a local preference until its session is created. All 82 iOS
 tests passed in the September 11 22:51 run, including rejection and normalization
 regressions. The earlier Release-build snapshot predates this follow-up.
+
+## Duplicate Model Sources
+
+The compact model picker now receives the full server catalog, retaining
+different providers that report the same model ID. Source rows use a composite
+model/provider identity, send the selected provider explicitly, and mark the
+active source using both values. Duplicate rows for the same pair are collapsed.
+Older gateways retain their existing metadata fallback without inferring an
+inference provider from the model author's name. This is unreleased and still
+requires interactive multi-provider verification on the phone.

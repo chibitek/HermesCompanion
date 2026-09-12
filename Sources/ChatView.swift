@@ -248,6 +248,7 @@ struct ChatView: View {
             currentProvider: store.effectiveCurrentProvider,
             availableModels: store.availableModels,
             modelInfos: store.modelInfos,
+            modelCatalog: store.modelCatalog,
             onRefreshModels: {
                 Task { await store.refreshCapabilities() }
             },

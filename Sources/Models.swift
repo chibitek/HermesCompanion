@@ -608,6 +608,23 @@ struct ModelInfo: Codable, Identifiable, Hashable {
     }
 }
 
+struct ModelSourceChoice: Identifiable, Hashable {
+    let model: String
+    let provider: String?
+    var id: Self { self }
+
+    static func choices(for modelIDs: [String], catalog: [ModelInfo], fallback: [String: ModelInfo]) -> [Self] {
+        var seen = Set<Self>()
+        return modelIDs.flatMap { model -> [Self] in
+            let matches = catalog.filter { $0.id == model }
+            let infos = matches.isEmpty ? fallback[model].map { [$0] } ?? [] : matches
+            let choices = infos.isEmpty ? [Self(model: model, provider: nil)]
+                : infos.map { Self(model: model, provider: $0.provider) }
+            return choices.filter { seen.insert($0).inserted }
+        }
+    }
+}
+
 struct ModelsResponse: Codable {
     let object: String?
     let data: [ModelInfo]

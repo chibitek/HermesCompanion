@@ -752,6 +752,7 @@ struct SettingsView: View {
                 ProviderInfo(id: $0.slug, name: $0.name, modelCount: $0.models.count)
             }
             availableModels = infos
+            store.modelCatalog = infos
             // Only update the store's availableModels if we got a non-empty
             // list. Transient failures shouldn't replace the store's list
             // (which the compact picker reads) with an empty one.
@@ -775,6 +776,7 @@ struct SettingsView: View {
                 guard modelLoadID == requestID, store.apiClient === client,
                       selectedProvider == targetProvider, !Task.isCancelled else { return }
                 availableModels = catalog.data
+                store.modelCatalog = catalog.data
                 configuredProviders = catalog.providers ?? []
             } catch {
                 guard modelLoadID == requestID, store.apiClient === client,

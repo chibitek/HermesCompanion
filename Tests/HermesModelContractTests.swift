@@ -2,6 +2,25 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testModelSourcesPreserveDuplicateIDsAcrossProviders() {
+        let catalog = [ModelInfo(id: "shared", provider: "local"),
+                       ModelInfo(id: "shared", provider: "hosted"),
+                       ModelInfo(id: "shared", provider: "local")]
+        let choices = ModelSourceChoice.choices(for: ["shared", "shared"], catalog: catalog,
+                                                fallback: ["shared": ModelInfo(id: "shared", provider: "stale")])
+        XCTAssertEqual(Set(choices), [ModelSourceChoice(model: "shared", provider: "local"),
+                                     ModelSourceChoice(model: "shared", provider: "hosted")])
+        XCTAssertEqual(choices.count, 2)
+        XCTAssertEqual(Set(choices.map(\.id)).count, 2)
+    }
+
+    func testModelSourcesUseLegacyFallbackWithoutInventingProviderFromAuthor() {
+        let choices = ModelSourceChoice.choices(for: ["legacy", "unknown"], catalog: [],
+                                                fallback: ["legacy": ModelInfo(id: "legacy", ownedBy: "author", provider: "gateway")])
+        XCTAssertEqual(choices, [ModelSourceChoice(model: "legacy", provider: "gateway"),
+                                 ModelSourceChoice(model: "unknown", provider: nil)])
+    }
+
     @MainActor
     func testPlatformSnapshotCannotOverwriteNewerSessionRefresh() async throws {
         let config = URLSessionConfiguration.ephemeral
