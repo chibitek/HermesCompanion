@@ -50,8 +50,9 @@ struct GlassBubble: View {
             }
             .padding(.horizontal, compact ? 12 : theme.spacingL)
             .padding(.vertical, compact ? 8 : theme.spacingM)
-            .frame(maxWidth: screenBoundsWidth * 0.94,
+            .frame(maxWidth: .infinity,
                    alignment: isUser ? .trailing : .leading)
+            .layoutPriority(1)
             .background(bubbleBackground)
             .overlay(alignment: .leading) {
                 if !isUser && theme.assistantBubbleBorderWidth > 0 {
@@ -116,9 +117,4 @@ struct GlassBubble: View {
         }
     }
 
-    /// Screen width from the current window scene — cached to avoid traversing connectedScenes every body eval.
-    private var screenBoundsWidth: CGFloat {
-      // ponytail: cache via @State; only changes on rotation which triggers re-eval anyway.
-      return UIScreen.main.bounds.width
-    }
 }
