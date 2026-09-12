@@ -44,14 +44,14 @@ counts, not its unresolved release requirements.
 
 ## Installed Versus Unreleased
 
-The last verified phone installation is 1.8.62 build 156, from merged PR 42.
-It includes Projects, Bots, Kanban browsing, and canonical Bot history.
+The latest verified phone installation is 1.8.63 build 157, from merged PR 44.
+The local Hermes gateway was restarted with the Companion bridge 0.1.6; its
+health endpoint returned 200 and the Companion projects route returned 401
+without credentials, confirming route registration. The phone launch was
+confirmed by a device screenshot. Physical voice, music continuity, workspace
+navigation, and complete parity have not yet been verified on the device.
 
-Development source through `1eee679` adds project-session history, full Kanban
-task details and hierarchy, refreshed Bot details, and session/voice/job fixes.
-Those changes have not been installed on the phone or pushed for review.
-The development bridge is 0.1.3; updating only the iOS app does not deploy its
-new gateway routes. No multi-profile serving configuration change was made.
+The prior verified phone installation was 1.8.62 build 156, from merged PR 42.
 
 ## Evidence
 
