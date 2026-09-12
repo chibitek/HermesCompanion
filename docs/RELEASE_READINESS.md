@@ -3,6 +3,20 @@
 As of September 11, 2026. This is a verification record, not a release approval
 or a claim that the full product goal is complete.
 
+## Latest Verification Snapshot
+
+Source `d6ff737` passed 80 iOS Simulator tests and a fresh generic iPhone Release
+build with signing disabled on September 11 at 22:49. Bridge 0.1.5 passed all
+14 tests again. The physical Portatus XVII Pro Max was available and paired;
+no installation or gateway restart was performed.
+
+The Release build still reports dormant ElevenLabs captured-reference warnings,
+an unused mutable Markdown variable, a duplicate provider icon switch pattern,
+and asynchronous notification API suggestions. Successful arm64 compilation
+does not establish signing, physical-device behavior, or feature completeness.
+Earlier evidence below is historical; this snapshot supersedes its build/test
+counts, not its unresolved release requirements.
+
 ## Installed Versus Unreleased
 
 The last verified phone installation is 1.8.62 build 156, from merged PR 42.
