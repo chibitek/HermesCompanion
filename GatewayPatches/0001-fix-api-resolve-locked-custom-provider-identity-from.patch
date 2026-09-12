@@ -1,0 +1,88 @@
+From bac8e5f98d4119bb6b0d0c3722ab9c6e98678796 Mon Sep 17 00:00:00 2001
+From: Erick Grau <erick.grau@chibitek.com>
+Date: Fri, 11 Sep 2026 21:17:25 -0400
+Subject: [PATCH] fix(api): resolve locked custom provider identity from
+ runtime endpoint
+
+---
+ gateway/platforms/api_server.py   | 13 ++++++++++++-
+ tests/gateway/test_session_api.py | 32 +++++++++++++++++++++++++++++++
+ 2 files changed, 44 insertions(+), 1 deletion(-)
+
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 5f9add28ea..6cc5964c0d 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -3600,6 +3600,16 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+         raw_model = getattr(agent, "model", "")
+         actual_provider = self._clean_runtime_id(raw_provider, max_len=80) if isinstance(raw_provider, str) else ""
+         actual_model = self._clean_runtime_id(raw_model) if isinstance(raw_model, str) else ""
++        transport_provider = actual_provider
++        if actual_provider == "custom":
++            # Named custom providers share this transport name. Recover identity
++            # only from the actual endpoint, never the requested model or defaults.
++            base_url = getattr(agent, "base_url", "")
++            if isinstance(base_url, str) and base_url:
++                from hermes_cli.runtime_provider_custom import find_custom_provider_identity
++                identity = find_custom_provider_identity(base_url)
++                if identity:
++                    actual_provider = self._clean_runtime_id(identity, max_len=80)
+         for key, actual in (("provider", actual_provider), ("model", actual_model)):
+             if actual:
+                 runtime[key] = actual
+@@ -3611,7 +3621,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+             expected_provider = self._clean_runtime_id(
+                 route.get("provider") or requested_runtime.get("provider"), max_len=80)
+             expected_model = self._clean_runtime_id(route.get("model") or requested_runtime.get("model"))
+-            if (expected_provider and actual_provider != expected_provider) or (
++            compared_provider = transport_provider if expected_provider == "custom" else actual_provider
++            if (expected_provider and compared_provider != expected_provider) or (
+                 expected_model and actual_model != expected_model):
+                 raise RuntimeError(
+                     "confirmed model lock runtime mismatch: "
+diff --git a/tests/gateway/test_session_api.py b/tests/gateway/test_session_api.py
+index 5ac9f55b29..afccecf382 100644
+--- a/tests/gateway/test_session_api.py
++++ b/tests/gateway/test_session_api.py
+@@ -13,6 +13,38 @@ from gateway.platforms.api_server import APIServerAdapter
+ from hermes_state import SessionDB
+ 
+ 
++@pytest.mark.parametrize("expected", ["custom:local", "custom"])
++def test_custom_runtime_lock_recovers_endpoint_identity(adapter, monkeypatch, tmp_path, expected):
++    from types import SimpleNamespace
++    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
++    (tmp_path / "config.yaml").write_text("providers:\n  local:\n    api: http://localhost:8000/v1\n")
++    agent = SimpleNamespace(provider="custom", model="local-model", base_url="http://localhost:8000/v1/")
++    result = adapter._turn_runtime_metadata(
++        agent, route={"provider": expected, "model": "local-model"}, requested_runtime=None,
++        route_source="session_model_lock", confirmed_runtime_lock=True)
++    assert result["provider"] == "custom:local"
++    assert result["model"] == agent.model
++
++
++@pytest.mark.parametrize("base_url,model", [
++    ("http://localhost:9000/v1", "local-model"),
++    ("", "local-model"),
++    ("http://localhost:8000/v1", "other-model"),
++])
++def test_custom_runtime_lock_still_rejects_wrong_endpoint_or_model(adapter, monkeypatch, base_url, model):
++    from types import SimpleNamespace
++    import hermes_cli.runtime_provider as rp
++    monkeypatch.setattr(rp, "load_config", lambda: {
++        "providers": {"local": {"api": "http://localhost:8000/v1"}},
++        "model": {"provider": "custom:local", "default": "local-model"},
++    })
++    agent = SimpleNamespace(provider="custom", model=model, base_url=base_url)
++    with pytest.raises(RuntimeError, match="confirmed model lock runtime mismatch"):
++        adapter._turn_runtime_metadata(
++            agent, route={"provider": "custom:local", "model": "local-model"}, requested_runtime=None,
++            route_source="session_model_lock", confirmed_runtime_lock=True)
++
++
+ @pytest.fixture
+ def session_db(tmp_path):
+     db = SessionDB(tmp_path / "state.db")
+-- 
+2.55.0
+
