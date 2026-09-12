@@ -185,3 +185,17 @@ The parent is an additional discovery-tier listing; no missing transcript was
 demonstrated by this mismatch. Do not duplicate/reassign those sessions to the
 parent just to make its displayed count match. The native parent overview/detail
 inconsistency still needs an upstream-compatible resolution.
+
+## Dictation Draft Update
+
+Composer dictation now merges recognition results against a captured original
+draft instead of replacing that draft and then appending the transcript again.
+Confirm commits once, cancel restores the original draft, and automatic finish
+keeps the final transcript. Recording stops when the composer disappears or the
+scene backgrounds. Editing/submission are disabled while dictation is active to
+avoid races with recognition callbacks. Starting a new recording clears the old
+transcript before permission checks.
+
+Pure merge tests cover successive partial results, empty text, and whitespace.
+These do not prove on-device recognition, button interaction, or audio-session
+recovery; that phone verification remains required.
