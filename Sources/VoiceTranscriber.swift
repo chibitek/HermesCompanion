@@ -48,6 +48,7 @@ final class VoiceTranscriber: ObservableObject {
 
     func startTranscription() {
         stopTranscription()
+        transcribedText = ""
         let recordingID = UUID()
         self.recordingID = recordingID
         errorMessage = nil
@@ -70,8 +71,6 @@ final class VoiceTranscriber: ObservableObject {
             return
         }
 
-        // Reset text
-        transcribedText = ""
         isRecording = true
 
         // Configure audio session for recording

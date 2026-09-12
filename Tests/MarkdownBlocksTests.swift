@@ -4,6 +4,15 @@ import AVFoundation
 @testable import HermesCompanion
 
 final class MarkdownBlocksTests: XCTestCase {
+    func testDictationMergesAgainstOriginalDraftWithoutRepeatingPartialResults() {
+        let original = "Existing draft"
+        XCTAssertEqual(ComposerDictationLogic.mergedText(original: original, transcription: "hello"), "Existing draft hello")
+        XCTAssertEqual(ComposerDictationLogic.mergedText(original: original, transcription: "hello world"), "Existing draft hello world")
+        XCTAssertEqual(ComposerDictationLogic.mergedText(original: "", transcription: " hello "), "hello")
+        XCTAssertEqual(ComposerDictationLogic.mergedText(original: "Line\n", transcription: "next"), "Line\nnext")
+        XCTAssertEqual(ComposerDictationLogic.mergedText(original: original, transcription: " \n"), original)
+    }
+
     @MainActor
     func testVoiceRemoteTurnOwnershipSurvivesLateCompletionAndRestart() {
         let manager = VoiceConversationManager()
