@@ -23,6 +23,9 @@ profiles. The plugin uses the gateway's existing authorization check unchanged.
 
 - `GET /api/companion/projects`: profile-scoped trees from `projects.tree`.
 - `GET /api/companion/project?profile=...&project_id=...`: hydrated project lanes.
+  Bridge 0.1.5 also preserves discovered empty repositories omitted by native
+  drill-in, using the exact same-profile overview record with zero sessions.
+  A nonempty overview is never substituted for hydrated history.
 - `GET /api/companion/project-history?profile=...&project_id=...&session_id=...&offset=...`:
   profile-owned history in pages of 100, after validating current project
   membership. Uses Hermes's resume resolution and display projection. Requires

@@ -125,6 +125,34 @@ class TaskDetailTests(unittest.TestCase):
         module.get_task.assert_not_called()
 
 
+class ProjectDetailTests(unittest.TestCase):
+    def testDiscoveredEmptyFolderUsesSameProfilesAuthoritativeOverview(self):
+        project = {"id": "/repo", "sessionCount": 0, "repos": [{"groups": []}]}
+        with patch.object(bridge, "rpc", side_effect=[
+            {"profiles": [{"name": "assistant"}]}, {"project": None}, {"projects": [project]}
+        ]) as rpc:
+            detail = bridge.project_detail({"profile": "assistant", "project_id": "/repo"})
+        self.assertEqual(detail["project"], project)
+        self.assertEqual(rpc.call_args_list[-1].args, ("projects.tree", {"profile": "assistant"}))
+
+    def testMissingOrNonemptyOverviewCannotMasqueradeAsHydratedHistory(self):
+        for projects in [[], [{"id": "/other", "sessionCount": 0}],
+                         [{"id": "/repo", "sessionCount": 1}], [{"id": "/repo"}]]:
+            with self.subTest(projects=projects), patch.object(bridge, "rpc", side_effect=[
+                {"profiles": [{"name": "assistant"}]}, {"project": None}, {"projects": projects}
+            ]):
+                detail = bridge.project_detail({"profile": "assistant", "project_id": "/repo"})
+            self.assertIsNone(detail["project"])
+
+    def testHydratedDetailNeverReplacedByOverview(self):
+        detail = {"project": {"id": "/repo", "sessionCount": 2}}
+        with patch.object(bridge, "rpc", side_effect=[
+            {"profiles": [{"name": "assistant"}]}, detail
+        ]) as rpc:
+            self.assertEqual(bridge.project_detail({"profile": "assistant", "project_id": "/repo"}), detail)
+        self.assertEqual(rpc.call_count, 2)
+
+
 class ProjectHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def testChecksProjectMembershipBeforeReadingHistory(self):
         module = types.ModuleType("hermes_cli.web_routers.sessions")

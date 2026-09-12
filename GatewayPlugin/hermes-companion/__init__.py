@@ -64,7 +64,16 @@ def project_detail(query):
     names = {p["name"] for p in rpc("profiles.list", {"include_sessions": False})["profiles"]}
     if profile not in names or not project_id:
         raise ValueError("A valid profile and project_id are required")
-    return rpc("projects.project_sessions", {"profile": profile, "project_id": project_id})
+    detail = rpc("projects.project_sessions", {"profile": profile, "project_id": project_id})
+    if detail.get("project") is not None:
+        return detail
+    # Native drill-in skips the discovered-repository tier. Preserve an empty
+    # folder from the authoritative overview, but never pass a preview off as
+    # fully hydrated history for a project containing sessions.
+    tree = rpc("projects.tree", {"profile": profile})
+    project = next((p for p in tree["projects"]
+                    if p["id"] == project_id and p.get("sessionCount") == 0), None)
+    return {**detail, "project": project}
 
 
 def boards(_query):
