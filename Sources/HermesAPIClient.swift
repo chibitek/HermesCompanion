@@ -94,6 +94,19 @@ final class HermesAPIClient: Sendable {
         try await get(path: "/api/companion/bots", type: WorkspaceBots.self)
     }
 
+    func projectHistory(profile: String, projectID: String, sessionID: String, offset: Int) async throws -> BotHistory {
+        let result = try await get(path: "/api/companion/project-history", queryItems: [
+            URLQueryItem(name: "profile", value: profile),
+            URLQueryItem(name: "project_id", value: projectID),
+            URLQueryItem(name: "session_id", value: sessionID),
+            URLQueryItem(name: "offset", value: String(offset))
+        ], type: ProjectSessionHistory.self)
+        guard result.matches(profile: profile, projectID: projectID, sessionID: sessionID, offset: offset) else {
+            throw APIError.invalidResponse
+        }
+        return result.history
+    }
+
     func botHistory(profile: String, offset: Int) async throws -> BotHistory {
         let result = try await get(path: "/api/companion/bot-history", queryItems: [
             URLQueryItem(name: "profile", value: profile),

@@ -124,5 +124,24 @@ class TaskDetailTests(unittest.TestCase):
         module.get_task.assert_not_called()
 
 
+class ProjectHistoryTests(unittest.IsolatedAsyncioTestCase):
+    async def testChecksProjectMembershipBeforeReadingHistory(self):
+        module = types.ModuleType("hermes_cli.web_routers.sessions")
+        module.get_session_messages = AsyncMock(return_value={"profile": "assistant", "session_id": "resumed"})
+        detail = {"project": {"repos": [{"groups": [{"sessions": [{"id": "selected"}]}]}]}}
+        query = {"profile": "assistant", "project_id": "project", "session_id": "selected", "offset": "100"}
+        with patch.object(bridge, "project_detail", return_value=detail), patch.dict("sys.modules", {module.__name__: module}):
+            result = await bridge.project_history(query)
+            with self.assertRaises(ValueError):
+                await bridge.project_history(dict(query, session_id="foreign"))
+            with self.assertRaises(ValueError):
+                await bridge.project_history(dict(query, offset="-1"))
+        self.assertEqual(result["requested_session_id"], "selected")
+        self.assertEqual(result["project_id"], "project")
+        self.assertEqual(result["history"]["session_id"], "resumed")
+        module.get_session_messages.assert_awaited_once_with("selected", profile="assistant", limit=100,
+                                                            offset=100, order="latest", include_compacted=False)
+
+
 if __name__ == "__main__":
     unittest.main()

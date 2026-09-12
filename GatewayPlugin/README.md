@@ -23,6 +23,11 @@ profiles. The plugin uses the gateway's existing authorization check unchanged.
 
 - `GET /api/companion/projects`: profile-scoped trees from `projects.tree`.
 - `GET /api/companion/project?profile=...&project_id=...`: hydrated project lanes.
+- `GET /api/companion/project-history?profile=...&project_id=...&session_id=...&offset=...`:
+  profile-owned history in pages of 100, after validating current project
+  membership. Uses Hermes's resume resolution and display projection. Requires
+  bridge 0.1.3. Sessions outside the loaded default-profile chat list now open
+  this read-only history instead of appearing as noninteractive labels.
 - `GET /api/companion/bots`: the server's `profiles.list` roster.
 - `GET /api/companion/bot-history?profile=...&offset=...`: canonical Bot Chat,
   resolved on the server, in pages of 100 messages. Arbitrary client session IDs
@@ -40,6 +45,9 @@ is retained rather than combining same-named projects from different profiles.
 The project handlers retain Hermes's native session limits: the overview is not
 a full-history export. Cross-profile Bot chat, project mutations, and Kanban
 editing remain future work; Companion does not silently route these to default.
+Project history is limited to sessions Hermes includes in the hydrated project
+tree. Membership is rechecked on each page; moving a session out of that project
+makes the old project-history route unavailable rather than silently rerouting it.
 
 ## Verify
 
@@ -65,3 +73,11 @@ reader was also exercised against all six existing tasks across the live server'
 boards, checking returned board, task, comment, and run ownership. This was a
 direct domain read, not a claim that the new route has been deployed. The iOS
 test suite passed with full-text retention and ownership regression coverage.
+
+Bridge 0.1.3 verification: ten bridge tests and 60 iOS tests passed. Direct
+project-history reads succeeded for four real profiles containing project
+sessions, with matching requested session and response owner. Tests cover
+foreign project membership rejection, negative offsets, and client checks for
+wrong owner/project/session/page while permitting Hermes-resolved resume IDs.
+The 0.1.3 route and iOS changes require deployment; direct domain verification
+does not establish installation on a phone or remote gateway.
