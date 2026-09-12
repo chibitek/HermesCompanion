@@ -27,6 +27,24 @@ Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://git
 
 ## Hermes Talk
 
+### Server Workspace Browsing (1.8.62)
+
+The History sidebar now includes **Projects**, **Bots**, and **Kanban** tabs.
+These read Hermes's actual project trees, Bot profiles with configured models,
+and Kanban boards and tasks. Empty project folders and profile ownership are
+preserved. Open views refresh every 30 seconds and reset on a server change.
+
+This requires the [Companion workspace bridge](GatewayPlugin/README.md) on each
+connected server. The bridge uses Hermes's existing domain handlers and root
+gateway authorization; it does not add another agent or credential store.
+Servers without it report that the workspace API is unavailable.
+
+This release provides browsing, not full desktop parity: cross-profile Bot chat,
+project editing, and Kanban mutations are not implemented yet. Scheduled job
+controls remain available in Platform Hub through Hermes's existing jobs API.
+
+### Voice Conversation
+
 The standout feature. Tap the waveform icon and your phone becomes a full-screen voice conversation terminal.
 
 - **Matrix digital rain** background that responds to conversation state (fast rain while listening, slow glow while thinking, medium while speaking)
