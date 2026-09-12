@@ -73,6 +73,7 @@
 		E5A0A1B90BAD77CBA352019D /* SessionPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 551BA7C230D94529FD10F5D2 /* SessionPickerView.swift */; };
 		EF598FC3F601152B1E4F52B5 /* ProviderUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29A06329B461E36625FB7949 /* ProviderUtils.swift */; };
 		F963F31C26FCEBF676C889CB /* GlassBubble.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0877A3D2AFE7F4721ADA17AF /* GlassBubble.swift */; };
+		FD61AEB810EB8075368FC9AD /* BotHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0AED56E07D3C74D325F89B4 /* BotHistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -155,6 +156,7 @@
 		8E4BD710D96BD578CE564DE8 /* ReleaseNotesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesTests.swift; sourceTree = "<group>"; };
 		90DC1456F9DDA1F6E6A9BC05 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		93E26F58E842815866FD9986 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		A0AED56E07D3C74D325F89B4 /* BotHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotHistoryView.swift; sourceTree = "<group>"; };
 		A2CEC2277897993F2B474AB0 /* ProviderSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSelectionView.swift; sourceTree = "<group>"; };
 		A2DD74C29509EC118F92BEA5 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		A64856389980D1D73A2DC3C3 /* HermesCompanion.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HermesCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -208,6 +210,7 @@
 				4A4E7B2B3C67580BB0A71C4C /* AppStore.swift */,
 				A7511EED5D149EE15F396D2F /* Assets.xcassets */,
 				47B41AB784B26388253CB25A /* AttachmentData.swift */,
+				A0AED56E07D3C74D325F89B4 /* BotHistoryView.swift */,
 				A2DD74C29509EC118F92BEA5 /* CameraPickerView.swift */,
 				406D0DC3A11F86B29F05F06A /* CarPlaySceneDelegate.swift */,
 				B063172039210054C110721D /* CarPlayVoiceController.swift */,
@@ -429,6 +432,7 @@
 				159D645ED21E0A0B268E972B /* AppearanceSettings.swift in Sources */,
 				E17EEB828AE68D190408C742 /* AppearanceSettingsView.swift in Sources */,
 				01892F1A0E72775EC3C06A62 /* AttachmentData.swift in Sources */,
+				FD61AEB810EB8075368FC9AD /* BotHistoryView.swift in Sources */,
 				9033393557A808892DD39711 /* CameraPickerView.swift in Sources */,
 				D4C7C91D5436FF35E59DE880 /* CarPlaySceneDelegate.swift in Sources */,
 				729747F4166DD4BD7E0AA89F /* CarPlayVoiceController.swift in Sources */,
@@ -527,7 +531,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 155;
+				CURRENT_PROJECT_VERSION = 156;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -553,7 +557,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 155;
+				CURRENT_PROJECT_VERSION = 156;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -645,7 +649,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 155;
+				CURRENT_PROJECT_VERSION = 156;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -727,7 +731,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 155;
+				CURRENT_PROJECT_VERSION = 156;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

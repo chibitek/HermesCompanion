@@ -24,6 +24,9 @@ profiles. The plugin uses the gateway's existing authorization check unchanged.
 - `GET /api/companion/projects`: profile-scoped trees from `projects.tree`.
 - `GET /api/companion/project?profile=...&project_id=...`: hydrated project lanes.
 - `GET /api/companion/bots`: the server's `profiles.list` roster.
+- `GET /api/companion/bot-history?profile=...&offset=...`: canonical Bot Chat,
+  resolved on the server, in pages of 100 messages. Arbitrary client session IDs
+  are not accepted. Missing canonical chats do not fall back to unrelated chats.
 - `GET /api/companion/boards`: existing Kanban boards.
 - `GET /api/companion/board?board=...`: columns and tasks on one existing board.
 
@@ -48,3 +51,4 @@ The native plugin depends on Hermes's current project/profile RPC and Kanban
 domain handlers. Revalidate it after upstream updates. Unavailable handlers return
 an error, not a fabricated empty workspace. The iOS views show failures and retry,
 poll every 30 seconds while active, and discard responses from replaced views.
+Older Bot history pages refresh manually to avoid shifting while being read.
