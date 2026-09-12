@@ -895,10 +895,19 @@ struct HermesJobResponse: Codable {
 
 struct HermesJobWrite: Encodable, Hashable {
     var name: String = ""
-    var schedule: String = ""
+    var schedule: String? = ""
     var prompt: String = ""
     var deliver: String = "local"
     var skills: [String] = []
+
+    static func scheduleUpdate(edited: String, originalDisplay: String?) -> String? {
+        let value = edited.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let originalDisplay,
+           value == originalDisplay.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return nil
+        }
+        return value
+    }
 }
 
 struct HermesArtifactReceipt: Codable, Identifiable, Hashable {
