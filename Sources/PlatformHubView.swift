@@ -74,6 +74,7 @@ struct PlatformHubView: View {
                             }
                         }
                     }
+                    projectsSection
                     sessionsSection
                     modelsSection
                     toolsetsSection

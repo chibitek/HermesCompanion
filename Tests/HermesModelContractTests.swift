@@ -652,6 +652,32 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertEqual(decoded.provider, "nous")
     }
 
+    @MainActor
+    func testRefreshCapabilitiesLoadsProviderCatalog() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        defer { SessionHistoryURLProtocol.handler = nil }
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path.hasSuffix("/api/model/options") {
+                request.succeed(body: #"{"providers":[{"slug":"local","name":"Local","models":["qwen3.8:27b-mlx"],"is_current":true}],"model":"qwen3.8:27b-mlx","provider":"local"}"#)
+            } else {
+                request.fail()
+            }
+        }
+
+        await store.refreshCapabilities()
+
+        XCTAssertEqual(store.configuredProviders, ["local"])
+        XCTAssertEqual(store.gatewayDefaultModel, "qwen3.8:27b-mlx")
+        XCTAssertEqual(store.gatewayDefaultProvider, "local")
+        XCTAssertEqual(store.availableModels, ["qwen3.8:27b-mlx"])
+        XCTAssertEqual(store.modelCatalog.first?.provider, "local")
+        XCTAssertNil(store.error)
+    }
+
     func testDecodesSessionModelLockRuntime() throws {
         let json = """
         {
