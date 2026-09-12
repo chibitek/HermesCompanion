@@ -561,7 +561,6 @@ final class AppStore: ObservableObject {
         let requestID = UUID()
         modelSelectionID = requestID
         let selectionID = sessionSelectionID
-        preferredModel = model
         // Resolve provider ONLY from explicit arg or model ID prefix (e.g. "openai/gpt-4").
         // Do NOT fall back to capabilities.currentProvider — that's the gateway's
         // current state, not necessarily where this model lives. Sending a stale
@@ -569,15 +568,20 @@ final class AppStore: ObservableObject {
             ?? ProviderUtils.providerOf(model)
             ?? nonEmpty(modelInfos[model]?.provider)
             ?? ""
-        if !resolvedProvider.isEmpty {
+        guard let sessionId = activeSession?.id else {
+            preferredModel = model
             preferredProvider = resolvedProvider
+            sessionModelOverride = model
+            sessionProviderOverride = resolvedProvider.isEmpty ? nil : resolvedProvider
+            return
         }
-        sessionModelOverride = model
-        sessionProviderOverride = resolvedProvider.isEmpty ? nil : resolvedProvider
         // Lock the model on the active Hermes session. This is the server-backed
         // equivalent of opening a chat in the desktop; it never rewrites the
         // gateway's global provider config.
-        guard let sessionId = activeSession?.id, let client = apiClient else { return }
+        guard let client = apiClient else {
+            error = AppError(message: "Connect to Hermes before changing this session's model.")
+            return
+        }
         do {
             let runtime = try await client.lockSessionModel(
                 sessionId: sessionId, model: model,
@@ -587,6 +591,12 @@ final class AppStore: ObservableObject {
                   activeSession?.id == sessionId, modelSelectionID == requestID,
                   !Task.isCancelled else { return }
             activeRuntime = runtime
+            // An acknowledged session lock, not a picker preview, owns the
+            // displayed and persisted selection. Preserve server normalization.
+            preferredModel = runtime.effectiveModel ?? model
+            preferredProvider = runtime.effectiveProvider ?? resolvedProvider
+            sessionModelOverride = preferredModel
+            sessionProviderOverride = nonEmpty(preferredProvider)
         } catch {
             guard apiClient === client, sessionSelectionID == selectionID,
                   activeSession?.id == sessionId, modelSelectionID == requestID,

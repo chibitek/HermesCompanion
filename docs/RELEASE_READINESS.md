@@ -135,3 +135,10 @@ responses and a success/failure arriving after switching sessions. These guards
 protect the client display; they do not establish ordering of competing writes
 from different devices on the server. Interactive picker and phone verification
 remain required.
+
+Active-session model/provider preferences now change only after a successful
+server lock response. Rejected or pending locks preserve the confirmed runtime;
+successful locks use the server's normalized model/provider identity. New-chat
+selection remains a local preference until its session is created. All 82 iOS
+tests passed in the September 11 22:51 run, including rejection and normalization
+regressions. The earlier Release-build snapshot predates this follow-up.
