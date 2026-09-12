@@ -40,9 +40,8 @@ its build/test counts, not its unresolved release requirements.
 
 ## Installed Versus Unreleased
 
-The latest verified phone installation is 1.8.63 build 157, from merged PR 44.
-Build 158 contains the September 12 local-only voice cleanup but is not yet
-installed on the phone. The local Hermes gateway
+The latest verified phone installation is 1.8.63 build 158, from merged PR 46.
+It contains the September 12 local-only voice cleanup. The local Hermes gateway
 was restarted with the Companion bridge 0.1.6; its health endpoint returned 200
 and the Companion projects route returned 401 without credentials, confirming
 route registration. The phone launch was confirmed by a device screenshot.
@@ -56,8 +55,8 @@ The prior verified phone installation was 1.8.62 build 156, from merged PR 42.
 - Build 158 contains the September 12 local-only voice cleanup. It passed all 93
   iOS tests on iPhone 17 Pro Simulator, iOS 26.5, and all 16 bridge tests. It
   removes the hidden ElevenLabs streaming path, provider/key storage, an unused
-  mutable variable, and a duplicate provider-icon pattern. This has not yet been
-  installed on the physical phone.
+  mutable variable, and a duplicate provider-icon pattern. The signed Release
+  build was installed on the physical phone.
 
 - 69 iOS unit tests passed on iPhone 17 Pro Simulator, iOS 26.5. Coverage includes
   stale list/history/creation responses, deleted session state, canonical Bot

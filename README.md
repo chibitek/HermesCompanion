@@ -29,12 +29,13 @@ Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://git
 
 ### Release Status (1.8.63)
 
-Build 157 adds profile-owned project history, full Kanban task results, comments,
+Build 158 adds profile-owned project history, full Kanban task results, comments,
 runs, and navigation through task dependencies and children. It also adds
 Kanban attachment downloads and Quick Look previews. Companion fixes cover stale
 session/model refreshes, delayed session creation, stream ownership after
 session changes, CarPlay disconnect cleanup, old voice-answer replay, unchanged
-job schedules during edits, and audio isolation for text-only use.
+job schedules during edits, audio isolation for text-only use, and a local-only
+voice surface.
 
 The local bridge is [version 0.1.6](GatewayPlugin/README.md). This is installed
 on the development Mac, but other servers still need their own bridge update.
