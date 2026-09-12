@@ -27,6 +27,19 @@ Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://git
 
 ## Hermes Talk
 
+### Unreleased Development Changes
+
+`Dev_Erick` adds profile-owned project history, full Kanban task results/comments/
+runs, and navigation through task dependencies and children. These require the
+updated [workspace bridge](GatewayPlugin/README.md), version 0.1.3. The branch
+also addresses stale session/model refreshes, delayed session creation, stream
+ownership after session changes, CarPlay disconnect cleanup, old voice-answer
+replay, and unchanged job schedules being resubmitted during edits.
+
+These changes are not part of the installed build 156. See
+[release verification and remaining gaps](docs/RELEASE_READINESS.md) before
+deploying. Development test results are not a claim of full platform parity.
+
 ### Server Workspace Browsing (1.8.62)
 
 The History sidebar now includes **Projects**, **Bots**, and **Kanban** tabs.
@@ -252,7 +265,12 @@ No. Hermes Companion is built by [Chibitek Labs](https://chibitek.com) as a thir
 
 **What's the difference between the app and the terminal?**
 
-Nothing, functionally. The app is a different front-end for the same Hermes Agent gateway. Conversations, sessions, memory, and skills are shared across all surfaces — the iOS app, the terminal TUI, Telegram, Discord, and Slack. Pick up a conversation on your phone that you started on your Mac.
+The app is a front-end for an existing Hermes gateway, not a separate agent.
+Supported views read the connected server's data, but it does not yet expose
+every terminal or desktop feature. Cross-profile messaging requires a verified
+profile-specific chat transport; project and Kanban editing remain unfinished.
+Workspace browsing also requires the optional Companion bridge. Availability
+depends on the connected Hermes version and configuration.
 
 ---
 
