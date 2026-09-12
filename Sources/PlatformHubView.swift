@@ -688,7 +688,7 @@ private struct JobEditorView: View {
             .filter { !$0.isEmpty }
         let payload = HermesJobWrite(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            schedule: schedule.trimmingCharacters(in: .whitespacesAndNewlines),
+            schedule: HermesJobWrite.scheduleUpdate(edited: schedule, originalDisplay: existingJob?.scheduleDisplay),
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
             deliver: deliver.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "local" : deliver.trimmingCharacters(in: .whitespacesAndNewlines),
             skills: skills

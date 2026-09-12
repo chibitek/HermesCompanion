@@ -2,6 +2,17 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testUnchangedJobScheduleIsOmittedInsteadOfReparsed() throws {
+        let schedule = HermesJobWrite.scheduleUpdate(edited: " Every 2 hours ", originalDisplay: "Every 2 hours")
+        XCTAssertNil(schedule)
+        let payload = HermesJobWrite(name: "Renamed job", schedule: schedule, prompt: "Existing prompt")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)) as? [String: Any])
+        XCTAssertNil(json["schedule"])
+        XCTAssertEqual(json["name"] as? String, "Renamed job")
+        XCTAssertEqual(HermesJobWrite.scheduleUpdate(edited: " 0 9 * * * ", originalDisplay: "Every 2 hours"), "0 9 * * *")
+        XCTAssertEqual(HermesJobWrite.scheduleUpdate(edited: "30m", originalDisplay: nil), "30m")
+    }
+
     func testBotHistoryRejectsResponsesForAnotherProfileOrPage() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]
