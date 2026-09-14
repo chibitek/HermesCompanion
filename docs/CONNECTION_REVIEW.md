@@ -53,3 +53,43 @@ Both opt-in integration tests then passed against the patched native gateway, br
 The connection changes are packaged in 1.8.75 build 172. Worktree and full published-branch history secret scans found no leaks before publication. Personal/device identifiers, pairing material, and environment files are excluded from public changes.
 
 Build 172 was archived, its exported application signature verified, and installed on the physical phone. Device inventory confirmed 1.8.75 (172), launch succeeded, and the application log recorded a successful automatic connection. Apple accepted the upload; TestFlight tester assignment and distribution remain unverified. The native gateway was not restarted for this client update.
+
+## Board management coverage
+
+Issue #51 records the missing iOS board creation, metadata editing, active-board
+selection, and archive controls. Bridge 0.1.10 exposes the corresponding native
+Hermes handlers under existing root authorization. The app checks the new
+`board_manage` capability and validates board identity in every write receipt.
+Native slugs, project/workdir validation, and default-board archive refusal are
+preserved. The archive route always retains files; it cannot request hard delete.
+
+The review found that native board creation writes metadata on a reused slug.
+The bridge returns an existing board unchanged on a repeated ID, and the editor
+keeps the same payload after an uncertain creation result. Updates omit unchanged
+fields to preserve unrelated desktop edits. This is not a cross-process atomic
+create-or-compare transaction; simultaneous first creation of the same new slug
+still depends on the native domain's concurrency behavior.
+
+Thirty bridge tests passed using native per-board SQLite storage in a disposable
+home. They include phone-to-native and native-to-phone metadata changes, retry
+preservation, active selection, archive retaining task rows, invalid board IDs,
+default-board refusal, and authorization before writes. The fixture previously
+forced every board to one database path; removing that override was necessary to
+verify actual board isolation and archive retention.
+
+The full simulator run passed 137 tests with three opt-in live tests skipped.
+All three live integration tests then passed against the installed native gateway
+and local model in an isolated Hermes/Kanban home, including two-client board
+changes, live invalidation, conversation sync, and run-event replay.
+
+Build 1.8.76 (173) was archived, signature-verified, installed and launched on the
+physical phone. Apple accepted its upload. TestFlight processing, tester assignment,
+and availability remain unverified. The phone log recorded a successful automatic
+connection after the deployed gateway resumed service.
+
+The first graceful restart exposed a native macOS API startup failure: binding
+the recently closed API port failed, and the gateway classified that as a fatal
+configuration conflict while its other platforms continued. After confirming the
+port was bindable, a second drain-aware restart restored the API. Authenticated
+checks returned bridge 0.1.10, board management enabled, and the live board catalog.
+Automatic recovery from this transient startup bind failure remains follow-up work.

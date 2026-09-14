@@ -99,7 +99,7 @@ def main():
         Path(home, "config.yaml").write_text(json.dumps(config))
         shutil.copytree(repo / "GatewayPlugin/hermes-companion", Path(home, "plugins/hermes-companion"))
         env = {name: os.environ[name] for name in ("PATH", "HOME", "USER", "TMPDIR", "LANG") if name in os.environ}
-        env.update(HERMES_HOME=home, API_SERVER_KEY=key, API_SERVER_PORT=str(port), PYTHONPATH=str(server_repo))
+        env.update(HERMES_HOME=home, HERMES_KANBAN_HOME=home, API_SERVER_KEY=key, API_SERVER_PORT=str(port), PYTHONPATH=str(server_repo))
         with (artifacts / "gateway.log").open("w") as log:
             process = subprocess.Popen([str(runtime), "-u", "-c", GATEWAY], cwd=server_repo, env=env, stdout=log, stderr=subprocess.STDOUT)
             try:
@@ -119,7 +119,7 @@ def main():
                 if before.get("data"):
                     raise RuntimeError("Isolated gateway unexpectedly contains conversations before testing")
                 print("Temporary gateway ready; running real two-client iOS conversation test", flush=True)
-                test_env = dict(os.environ, TEST_RUNNER_HERMES_LIVE_URL=base, TEST_RUNNER_HERMES_LIVE_KEY=key)
+                test_env = dict(os.environ, TEST_RUNNER_HERMES_LIVE_URL=base, TEST_RUNNER_HERMES_LIVE_KEY=key, TEST_RUNNER_HERMES_DISPOSABLE_WORKSPACE="1")
                 result = artifacts / "ios.xcresult"
                 command = ["xcodebuild", "-project", "HermesCompanion.xcodeproj", "-scheme", "HermesCompanion", "-configuration", "Debug",
                            "-destination", "platform=iOS Simulator,id=" + args.simulator, "-derivedDataPath", str(args.derived_data),

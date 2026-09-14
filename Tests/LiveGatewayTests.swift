@@ -109,6 +109,50 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayBoardManagementAndLiveInvalidation() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Board mutation verification requires the disposable workspace runner.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Board verification")
+        let phone = HermesAPIClient(config: config)
+        let desktop = HermesAPIClient(config: config)
+        let slug = "verify-" + UUID().uuidString.lowercased()
+        let store = AppStore(client: phone)
+        let live = Task { await store.runLiveSync() }
+        defer { live.cancel() }
+        try await waitForLiveSync { store.liveChangesAvailable }
+        var payload = ServerBoardWrite()
+        payload.slug = slug
+        payload.name = "Phone board"
+        let created = try await phone.createWorkspaceBoard(payload: payload)
+        XCTAssertEqual(created.board.slug, slug)
+        do {
+            let initialRevision = store.workspaceRevision
+            var desktopEdit = ServerBoardWrite()
+            desktopEdit.name = "Desktop rename"
+            _ = try await desktop.updateWorkspaceBoard(slug: slug, payload: desktopEdit)
+            try await waitForLiveSync { store.workspaceRevision > initialRevision }
+            let boards = try await phone.workspaceBoards()
+            XCTAssertEqual(boards.boards.first { $0.slug == slug }?.name, "Desktop rename")
+            let retry = try await phone.createWorkspaceBoard(payload: payload)
+            XCTAssertEqual(retry.already_exists, true)
+            XCTAssertEqual(retry.board.name, "Desktop rename")
+            try await phone.performWorkspaceBoardAction(slug: slug, archive: false)
+            let active = try await desktop.workspaceBoards()
+            XCTAssertEqual(active.current, slug)
+        } catch {
+            try await phone.performWorkspaceBoardAction(slug: slug, archive: true)
+            throw error
+        }
+        try await phone.performWorkspaceBoardAction(slug: slug, archive: true)
+        let remaining = try await desktop.workspaceBoards()
+        XCTAssertFalse(remaining.boards.contains { $0.slug == slug })
+        XCTAssertEqual(remaining.current, "default")
+    }
+
+    @MainActor
     private func waitForLiveSync(_ condition: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(10)
         while !condition() {

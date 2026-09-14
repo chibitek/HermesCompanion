@@ -114,19 +114,7 @@ struct WorkspaceBrowserView: View {
                 }
             }
         case .kanban:
-            WorkspaceReadView(load: { try await client.workspaceBoards() }) { snapshot in
-                if snapshot.boards.isEmpty {
-                    ContentUnavailableView("No Kanban Boards", systemImage: section.icon)
-                }
-                ForEach(snapshot.boards) { board in
-                    NavigationLink {
-                        ServerBoardView(client: client, board: board)
-                    } label: {
-                        WorkspaceRow(title: board.title, detail: board.project_name,
-                                     trailing: board.total.map(String.init), icon: section.icon)
-                    }
-                }
-            }
+            ServerBoardsView(client: client)
         }
     }
 
@@ -457,6 +445,195 @@ struct WorkspaceReadView<Value, Content: View>: View {
             } else {
                 self.error = "Workspace sync failed: \(error.localizedDescription)"
             }
+        }
+    }
+}
+
+private struct ServerBoardsView: View {
+    let client: HermesAPIClient
+    @Environment(\.workspaceRevision) private var workspaceRevision
+    @State private var revision = 0
+    @State private var capabilities: WorkspaceCapabilities?
+    @State private var notice: String?
+    @State private var isWorking = false
+    @State private var showEditor = false
+    @State private var editingBoard: ServerBoard?
+    @State private var archiveTarget: ServerBoard?
+
+    var body: some View {
+        WorkspaceReadView(load: { try await client.workspaceBoards() }) { snapshot in
+            if let notice { Section { Text(notice).foregroundStyle(.secondary) } }
+            if capabilities?.board_manage != true {
+                Section { Text("Board management requires Companion bridge 0.1.10. Existing boards and tasks remain available.").foregroundStyle(.secondary) }
+            }
+            if snapshot.boards.isEmpty { ContentUnavailableView("No Kanban Boards", systemImage: "rectangle.3.group") }
+            ForEach(snapshot.boards) { board in
+                HStack {
+                    NavigationLink {
+                        ServerBoardView(client: client, board: board)
+                    } label: {
+                        WorkspaceRow(title: board.title,
+                            detail: board.slug == snapshot.current ? "Active board" : board.project_name,
+                            trailing: board.total.map(String.init), icon: "rectangle.3.group")
+                    }
+                    Menu {
+                        Button("Edit Board", systemImage: "pencil") { editingBoard = board; showEditor = true }
+                        Button("Use as Active Board", systemImage: "checkmark.circle") { perform(board, archive: false) }
+                            .disabled(board.slug == snapshot.current)
+                        if board.slug != "default" {
+                            Button("Archive Board", systemImage: "archivebox", role: .destructive) { archiveTarget = board }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle").accessibilityLabel("Manage \(board.title)")
+                    }
+                    .disabled(isWorking || capabilities?.board_manage != true)
+                }
+                .disabled(isWorking)
+            }
+        }
+        .id(revision)
+        .toolbar {
+            Button("New Board", systemImage: "plus") { editingBoard = nil; showEditor = true }
+                .disabled(isWorking || capabilities?.board_manage != true)
+        }
+        .task(id: workspaceRevision) {
+            do { capabilities = try await client.workspaceCapabilities() }
+            catch { notice = "Could not check board management support: \(error.localizedDescription)" }
+        }
+        .sheet(isPresented: $showEditor) {
+            ServerBoardEditorView(client: client, existing: editingBoard) { receipt in
+                notice = receipt.already_exists == true ? "That board ID already exists. Its saved details were kept; use Edit Board to change them." : nil
+                revision += 1
+            }
+        }
+        .confirmationDialog("Archive \(archiveTarget?.title ?? "board")?", isPresented: Binding(
+            get: { archiveTarget != nil }, set: { if !$0 { archiveTarget = nil } })) {
+                if let target = archiveTarget {
+                    Button("Archive Board", role: .destructive) { perform(target, archive: true) }
+                }
+            } message: {
+                Text("The board and its tasks are retained in the server's archive and removed from the board list. If it is active, Hermes returns to the default board.")
+            }
+    }
+
+    private func perform(_ board: ServerBoard, archive: Bool) {
+        guard capabilities?.board_manage == true, !isWorking else {
+            notice = "Update the Companion bridge to 0.1.10 before managing boards."
+            return
+        }
+        isWorking = true
+        Task {
+            defer { isWorking = false }
+            do {
+                try await client.performWorkspaceBoardAction(slug: board.slug, archive: archive)
+                notice = archive ? "Board archived on the server; its tasks were retained." : "Hermes now uses this board for CLI and slash-command tasks."
+            } catch {
+                notice = "Board action was not confirmed: \(error.localizedDescription) Refresh the list before retrying."
+            }
+            revision += 1
+        }
+    }
+}
+
+private struct ServerBoardEditorView: View {
+    let client: HermesAPIClient
+    let existing: ServerBoard?
+    let onSaved: (ServerBoardReceipt) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var slug = ""
+    @State private var name: String
+    @State private var description: String
+    @State private var icon: String
+    @State private var color: String
+    @State private var workdir: String
+    @State private var projectID: String
+    @State private var canManage = false
+    @State private var isSaving = false
+    @State private var failure: String?
+    @State private var attemptedCreation: ServerBoardWrite?
+
+    init(client: HermesAPIClient, existing: ServerBoard?, onSaved: @escaping (ServerBoardReceipt) -> Void) {
+        self.client = client
+        self.existing = existing
+        self.onSaved = onSaved
+        _name = State(initialValue: existing?.name ?? "")
+        _description = State(initialValue: existing?.description ?? "")
+        _icon = State(initialValue: existing?.icon ?? "")
+        _color = State(initialValue: existing?.color ?? "")
+        _workdir = State(initialValue: existing?.default_workdir ?? "")
+        _projectID = State(initialValue: existing?.project_id ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let failure { Section { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
+                Section("Board") {
+                    if let existing { LabeledContent("Board ID", value: existing.slug) }
+                    else { TextField("Board ID", text: $slug).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    TextField("Name", text: $name)
+                    TextField("Description", text: $description, axis: .vertical).lineLimit(2...8)
+                    TextField("Icon", text: $icon)
+                    TextField("Color", text: $color)
+                }
+                Section {
+                    TextField("Server folder", text: $workdir).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Project ID or slug", text: $projectID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                } header: { Text("Optional server workspace") } footer: {
+                    Text("Use an existing absolute folder path on the server. Linking a Hermes project uses its primary folder unless a folder is supplied.")
+                }
+            }
+            .disabled(isSaving || attemptedCreation != nil)
+            .navigationTitle(existing == nil ? "New Board" : "Edit Board")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isSaving) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
+                        .disabled(isSaving || !canManage || (existing == nil && slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+            .task {
+                do {
+                    canManage = try await client.workspaceCapabilities().board_manage == true
+                    if !canManage { failure = "Board management requires Companion bridge 0.1.10 on this server." }
+                } catch { failure = "Could not check board editing support: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    @MainActor private func save() async {
+        guard canManage, !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        var payload = ServerBoardWrite()
+        if existing == nil { payload.slug = slug }
+        // Omit unchanged fields so a phone edit does not overwrite unrelated Mac edits.
+        if name != (existing?.name ?? "") { payload.name = name }
+        if description != (existing?.description ?? "") { payload.description = description }
+        if icon != (existing?.icon ?? "") { payload.icon = icon }
+        if color != (existing?.color ?? "") { payload.color = color }
+        if workdir != (existing?.default_workdir ?? "") { payload.default_workdir = workdir }
+        if projectID != (existing?.project_id ?? "") { payload.project_id = projectID }
+        if existing != nil, [payload.name, payload.description, payload.icon, payload.color,
+                             payload.default_workdir, payload.project_id].allSatisfy({ $0 == nil }) {
+            dismiss()
+            return
+        }
+        do {
+            let receipt: ServerBoardReceipt
+            if let existing { receipt = try await client.updateWorkspaceBoard(slug: existing.slug, payload: payload) }
+            else {
+                if attemptedCreation == nil { attemptedCreation = try payload.validatedCreation() }
+                receipt = try await client.createWorkspaceBoard(payload: attemptedCreation!)
+            }
+            onSaved(receipt)
+            dismiss()
+        } catch {
+            if case APIError.http(let rejected) = error, [400, 401, 403, 404, 422].contains(rejected.status) {
+                attemptedCreation = nil
+            }
+            failure = "Board save was not confirmed: \(error.localizedDescription) \(attemptedCreation != nil ? "Retry keeps the same board ID and fields; cancel and refresh to inspect the server." : "Check the supplied fields and refresh if another client may have edited this board.")"
         }
     }
 }

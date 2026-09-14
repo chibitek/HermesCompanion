@@ -1,5 +1,12 @@
 # Companion Workspace Bridge
 
+Version 0.1.10 adds native board creation, metadata editing, active-board selection,
+and archiving. Board writes require `board_manage` in the capability response.
+Repeated creation returns an existing board without overwriting its metadata;
+ordinary edits send only changed fields. Archive retains the server board files
+and tasks. Board import/export, hard deletion, and archive restoration are not
+exposed by these new controls.
+
 Version 0.1.9 adds profile-owned project management through native `projects.*`
 handlers. Reads and receipts identify the profile; the phone rejects mismatches.
 Native RPC errors keep their method, code, and validation reason. All routes use
@@ -41,6 +48,16 @@ registered, so a named-profile credential cannot use that alias to read other
 profiles. The plugin uses the gateway's existing authorization check unchanged.
 
 ## Routes
+
+- `POST /api/companion/boards`: native board fields, including a stable `slug`.
+  A reused slug returns `already_exists: true` and preserves current metadata.
+- `PATCH /api/companion/board?board=...`: explicit changed display metadata,
+  default server workdir, or project scope; the slug is immutable.
+- `POST /api/companion/board-active?board=...`: empty object; sets the CLI/slash
+  command active board and confirms its identity.
+- `POST /api/companion/board-archive?board=...`: empty object; native archive,
+  retaining task data and reverting an archived active board to default.
+  The default board cannot be archived. Hard deletion is not accepted.
 
 - `GET /api/companion/project-records?profile=...`: saved project records and active ID.
 - `GET /api/companion/project-record?profile=...&project_id=...`: one saved project.

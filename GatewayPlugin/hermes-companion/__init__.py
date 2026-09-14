@@ -286,7 +286,7 @@ def activate_project(query, payload):
 def workspace_capabilities(_query):
     from plugins.kanban.dashboard import plugin_api as native
 
-    return {"version": "0.1.9", "project_manage": True, "task_create": True, "task_update": True,
+    return {"version": "0.1.10", "board_manage": True, "project_manage": True, "task_create": True, "task_update": True,
             "task_comment": True, "task_statuses": [*native._STATUS_HANDLERS, "archived"]}
 
 
@@ -302,6 +302,64 @@ def validated_payload(model, payload):
     if unknown:
         raise ValueError("Unsupported task fields: " + ", ".join(sorted(unknown)))
     return model.model_validate(payload)
+
+
+def create_board(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+    from hermes_cli import kanban_db
+
+    if query:
+        raise ValueError("Board creation takes its slug from the request body")
+    if "switch" in payload:
+        raise ValueError("Select the active board with the separate board-active operation")
+    body = validated_payload(native.CreateBoardBody, payload)
+    slug = kanban_db._require_slug(body.slug)
+    existing = next((b for b in boards({})["boards"] if b["slug"] == slug), None)
+    # Native create_board writes display metadata even on slug reuse. A retry
+    # must return the existing record without overwriting another client's edits.
+    if existing is not None:
+        return {"board": existing, "already_exists": True}
+    result = native.create_board_endpoint(body)
+    if result.get("board", {}).get("slug") != slug:
+        raise RuntimeError("Hermes did not confirm the requested board")
+    return {**result, "already_exists": False}
+
+
+def update_board(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+
+    slug = require_board(query)
+    if not payload:
+        raise ValueError("Choose at least one board field to change")
+    result = native.rename_board(slug, validated_payload(native.RenameBoardBody, payload))
+    if result.get("board", {}).get("slug") != slug:
+        raise RuntimeError("Hermes did not confirm this board update")
+    return result
+
+
+def activate_board(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+
+    if payload:
+        raise ValueError("Active-board selection does not accept body fields")
+    slug = require_board(query)
+    result = native.switch_board(slug)
+    if result.get("current") != slug:
+        raise RuntimeError("Hermes did not confirm the active board")
+    return {"slug": slug, "action": "activated", **result}
+
+
+def archive_board(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+
+    if payload:
+        raise ValueError("Archiving does not accept delete or other body fields")
+    slug = require_board(query)
+    result = native.delete_board(slug, delete=False)
+    receipt = result.get("result", {})
+    if receipt.get("slug") != slug or receipt.get("action") != "archived":
+        raise RuntimeError("Hermes did not confirm this board archive")
+    return {"slug": slug, "action": "archived", "current": result["current"]}
 
 
 def create_task(query, payload):
@@ -358,6 +416,10 @@ def comment_task(query, payload):
 
 
 WRITERS = {
+    ("POST", "boards"): create_board,
+    ("PATCH", "board"): update_board,
+    ("POST", "board-active"): activate_board,
+    ("POST", "board-archive"): archive_board,
     ("POST", "projects-create"): create_project,
     ("PATCH", "project-record"): update_project,
     ("DELETE", "project-record"): delete_project,
@@ -511,16 +573,17 @@ def wire(app, adapter):
                 if not isinstance(payload, dict):
                     raise ValueError("The workspace request must be a JSON object")
                 query = dict(request.query)
-                allowed_query = {"profile", "project_id"} if "project" in writer.__name__ else {"board", "task_id"}
+                allowed_query = ({"profile", "project_id"} if "project" in writer.__name__
+                                 else {"board"} if writer.__name__.endswith("_board") else {"board", "task_id"})
                 if set(query) - allowed_query:
                     raise ValueError("Only " + ", ".join(sorted(allowed_query)) + " query fields are accepted")
                 result = await asyncio.to_thread(writer, query, payload)
                 return web.json_response(result, headers={"Cache-Control": "no-store"})
             except ValidationError as exc:
                 details = "; ".join(".".join(map(str, item["loc"])) + ": " + item["msg"] for item in exc.errors())
-                return web.json_response({"error": {"code": "invalid_task_fields", "message": details}}, status=422)
+                return web.json_response({"error": {"code": "invalid_workspace_fields", "message": details}}, status=422)
             except HTTPException as exc:
-                return web.json_response({"error": {"code": "task_operation_rejected", "message": str(exc.detail)}}, status=exc.status_code)
+                return web.json_response({"error": {"code": "workspace_operation_rejected", "message": str(exc.detail)}}, status=exc.status_code)
             except WorkspaceRPCError as exc:
                 status = 404 if exc.code == 5062 else 400 if exc.code == 5063 else 503
                 return web.json_response({"error": {"code": str(exc.code), "message": str(exc)}}, status=status)

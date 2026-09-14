@@ -2,6 +2,20 @@ import XCTest
 @testable import HermesCompanion
 
 final class WorkspaceContractTests: XCTestCase {
+    func testBoardCreationNormalizesNativeSlugAndRejectsInvalidPaths() throws {
+        var payload = ServerBoardWrite()
+        payload.slug = " Engineering_2 "
+        XCTAssertEqual(try payload.validatedCreation().slug, "engineering_2")
+        for slug in ["", "../escape", "_hidden", "with spaces", String(repeating: "a", count: 65)] {
+            payload.slug = slug
+            XCTAssertThrowsError(try payload.validatedCreation())
+        }
+        payload = ServerBoardWrite()
+        payload.description = "Changed description"
+        let fields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)) as! [String: Any]
+        XCTAssertEqual(Set(fields.keys), ["description"], "Unchanged board fields must not overwrite desktop edits")
+    }
+
     func testConnectionConfigRejectsDemoAndEmptyGatewayConfigurations() {
         XCTAssertFalse(ConnectionConfig(baseURL: "demo://local", apiKey: "demo", label: "Demo").isValid)
         XCTAssertFalse(ConnectionConfig(baseURL: "", apiKey: "secret", label: "Hermes").isValid)

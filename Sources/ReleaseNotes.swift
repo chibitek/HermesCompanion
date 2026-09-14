@@ -14,6 +14,13 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.76":
+            return [
+                "Create and edit Kanban boards from your iPhone.",
+                "Choose the active Hermes board or archive a board while retaining its tasks on the server.",
+                "Board editing requires Companion bridge 0.1.10; older servers continue to support existing board views.",
+                "Connection recovery stays on your selected server and preserves the current conversation."
+            ]
         case "1.8.65":
             return [
                 "Chat shows gateway reachability, response activity, and sync status.",

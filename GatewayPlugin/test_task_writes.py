@@ -19,6 +19,9 @@ class TaskWriteTests(unittest.IsolatedAsyncioTestCase):
         env = patch.dict(os.environ, {"HERMES_KANBAN_HOME": root, "HERMES_HOME": root,
                                       "HERMES_KANBAN_DB": str(Path(root) / "kanban.db")})
         env.start()
+        # Use native per-board database resolution inside this disposable home.
+        # A fixed DB override redirects every board into the default database.
+        os.environ.pop("HERMES_KANBAN_DB", None)
         self.addCleanup(env.stop)
         from hermes_cli import kanban_db
         self.db = kanban_db
@@ -33,6 +36,50 @@ class TaskWriteTests(unittest.IsolatedAsyncioTestCase):
         self.client = TestClient(TestServer(app))
         await self.client.start_server()
         self.addAsyncCleanup(self.client.close)
+
+    async def testBoardManagementRoundTripAndRetryDoesNotOverwrite(self):
+        from plugins.kanban.dashboard import plugin_api as native
+        response = await self.client.post("/api/companion/boards", json={"slug": "mobile", "name": "Mobile board"})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertFalse((await response.json())["already_exists"])
+        native.rename_board("mobile", native.RenameBoardBody(name="Desktop edit"))
+        response = await self.client.post("/api/companion/boards", json={"slug": "mobile", "name": "Old retry"})
+        result = await response.json()
+        self.assertTrue(result["already_exists"])
+        self.assertEqual(result["board"]["name"], "Desktop edit")
+        response = await self.client.patch("/api/companion/board?board=mobile", json={"description": "From phone"})
+        self.assertEqual(response.status, 200, await response.text())
+        current = next(b for b in native.list_boards(include_archived=False)["boards"] if b["slug"] == "mobile")
+        self.assertEqual(current["name"], "Desktop edit")
+        self.assertEqual(current["description"], "From phone")
+        response = await self.client.post("/api/companion/board-active?board=mobile", json={})
+        self.assertEqual((await response.json())["current"], "mobile")
+        task = native.create_task(native.CreateTaskBody(title="Archive preservation", triage=True), board="mobile")["task"]
+        response = await self.client.post("/api/companion/board-archive?board=mobile", json={})
+        receipt = await response.json()
+        self.assertEqual(receipt["action"], "archived")
+        self.assertEqual(receipt["current"], "default")
+        self.assertNotIn("mobile", [b["slug"] for b in native.list_boards(include_archived=False)["boards"]])
+        archived = list((self.db.boards_root() / "_archived").glob("mobile-*/kanban.db"))
+        self.assertEqual(len(archived), 1)
+        import sqlite3
+        with sqlite3.connect(archived[0]) as db:
+            self.assertEqual(db.execute("SELECT title FROM tasks WHERE id = ?", (task["id"],)).fetchone()[0], "Archive preservation")
+
+    async def testBoardValidationAndAuthorizationPrecedeWrites(self):
+        response = await self.client.post("/api/companion/boards", json={"slug": "../escape"})
+        self.assertEqual(response.status, 400)
+        response = await self.client.post("/api/companion/board-archive?board=default", json={})
+        self.assertEqual(response.status, 400)
+        self.assertIn("default", (await response.json())["error"]["message"])
+        response = await self.client.post("/api/companion/board-archive?board=default", json={"delete": True})
+        self.assertEqual(response.status, 400)
+        response = await self.client.patch("/api/companion/board?board=missing", json={"name": "Renamed"})
+        self.assertEqual(response.status, 400)
+        self.allowed = False
+        response = await self.client.post("/api/companion/boards", json={"slug": "unauthorized"})
+        self.assertEqual(response.status, 401)
+        self.assertNotIn("unauthorized", [b["slug"] for b in self.db.list_boards()])
 
     async def create(self, key="one"):
         response = await self.client.post("/api/companion/tasks?board=default", json={

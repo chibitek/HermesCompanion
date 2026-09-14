@@ -2,6 +2,58 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testBoardWritesValidateIdentityAndForwardNativeRefusal() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        defer { SessionHistoryURLProtocol.handler = nil }
+        var payload = ServerBoardWrite()
+        payload.slug = " MOBILE "
+        SessionHistoryURLProtocol.handler = { request in
+            XCTAssertEqual(request.request.httpMethod, "POST")
+            XCTAssertNil(URLComponents(url: request.request.url!, resolvingAgainstBaseURL: false)?.query)
+            request.succeed(body: #"{"board":{"slug":"mobile","name":"Desktop edit"},"already_exists":true}"#)
+        }
+        let existing = try await client.createWorkspaceBoard(payload: payload)
+        XCTAssertEqual(existing.board.slug, "mobile")
+        XCTAssertEqual(existing.already_exists, true)
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"board":{"slug":"foreign"}}"#)
+        }
+        do {
+            _ = try await client.updateWorkspaceBoard(slug: "mobile", payload: ServerBoardWrite())
+            XCTFail("Foreign board receipt must not confirm an update")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("did not confirm this board")) }
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"error":{"message":"The default board cannot be removed"}}"#, status: 400)
+        }
+        do {
+            try await client.performWorkspaceBoardAction(slug: "default", archive: true)
+            XCTFail("A native refusal must surface")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("default board cannot be removed"))
+            XCTAssertTrue(error.localizedDescription.contains("/api/companion/board-archive"))
+        }
+    }
+
+    func testBoardActionRejectsWrongActiveSelectionOrUnconfirmedArchive() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        defer { SessionHistoryURLProtocol.handler = nil }
+        for archive in [true, false] {
+            SessionHistoryURLProtocol.handler = { request in
+                request.succeed(body: archive
+                    ? #"{"slug":"mobile","action":"archived","current":"mobile"}"#
+                    : #"{"slug":"mobile","action":"activated","current":"default"}"#)
+            }
+            do {
+                try await client.performWorkspaceBoardAction(slug: "mobile", archive: archive)
+                XCTFail("The receipt must verify the requested action and active board")
+            } catch { XCTAssertTrue(error.localizedDescription.contains("did not confirm")) }
+        }
+    }
+
     private static let connectionHealth = #"{"status":"ok","platform":"hermes-agent","version":"0.21.2"}"#
     private static let connectionCapabilities = #"{"object":"capabilities","platform":"hermes-agent","model":"local","auth":{"type":"bearer","required":true},"features":{},"endpoints":{}}"#
 

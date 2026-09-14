@@ -144,6 +144,43 @@ final class HermesAPIClient: Sendable {
         try await get(path: "/api/companion/boards", type: WorkspaceBoards.self)
     }
 
+    func createWorkspaceBoard(payload: ServerBoardWrite) async throws -> ServerBoardReceipt {
+        let normalized = try payload.validatedCreation()
+        let slug = normalized.slug!
+        let receipt: ServerBoardReceipt = try await writeBoard(method: "POST", path: "/api/companion/boards", slug: nil, body: normalized)
+        guard receipt.board.slug == slug else {
+            throw APIError.invalidEndpoint("POST /api/companion/boards returned a different board. Refresh the board list before retrying.")
+        }
+        return receipt
+    }
+
+    func updateWorkspaceBoard(slug: String, payload: ServerBoardWrite) async throws -> ServerBoardReceipt {
+        let receipt: ServerBoardReceipt = try await writeBoard(method: "PATCH", path: "/api/companion/board", slug: slug, body: payload)
+        guard receipt.board.slug == slug else {
+            throw APIError.invalidEndpoint("PATCH /api/companion/board did not confirm this board. Refresh before making another edit.")
+        }
+        return receipt
+    }
+
+    func performWorkspaceBoardAction(slug: String, archive: Bool) async throws {
+        let path = archive ? "/api/companion/board-archive" : "/api/companion/board-active"
+        let receipt: ServerBoardActionReceipt = try await writeBoard(method: "POST", path: path, slug: slug, body: [String: String]())
+        guard receipt.slug == slug, receipt.action == (archive ? "archived" : "activated"),
+              archive ? receipt.current != slug : receipt.current == slug else {
+            throw APIError.invalidEndpoint("POST \(path) did not confirm the requested board action. Refresh the board list before retrying.")
+        }
+    }
+
+    private func writeBoard<Body: Encodable, Result: Decodable>(method: String, path: String,
+        slug: String?, body: Body) async throws -> Result {
+        var req = try request(method: method, path: path, queryItems: slug.map { [URLQueryItem(name: "board", value: $0)] })
+        req.httpBody = try JSONEncoder().encode(body)
+        req.timeoutInterval = 20
+        let (data, response) = try await perform(req, timeout: 20)
+        try checkHTTPStatus(response, data: data)
+        return try decode(Result.self, data: data, response: response)
+    }
+
     func workspaceBoard(slug: String) async throws -> ServerBoardDetail {
         try await get(path: "/api/companion/board", queryItems: [
             URLQueryItem(name: "board", value: slug)

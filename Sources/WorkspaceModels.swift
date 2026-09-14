@@ -116,6 +116,11 @@ struct ServerBoard: Decodable, Identifiable {
     let name: String?
     let total: Int?
     let project_name: String?
+    let description: String?
+    let icon: String?
+    let color: String?
+    let default_workdir: String?
+    let project_id: String?
     var id: String { slug }
     var title: String { name.flatMap { $0.isEmpty ? nil : $0 } ?? slug }
 }
@@ -203,6 +208,7 @@ struct WorkspaceCapabilities: Decodable {
     let task_comment: Bool
     let task_statuses: [String]
     let project_manage: Bool?
+    let board_manage: Bool?
 }
 
 struct ServerTaskWrite: Encodable {
@@ -251,4 +257,35 @@ struct ServerTaskCommentReceipt: Decodable {
     let board: String
     let task_id: String
     let ok: Bool
+}
+
+struct ServerBoardWrite: Encodable {
+    var slug: String? = nil
+    var name: String? = nil
+    var description: String? = nil
+    var icon: String? = nil
+    var color: String? = nil
+    var default_workdir: String? = nil
+    var project_id: String? = nil
+
+    func validatedCreation() throws -> ServerBoardWrite {
+        var result = self
+        let value = (slug ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard value.range(of: "^[a-z0-9][a-z0-9_-]{0,63}$", options: .regularExpression) != nil else {
+            throw APIError.invalidEndpoint("Board ID must contain 1–64 lowercase letters, digits, hyphens or underscores, starting with a letter or digit.")
+        }
+        result.slug = value
+        return result
+    }
+}
+
+struct ServerBoardReceipt: Decodable {
+    let board: ServerBoard
+    let already_exists: Bool?
+}
+
+struct ServerBoardActionReceipt: Decodable {
+    let slug: String
+    let action: String
+    let current: String
 }
