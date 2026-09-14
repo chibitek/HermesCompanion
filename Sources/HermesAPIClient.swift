@@ -11,7 +11,7 @@ private final class AttachmentRedirectPolicy: NSObject, URLSessionTaskDelegate, 
 /// Handles all HTTP communication with the Hermes Agent API server.
 ///
 /// All endpoints use Bearer token auth. The base URL is user-configured
-/// (e.g., http://localhost:8642 via Tailscale, or http://192.168.1.50:8642 via LAN).
+/// (e.g., http://100.x.x.x:8642 via Tailscale, or http://192.168.1.50:8642 via LAN).
 ///
 /// This client is completely generic — no hardcoded URLs or credentials.
 final class HermesAPIClient: Sendable {

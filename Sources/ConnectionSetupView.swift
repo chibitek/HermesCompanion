@@ -61,7 +61,7 @@ struct ConnectionSetupView: View {
                         }
                         
                         VStack(spacing: 16) {
-                            glassField(title: "Hermes URL", text: $baseURL, placeholder: "http://localhost:8642", icon: "globe", keyboardType: .URL)
+                            glassField(title: "Hermes URL", text: $baseURL, placeholder: "http://100.x.x.x:8642", icon: "globe", keyboardType: .URL)
                             if let warning = Self.urlCaution(for: baseURL) {
                                 Label(warning, systemImage: "exclamationmark.triangle")
                                     .font(.caption)
@@ -592,7 +592,7 @@ struct ConnectionSetupView: View {
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               let host = url.host(), !host.isEmpty else {
-            return "Enter a full URL starting with http:// or https:// (e.g. http://localhost:8642)"
+            return "Enter a full URL starting with http:// or https:// (e.g. http://100.x.x.x:8642)"
         }
         return nil
     }

@@ -225,7 +225,7 @@ Six built-in themes in a visual grid picker. Each one transforms the entire app 
 │  Hermes         │◄──────encrypted────────►│  Server A: Personal      │
 │  Companion      │      tunnel             │  - Hermes Agent Gateway  │
 │                 │                        │  - LLM, Tools, Memory    │
-│  - Chat UI      │   http://localhost:8642│                          │
+│  - Chat UI      │   http://100.x.x.x:8642│                          │
 │  - Voice mode   │◄──────────────────────►│  Server B: Work          │
 │  - Tool approve │   http://100.y.y.y:8642│  - Hermes Agent Gateway  │
 │  - Sessions     │◄──────────────────────►│  - Different models      │
@@ -260,7 +260,7 @@ No port forwarding. No DDNS. No exposing your machine to the internet. Tailscale
 1. Install [Tailscale](https://apps.apple.com/app/tailscale/id1470492403) from the App Store on your iPhone.
 2. Install Tailscale on the machine running your Hermes gateway (`curl -fsSL https://tailscale.com/install.sh | sh` on Linux/macOS).
 3. Sign in to both with the same account.
-4. Your gateway is now reachable at your machine's Tailscale IP (e.g., `http://localhost:8642`).
+4. Your gateway is now reachable at your machine's Tailscale IP (e.g., `http://100.x.x.x:8642`).
 
 The app handles Tailscale reconnection automatically — if the tunnel drops during a quick app switch, it retries in the background without kicking you to the login screen.
 
