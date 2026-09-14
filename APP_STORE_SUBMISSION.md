@@ -2,25 +2,27 @@
 
 ## Current candidate
 
-**1.8.83 (180)** makes reasoning preferences operational without changing other
-clients' saved conversation options. It includes the earlier steering, deletion,
-queue, stream and audio repairs. Device inventory confirms installation; launch
-and visual acceptance of this build remain unverified.
+**1.8.84 (181)** fixes run monitoring stopping when reattaching the run already
+selected. It retains live text and replay position while authoritative status
+continues updating. It includes the earlier reasoning, steering, deletion,
+queue, stream and audio repairs.
 
-- Version: **1.8.83 (180)**.
+- Version: **1.8.84 (181)**.
 - Bundle identifier: `com.chibitek.hermescompanion`.
+- Device: signed export and matching app/widget versions verified. Inventory
+  confirms installation; launch was blocked by the locked phone. Physical
+  visual/audio acceptance remains incomplete.
 - TestFlight: **Testing** in the existing internal group alongside builds 176
-  through 179. The tester remains **Invited** after the September 14 resend, with
-  no registered device. Invitation acceptance and TestFlight installation remain
-  unverified; the screenshot's Incompatible entry is still unidentified.
-- App Review: the pending build 179 submission was withdrawn. After a transient
-  submission error, Apple confirmed **1 Item Submitted** on September 14, 2026
-  at 2:29 AM Eastern, containing **1.8.83 (180)**. The candidate is **Waiting for
-  Review**, with manual release selected.
-- Validation: 170 ordinary iOS tests, 165 native gateway tests and eight separate
-  real-gateway checks passed. The isolated workspace had zero sessions or metadata
-  remaining. The deployed gateway's capability and actual reasoning behavior were
-  verified. Physical audio acceptance and variable model latency remain open.
+  through 180. The existing invitation remains unaccepted in the latest observed
+  tester state; TestFlight installation remains unverified. The screenshot's
+  Incompatible entry is still unidentified.
+- App Review: the pending build 180 submission was withdrawn. Apple confirmed
+  **1 Item Submitted** on September 14, 2026 at 2:44 AM Eastern, containing
+  **1.8.84 (181)**. It is **Waiting for Review**, with manual release selected.
+- Validation: 171 ordinary iOS tests and eight separate real-gateway checks passed,
+  with zero retained sessions or metadata. The new regression fails before the
+  fix and passes after it. No gateway change was required; the six compatibility
+  patches and bridge 0.1.10 remain the deployed baseline.
 - Reviewer gateway access has not been supplied. Review notes disclose the
   self-hosted gateway requirement and verification limits. Isolated reviewer
   access and screenshot refresh/verification remain follow-up work.

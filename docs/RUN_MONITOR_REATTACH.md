@@ -30,5 +30,10 @@ foreign-run and admission/control checks remain green. All eight live checks
 passed separately against the real isolated gateway and local model, with zero
 retained sessions or metadata.
 
-The repair is being packaged as 1.8.84 (181); the currently delivered build 180
-does not include it. No gateway patch or credential changes are required.
+The repair is archived as 1.8.84 (181), with matching app/widget versions and a
+verified signed export. Device inventory confirms installation. Launch was
+blocked by the locked phone, so physical visual/audio acceptance is not proven.
+Apple processed the upload and build 181 is Testing in the existing internal
+group. Build 180 was withdrawn from review; Apple confirmed 1.8.84 (181) submitted
+on September 14 at 2:44 AM Eastern and Waiting for Review with manual release
+selected. No gateway patch or credential changes were required.

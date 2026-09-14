@@ -1,6 +1,31 @@
 # Development Release Readiness
 
-## Current reasoning update: 1.8.83 (180)
+## Current run monitoring update: 1.8.84 (181)
+
+Build 181 preserves live output, the replay cursor and status monitoring when
+reattaching the run already selected. The regression failed before repair and
+now reaches the canonical terminal result without losing or duplicating text.
+See [RUN_MONITOR_REATTACH.md](RUN_MONITOR_REATTACH.md).
+
+The full suite passed 171 ordinary iOS tests, with eight opt-in checks skipped.
+All eight real-gateway checks then passed separately with zero retained sessions
+or metadata. No gateway change was required; the six compatibility patches and
+bridge 0.1.10 from build 180 remain the deployed server baseline.
+
+The archive has matching app/widget versions and the signed export was verified.
+Physical-device inventory confirms 1.8.84 (181) installed, but launch was blocked
+by the locked phone. Physical visual/audio acceptance remains incomplete. Apple
+processed the upload and build 181 is Testing in the existing internal group.
+Invitation acceptance through TestFlight remains unverified.
+
+The older build 180 submission was withdrawn. Apple confirmed one submitted item,
+**1.8.84 (181)**, on September 14 at 2:44 AM Eastern; it is Waiting for Review with
+manual release selected. Reviewer access, screenshot verification, full feature
+coverage, physical audio (#53), model latency (#55) and retained-session
+investigation (#57) remain open. No subscription is included. The following
+snapshots are historical.
+
+## Historical reasoning update: 1.8.83 (180)
 
 Build 180 makes reasoning controls operational for capable gateways without
 changing another client's saved conversation options. Conversation default,
