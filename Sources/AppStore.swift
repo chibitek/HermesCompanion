@@ -820,12 +820,15 @@ final class AppStore: ObservableObject {
             } catch {
                 guard apiClient === client, !Task.isCancelled else { return }
                 liveChangesAvailable = false
-                if let failure = error as? APIError, failure.isNotFound {
-                    liveChangesError = "Using periodic sync. Install Companion bridge 0.1.7 on this server for live workspace updates."
-                    return
+                let missingBridge = (error as? APIError)?.isNotFound == true
+                if missingBridge {
+                    liveChangesError = "Live workspace feed unavailable (GET /api/companion/changes, HTTP 404). Using periodic sync and retrying automatically. If this persists, update the Companion bridge on the selected server."
+                } else {
+                    liveChangesError = "Live updates interrupted: \(error.localizedDescription) Periodic sync remains active."
                 }
-                liveChangesError = "Live updates interrupted: \(error.localizedDescription) Periodic sync remains active."
-                do { try await Task.sleep(for: .seconds(5)) }
+                // A bridge can be upgraded while this screen remains open.
+                // A missing endpoint must not disable live sync for the entire foreground session.
+                do { try await Task.sleep(for: .seconds(missingBridge ? 30 : 5)) }
                 catch { return }
             }
         }

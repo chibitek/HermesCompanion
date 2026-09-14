@@ -25,3 +25,17 @@ The four native gateway patches were deployed after 266 canonical tests passed. 
 Live requests confirmed skills, projects, Bots, boards, and bridge 0.1.9 capabilities. A real chat verification created a temporary session, observed a live workspace change event, received the expected model response, and read the user message and assistant reply through an independent client. The temporary session was deleted successfully. Model completion took 92.58 seconds, so this proves delivery and persistence, not acceptable response speed.
 
 The physical phone still requires verification after credential replacement. The simulator's two live-gateway tests remain skipped; the separate live HTTP check does not establish every iOS/desktop feature or concurrent model-stream behavior. Full feature parity and model latency remain open acceptance work.
+
+## Bridge warning recovery, build 1.8.74 (171)
+
+An initial HTTP 404 from the live workspace feed permanently ended its watcher,
+leaving an install warning visible even after the server bridge was upgraded.
+The watcher now retries missing endpoints every 30 seconds while the app remains
+foregrounded, retaining periodic sync meanwhile. A successful reconnect clears
+the warning and resumes workspace invalidations. The warning identifies the
+endpoint and response and explains automatic retry rather than asserting that
+a specific bridge version is absent.
+
+The regression check exercises a 404 followed by a live SSE response using the
+same client and foreground sync task. It verifies the warning clears and a
+workspace change is processed without reconnecting or restarting the app.

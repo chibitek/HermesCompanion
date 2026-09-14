@@ -2,6 +2,49 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    @MainActor
+    func testLiveWorkspaceFeedRecoversAfterBridgeInstallationWithoutRestart() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        let missing = expectation(description: "Old gateway has no bridge endpoint")
+        let recovered = expectation(description: "The upgraded bridge is retried")
+        var attempts = 0
+        SessionHistoryURLProtocol.handler = { request in
+            switch request.request.url!.path {
+            case "/api/companion/changes":
+                attempts += 1
+                if attempts == 1 {
+                    request.succeed(body: "{}", status: 404)
+                    missing.fulfill()
+                } else {
+                    let response = HTTPURLResponse(url: request.request.url!, statusCode: 200,
+                        httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
+                    request.client?.urlProtocol(request, didReceive: response, cacheStoragePolicy: .notAllowed)
+                    request.client?.urlProtocol(request, didLoad: Data("event: workspace.changed\ndata: {}\n\n".utf8))
+                    recovered.fulfill()
+                }
+            case "/health":
+                request.succeed(body: #"{"status":"ok","platform":"hermes-agent","version":"0.21.2"}"#)
+            default:
+                request.succeed(body: #"{"object":"list","data":[]}"#)
+            }
+        }
+        let live = Task { await store.runLiveSync() }
+        defer { live.cancel(); SessionHistoryURLProtocol.handler = nil }
+        await fulfillment(of: [missing], timeout: 3)
+        for _ in 0..<50 where store.liveChangesError == nil { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertTrue(store.liveChangesError?.contains("retrying automatically") == true)
+        await fulfillment(of: [recovered], timeout: 35)
+        for _ in 0..<50 where store.workspaceRevision == 0 { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertTrue(store.liveChangesAvailable)
+        XCTAssertNil(store.liveChangesError)
+        XCTAssertGreaterThan(store.workspaceRevision, 0)
+        live.cancel()
+        await live.value
+    }
+
     func testCapabilityTimeoutIdentifiesEndpointWithoutPrivateURLDetails() async {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]
