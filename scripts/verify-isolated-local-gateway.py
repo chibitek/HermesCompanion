@@ -32,11 +32,13 @@ from hermes_cli.plugins import discover_plugins
 from hermes_cli.tools_config import _get_platform_tools
 from gateway.config import PlatformConfig
 from gateway.platforms.api_server import APIServerAdapter
+from cron.scheduler import tick
 import gateway.platforms.api_server as source
 
 assert Path(source.__file__).resolve().is_relative_to(Path.cwd().resolve())
 assert Path(get_hermes_home()).resolve() == Path(os.environ["HERMES_HOME"]).resolve()
-assert _get_platform_tools(load_config(), "api_server") == set(), "Verification must have no tools enabled"
+assert all(_get_platform_tools(load_config(), platform) == set() for platform in ("api_server", "cron")), "Verification must have no tools enabled"
+assert not (Path.cwd() / ".worktrees").exists(), "Scheduler verification cannot prune source worktrees"
 discover_plugins()
 
 async def main():
@@ -48,12 +50,24 @@ async def main():
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stopped.set)
+    async def run_scheduler():
+        while not stopped.is_set():
+            await asyncio.to_thread(tick, verbose=False, sync=True)
+            try:
+                await asyncio.wait_for(stopped.wait(), timeout=0.25)
+            except asyncio.TimeoutError:
+                pass
+    scheduler = None
     try:
         if not await adapter.connect():
             raise RuntimeError("Temporary gateway failed to start; inspect gateway.log")
-        print("Isolated gateway ready", flush=True)
+        scheduler = asyncio.create_task(run_scheduler())
+        print("Isolated gateway and scheduler ready", flush=True)
         await stopped.wait()
     finally:
+        stopped.set()
+        if scheduler is not None:
+            await scheduler
         await adapter.disconnect()
 
 asyncio.run(main())
@@ -97,7 +111,7 @@ def main():
         config = {
             "model": {"default": args.model, "provider": "custom:companion-verification", "base_url": args.model_url},
             "custom_providers": [{"name": "companion-verification", "base_url": args.model_url}],
-            "platform_toolsets": {"api_server": []},
+            "platform_toolsets": {"api_server": [], "cron": []},
             "plugins": {"enabled": ["hermes-companion"]},
             "agent": {"max_turns": 2},
         }
@@ -149,12 +163,29 @@ def main():
                 after = get("/api/sessions")
                 jobs_after = get("/api/jobs?include_disabled=true")
                 projects_after = get("/api/companion/project-records?profile=default")
+                execution_jobs = jobs_after.get("jobs", [])
+                cron_output_verified = False
+                if len(execution_jobs) == 1:
+                    job = execution_jobs[0]
+                    job_id = job.get("id", "")
+                    if (len(job_id) == 12 and all(c in "0123456789abcdef" for c in job_id)
+                            and job.get("name") == "Local scheduler verification"
+                            and job.get("last_status") == "ok" and job.get("deliver") == "local"):
+                        outputs = list(Path(home, "cron/output", job_id).glob("*.md"))
+                        cron_output_verified = len(outputs) == 1 and "READY" in outputs[0].read_text().upper()
+                        request = urllib.request.Request(base + "/api/jobs/" + job_id, method="DELETE",
+                                                         headers={"Authorization": "Bearer " + key})
+                        with urllib.request.urlopen(request, timeout=5) as response:
+                            if json.load(response).get("ok") is not True:
+                                raise RuntimeError("Scheduler verification job deletion was not confirmed")
+                        jobs_after = get("/api/jobs?include_disabled=true")
                 linked_files_retained = all((folder / "retain.txt").is_file() and (folder / "retain.txt").read_text() == "Project deletion must retain linked server files.\n"
                                             for folder in (project_folder, reference_folder))
                 report = {"source": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=server_repo, text=True).strip(),
                           "model": args.model, "features": capabilities.get("features"),
                           "tests": summary, "remaining_sessions": len(after.get("data", [])),
                           "remaining_jobs": len(jobs_after.get("jobs", [])),
+                          "cron_output_verified": cron_output_verified,
                           "remaining_projects": len(projects_after.get("projects", [])),
                           "active_project": projects_after.get("active_id"),
                           "linked_project_files_retained": linked_files_retained,
@@ -166,6 +197,8 @@ def main():
                     raise RuntimeError("Real iOS verification did not pass; inspect ios.log and verification.json")
                 if report["remaining_sessions"]:
                     raise RuntimeError("Verification left conversations in the isolated gateway")
+                if not cron_output_verified:
+                    raise RuntimeError("Scheduler did not persist the expected local verification output")
                 if report["remaining_jobs"]:
                     raise RuntimeError("Verification left scheduled jobs in the isolated gateway")
                 if report["remaining_projects"] or report["active_project"] or not linked_files_retained:

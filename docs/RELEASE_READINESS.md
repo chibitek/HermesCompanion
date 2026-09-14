@@ -23,6 +23,17 @@ at 3:16 AM Eastern, Waiting for Review with manual release selected. Invitation
 acceptance, reviewer gateway access, screenshots, physical network transitions
 and full feature parity remain incomplete.
 
+## Subsequent server-only job contract verification
+
+Patch 7 advertises actual cron availability and the eight native job routes.
+The focused native suite passed 167 tests. All eleven real iOS checks passed,
+including actual local-model scheduled execution, saved local output and live
+result synchronization. Cleanup left no jobs, sessions, projects or active
+selection; linked files were unchanged. The local server was gracefully restarted
+on `faecddc545`; health, job capabilities and bridge 0.1.10 were verified live.
+The iOS binary and Apple candidate remain build 182. External channel delivery
+and full native job configuration remain outside this verified subset.
+
 ## Historical run monitoring update: 1.8.84 (181)
 
 Build 181 preserves live output, the replay cursor and status monitoring when

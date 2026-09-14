@@ -3,7 +3,7 @@
 This record separates implemented surfaces from verified behavior. The original
 feature extraction document is a historical roadmap, not evidence of complete
 Hermes parity. The current delivered baseline is Companion 1.8.85 (182), native
-Hermes 0.21.2 with six compatibility patches, and Companion bridge 0.1.10.
+Hermes 0.21.2 with seven compatibility patches, and Companion bridge 0.1.10.
 
 ## Current evidence and remaining acceptance
 
@@ -17,7 +17,7 @@ Hermes 0.21.2 with six compatibility patches, and Companion bridge 0.1.10.
 | Projects | Native profile-scoped project RPC through bridge; bridge tests cover native writes and ownership. New real iOS lifecycle check covers both clients, live invalidation, folder links, archive/restore, active selection and deletion | Physical rendered workflow still requires confirmation |
 | Kanban | Boards, task edits, comments, hierarchy, results and attachments; board lifecycle has real iOS live coverage | Full real task/comment/attachment lifecycle and desktop invalidation |
 | Bots and profiles | Canonical history, profile ownership checks and capability-aware chat access | Installed gateway does not establish every profile's chat transport; preserve profile authorization |
-| Scheduled jobs | Two-client live create/edit/pause/resume/run admission/delete; workspace invalidation plus periodic fallback update the cached list; see [JOB_SYNC.md](JOB_SYNC.md) | Scheduler execution/delivery and native capability coherence (#65), physical rendered workflow |
+| Scheduled jobs | Two-client live create/edit/pause/resume/delete and real local-model scheduler execution with saved-output verification; workspace invalidation plus periodic fallback update the cached list; see [JOB_SYNC.md](JOB_SYNC.md) | Delivery-error detail (#67), external messaging delivery, full native job configuration and physical rendered workflow |
 | Skills, toolsets and artifacts | API client and native UI surfaces exist | Verify every currently enabled operation against native contracts and live behavior |
 | Voice and audio | Typed-chat ownership repairs and automatic wake suppression have regression coverage | Physical microphone, music and Bluetooth continuity (#53) |
 | Broader Hermes features | Historical extraction lists files, Git, analytics, MCP, profile configuration, session correction and subagent surfaces | These require a fresh native-to-iOS contract inventory and implementation; full parity is not established |
@@ -52,8 +52,9 @@ unchanged. Build 182 subsequently adds the scheduled-job synchronization repair.
 The installed native gateway advertises session chat, reasoning, model locks,
 run submission/status/events/steering/approval/stop and skills. The bridge reports
 version 0.1.10 with project, board and task creation/edit/comment capabilities.
-Native `admin_config_rw`, `jobs_admin`, `memory_write_api`, `audio_api` and
-`realtime_voice` report false. These fields are evidence of the advertised
-contract, not proof of route enforcement. In particular, native source still
-mounts scheduled-job write routes despite `jobs_admin: false`; the isolated lifecycle now verifies these writes and run admission. Scheduler
-execution, delivery and capability coherence remain open in issue #65.
+After patch 7, native `jobs_admin` reports true when cron is loaded and the eight
+job endpoints are advertised. `admin_config_rw`, `memory_write_api`, `audio_api`
+and `realtime_voice` still report false. These fields are evidence of the advertised
+contract, not proof of route enforcement. The earlier static jobs flag mismatch is repaired. The isolated
+scheduler now verifies local execution, saved output and automatic client updates;
+external messaging delivery remains unverified.

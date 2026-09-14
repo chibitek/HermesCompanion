@@ -20,16 +20,20 @@ action; recovery clears that warning without erasing unrelated platform errors.
 
 ## Verification scope
 
-The real isolated test uses two independent iOS clients for create, edit, pause,
-resume, run admission and deletion. It asserts automatic app-store updates and
-zero retained jobs. The isolated adapter has no scheduler ticker: run admission
-is verified by its changed next-run time, not by executing or delivering a job.
-Production scheduler execution and delivery remain separate acceptance work.
+The real isolated tests use two independent iOS clients for create, edit, pause,
+resume and deletion, plus a separate scheduled execution check. The disposable
+runner now runs the real native ticker with cron and API tools disabled. iOS
+triggers a local-model job, observes its successful status and execution time
+through live sync, and reads its assistant response through the second client.
+The runner verifies exactly one persisted output for the owned job, deletes it
+through the native API and confirms an empty job catalog. This verifies local
+execution and local saved-output delivery; external messaging delivery remains
+separate acceptance work.
 
 Focused regressions cover out-of-order snapshots, explicit failure and recovery,
 and periodic reads without a live feed while avoiding rapid repeated polling.
-The gateway's static jobs_admin flag is a separate contract inconsistency and
-must not be treated as proof that mounted job write routes are unavailable.
+Patch 7 now derives jobs_admin from cron module availability and advertises the
+actual job route inventory, without changing authorization or execution policy.
 
 The repaired real-gateway run passed all ten checks with zero failures or skips.
 The job lifecycle check took 4.06 seconds. Final canonical reads found no jobs,
@@ -42,3 +46,9 @@ intermittent existing run-admission body assertion failure; a focused rerun and
 twenty repetitions passed. Its cause remains unproven and tracked in issue #66.
 The assertion now identifies each request field instead of reporting a generic
 boolean failure. This record does not claim that intermittent issue is fixed.
+
+The subsequent scheduler pass passed all eleven live checks, including actual
+execution in 2.17 seconds, with zero retained jobs, sessions, projects or active
+selection and unchanged linked files. The native patch passed 167 tests and was
+deployed with a graceful restart; live health and capabilities verified the new
+contract. No iOS binary change was needed after build 182.

@@ -506,11 +506,6 @@ final class LiveGatewayTests: XCTestCase {
             XCTAssertEqual(resumed.first?.enabled, true)
             XCTAssertEqual(resumed.first?.state, "scheduled")
             XCTAssertNotNil(resumed.first?.nextRunAt)
-            // This isolated adapter does not run a scheduler. Verify admission,
-            // not execution or delivery, before immediately removing the job.
-            try await second.runJob(jobId: created.id)
-            let triggered = try await phone.listJobs()
-            XCTAssertNotEqual(triggered.first?.nextRunAt, resumed.first?.nextRunAt)
             edit.name = "Second client final edit"
             _ = try await second.updateJob(jobId: created.id, updates: edit)
             try await waitForLiveSync { store.platformJobs.first?.name == edit.name }
@@ -523,6 +518,54 @@ final class LiveGatewayTests: XCTestCase {
             if !deleted { try await phone.deleteJob(jobId: created.id) }
             throw error
         }
+    }
+
+    @MainActor
+    func testRealGatewayScheduledJobExecutionSyncsResult() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Scheduler execution requires the disposable workspace runner.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Scheduler verification")
+        let phone = HermesAPIClient(config: config)
+        let second = HermesAPIClient(config: config)
+        let store = AppStore(client: phone)
+        let live = Task { await store.runLiveSync() }
+        defer { live.cancel() }
+        try await waitForLiveSync { store.liveChangesAvailable }
+        let before = try await phone.listJobs()
+        XCTAssertTrue(before.isEmpty)
+        let job = try await phone.createJob(HermesJobWrite(name: "Local scheduler verification",
+            schedule: "0 0 1 1 *", prompt: "Connection verification. Reply only READY. Do not use tools or take actions.", deliver: "local", skills: []))
+        do {
+            try await second.runJob(jobId: job.id)
+            let deadline = ContinuousClock.now + .seconds(180)
+            while store.platformJobs.first(where: { $0.id == job.id })?.lastStatus == nil,
+                  ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(200))
+            }
+            let visible = try XCTUnwrap(store.platformJobs.first(where: { $0.id == job.id }))
+            XCTAssertEqual(visible.lastStatus, "ok", visible.lastError ?? "Scheduler did not confirm successful execution")
+            XCTAssertNotNil(visible.lastRunAt)
+            let canonical = try await second.listJobs()
+            XCTAssertEqual(canonical.first?.lastStatus, visible.lastStatus)
+            XCTAssertEqual(canonical.first?.lastRunAt, visible.lastRunAt)
+            let sessions = try await phone.listSessions()
+            let owned = sessions.filter { $0.id.hasPrefix("cron_\(job.id)_") }
+            XCTAssertEqual(owned.count, 1, "Exactly one scheduler conversation should be created")
+            for session in owned {
+                let messages = try await second.getMessages(sessionId: session.id)
+                XCTAssertTrue(messages.contains { $0.isAssistant && ($0.content ?? "").uppercased().contains("READY") })
+                try await phone.deleteSession(sessionId: session.id)
+            }
+        } catch {
+            try await phone.pauseJob(jobId: job.id)
+            try await phone.deleteJob(jobId: job.id)
+            throw error
+        }
+        // The disposable runner verifies this job's persisted local output,
+        // then deletes it through the native API and checks the empty catalog.
     }
 
     @MainActor

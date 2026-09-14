@@ -27,6 +27,22 @@ sessions. The verified local gateway was gracefully restarted on revision
 `266a90387d144836aa1ce4633362f1db4c0b7d61`; health and the advertised capability
 returned HTTP 200. See [CHAT_REASONING.md](../docs/CHAT_REASONING.md).
 
+## Scheduled-job capability patch
+
+`0007-job-capabilities.patch` replaces the hard-coded unavailable job flag with
+the loaded cron module's actual availability and advertises all eight mounted
+job routes. It applies after patch 6 and does not change authentication or job
+execution policy. The native suite passed 167 tests; the availability/route
+regression failed before the repair in both module states.
+
+All eleven real iOS gateway checks passed against the patched isolated gateway.
+The scheduler executed a local-model job, saved its local output and exposed its
+result to both clients automatically. Verification removed the owned job and
+conversation after checking the saved output. The installed local gateway was
+gracefully restarted on `faecddc545` and returned healthy status, `jobs_admin:
+true`, eight job endpoints and bridge 0.1.10. Build 182 is unchanged. External
+messaging delivery and full scheduled-job feature parity remain unverified.
+
 ## Included Fixes
 
 - `0001-fix-api-resolve-locked-custom-provider-identity-from.patch`: resolves a
