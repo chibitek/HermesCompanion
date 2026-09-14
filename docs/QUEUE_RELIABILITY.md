@@ -53,9 +53,9 @@ sync, run replay, and board invalidation also passed. Verification left zero
 sessions, then removed its temporary gateway and workspace. This is not a claim
 that model latency is fixed for every workload; issue #55 remains open.
 
-This repair is packaged in **1.8.80 (177)**, installed on the physical phone
-and accepted for upload by Apple. Launch verification awaits an unlocked phone;
-build 177 is Testing in the internal TestFlight group. The existing tester remains
-Invited and reports the app absent from the active list. The invitation was resent;
-TestFlight installation remains unverified. The Apple review
-candidate remains **1.8.79 (176)**, Waiting for Review with manual release.
+This repair first shipped in build 177 and is also included in **1.8.81 (178)**.
+Device inventory confirms build 178 is installed, and launching it succeeded.
+Build 178 is Testing in the internal TestFlight group. The tester remains Invited
+after a resend and reports the app absent from the active list; TestFlight
+installation remains unverified. Build 178 replaced the withdrawn build 176
+review submission and is Waiting for Review with manual release.

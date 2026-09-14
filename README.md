@@ -42,7 +42,8 @@ Builds 176, 177 and 178 are Testing in the internal group. The existing tester r
 Invited after a September 14 resend and reports the app absent from the active
 TestFlight list. Acceptance and installation through TestFlight remain unverified.
 
-The App Store candidate remains build 176. Apple confirmed its submission on September 14, and it is
+Build 178 replaced the withdrawn build 176 App Store submission. Apple confirmed
+its submission on September 14, and it is
 Waiting for Review with manual release selected. Reviewer gateway access and
 screenshot refresh/verification remain follow-up work.
 

@@ -16,8 +16,9 @@ app absent from the active list. TestFlight acceptance and installation remain
 unverified, and the screenshot's Incompatible entry is still unidentified.
 The connected phone meets the exported build's requirements.
 
-The App Store candidate remains **1.8.79 (176)**, Waiting for Review with manual
-release selected. Build 178 has not replaced the review submission.
+The previous build 176 review submission was withdrawn. Apple confirmed
+**1.8.81 (178)** submitted on September 14; it is Waiting for Review with manual
+release selected. TestFlight availability and App Review are separate states.
 
 The running Hermes **0.21.2** gateway reports code revision
 `afbd3e296ef825922bdd8d79b7d6f4f933288d36`, containing all five compatibility
@@ -51,7 +52,7 @@ and `deleted: true` before clearing local conversation or queued drafts. Failed
 confirmation preserves local state with a specific diagnostic. The full suite
 passed 159 ordinary tests with six skipped, and all six real-gateway checks passed
 separately with zero retained sessions. The repair is installed in build 178,
-but is not in build 177 or the submitted build 176. See [SESSION_DELETION_RECEIPTS.md](SESSION_DELETION_RECEIPTS.md).
+and is included in the submitted build 178. Earlier builds 176 and 177 omit it. See [SESSION_DELETION_RECEIPTS.md](SESSION_DELETION_RECEIPTS.md).
 
 ## Queue and stream repair in build 177
 
@@ -62,7 +63,7 @@ The source simulator suite passed 151 tests, with five live checks skipped; all
 five checks passed separately against an isolated real gateway and local model.
 The structured-message repair subsequently passed 158 ordinary tests and six
 live checks. Both repairs are included in the phone-installed build 177,
-but not the submitted build 176.
+and are also included in the submitted build 178.
 See [QUEUE_RELIABILITY.md](QUEUE_RELIABILITY.md) and
 [SSE_MESSAGE_CONTRACT.md](SSE_MESSAGE_CONTRACT.md) for scope and verification.
 

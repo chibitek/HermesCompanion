@@ -7,17 +7,17 @@ structured-message repairs. Device inventory and launch confirm installation.
 Build 178 is Testing in the internal TestFlight group.
 The existing internal tester remains Invited
 after the September 14 resend. TestFlight acceptance and installation are unverified.
-Build 178 has not replaced the review candidate below.
+Build 178 replaces the withdrawn build 176 review submission.
 
-- Version: **1.8.79 (176)**.
+- Version: **1.8.81 (178)**.
 - Bundle identifier: `com.chibitek.hermescompanion`.
 - TestFlight: build is **Testing** in the internal testing group; the account
   holder is **Invited**. Invitation acceptance and installation through
   TestFlight remain separate device actions.
-- App Store Connect: this build replaces 1.8.64 (161). The saved candidate is
+- App Store Connect: this build replaces 1.8.79 (176). The saved candidate is
   **Waiting for Review**, with manual release selected.
 - Apple confirmed **1 Item Submitted** on September 14, 2026. The submission
-  contains **1.8.79 (176)**. Reviewer gateway access has not been supplied;
+  contains **1.8.81 (178)**. Reviewer gateway access has not been supplied;
   review notes disclose the self-hosted gateway requirement. Arranging isolated
   access and refreshing/verifying screenshots remain follow-up work.
 - No subscriptions are implemented in this candidate. The planned paid
@@ -101,9 +101,10 @@ guidance, and support are available on GitHub.
 
 ## Candidate validation
 
-The ordinary suite passed 142 tests and skipped four opt-in integration tests.
-A separate repeated live-gateway run passed all four integration tests. The
-first live run had a response timeout; variable local-model latency remains
+The ordinary suite passed 159 tests and skipped six opt-in integration tests.
+All six real disposable-gateway checks passed separately with zero retained
+sessions. An earlier cleanup observation remains tracked in issue #57;
+variable local-model latency remains
 tracked in [issue 55](https://github.com/chibitek/HermesCompanion/issues/55).
 Physical music, microphone, and Bluetooth acceptance checks remain tracked in
 [issue 53](https://github.com/chibitek/HermesCompanion/issues/53).

@@ -31,7 +31,7 @@ recording private payloads.
 - Verify object/string round trips, malformed types, private-text exclusion,
   native acknowledgement handling, the full suite, and real gateway behavior.
 
-This source repair follows build 176 and is not in the submitted Apple binary.
+This repair first shipped in build 177 and is included in the submitted build 178.
 
 ## Verification
 
@@ -54,9 +54,10 @@ private payload values and unknown event names are excluded. The coherence pass
 checked the native producer and both Swift consumers; no gateway or credential
 storage change is required.
 
-These fixes and the queue repair are packaged as **1.8.80 (177)**, installed on
-the physical phone and accepted for upload by Apple. Launch verification awaits
-an unlocked phone. Build 177 is Testing in the internal TestFlight group, but
-the existing tester remains Invited and reports the app absent from the active
-list. The invitation was resent; TestFlight installation remains unverified.
-Build 176 remains the separate submitted Apple review candidate.
+These fixes and the queue repair first shipped in build 177. Build 178 also
+includes confirmed session deletion. Its signed export was verified, device
+inventory confirms installation, and launching it succeeded. It is Testing in
+the internal TestFlight group, but the tester remains Invited after a resend and
+reports the app absent from the active list. TestFlight installation is unverified.
+Build 178 replaced the withdrawn build 176 review submission. Apple confirmed
+it is Waiting for Review with manual release.
