@@ -16,6 +16,99 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayApprovalControlsReachNativeExecution() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let folder = env["HERMES_APPROVAL_FOLDER"], !folder.isEmpty,
+              let url = env["HERMES_LIVE_URL"], let key = env["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Run with --approval-check against the disposable gateway.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Approval verification")
+        let phone = HermesAPIClient(config: config)
+        let desktop = HermesAPIClient(config: config)
+        let options = try await phone.getModelOptions()
+        let domain = "LiveApproval-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+        let pending = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer {
+            defaults.removePersistentDomain(forName: domain)
+            if FileManager.default.fileExists(atPath: pending.path) {
+                try? FileManager.default.removeItem(at: pending)
+            }
+        }
+        for choice in ["once", "deny"] {
+            let name = choice == "once" ? "approval-allowed.txt" : "approval-denied.txt"
+            let contents = choice == "once" ? "Approved by iOS" : "Denied by iOS"
+            let script = "from pathlib import Path\nPath(\"\(folder)/\(name)\").write_text(\"\(contents)\")"
+            let session = try await phone.createSession(title: "Approval \(choice) verification", model: options.model, provider: options.provider)
+            var runID: String?
+            do {
+                let accepted = try await desktop.submitRun(DurableRunRequest(
+                    input: "Use execute_code exactly once with the exact Python below. Do not change the code or use any other tools. If approval is denied, do not retry. After the tool returns, report its actual outcome briefly.\n\n\(script)",
+                    session_id: session.id, model: options.model, provider: options.provider),
+                    idempotencyKey: UUID().uuidString)
+                runID = accepted.run_id
+                let id = accepted.run_id
+                let approval = try await withTimeout(seconds: 90) {
+                    while true {
+                        let status = try await desktop.runStatus(id: id)
+                        if status.status == "waiting_for_approval", let approval = status.approval { return approval }
+                        if status.isTerminal { throw APIError.invalidEndpoint("Run ended before requesting native approval: \(status.status), \(status.error ?? "no error")") }
+                        try await Task.sleep(for: .milliseconds(200))
+                    }
+                }
+                let requestID = try XCTUnwrap(approval.request_id)
+                guard approval.command == "execute_code <<'PY'\n\(script)\nPY" else {
+                    throw APIError.invalidEndpoint("Native approval did not contain the exact verification script")
+                }
+                XCTAssertTrue(approval.offeredChoices.contains(choice))
+                let controller = DurableRunController(client: phone, connectionScope: domain,
+                    defaults: defaults, pendingDirectory: pending)
+                await controller.attach(id)
+                XCTAssertEqual(controller.status?.approval?.request_id, requestID)
+                XCTAssertEqual(controller.activity, "Hermes is waiting for approval")
+                do {
+                    try await desktop.approveRun(id: id, requestID: "stale-" + requestID, choice: choice)
+                    XCTFail("Server accepted a stale approval request ID")
+                } catch {
+                    let stillPending = try await desktop.runStatus(id: id)
+                    XCTAssertEqual(stillPending.approval?.request_id, requestID)
+                }
+                await controller.decide(requestID: requestID, choice: choice)
+                XCTAssertNil(controller.operationFailure, controller.operationFailure ?? "")
+                let final = try await withTimeout(seconds: 90) {
+                    while true {
+                        let status = try await desktop.runStatus(id: id)
+                        if status.isTerminal { return status }
+                        if let next = status.approval, next.request_id != requestID {
+                            throw APIError.invalidEndpoint("Model requested another approval after the one-shot verification")
+                        }
+                        try await Task.sleep(for: .milliseconds(200))
+                    }
+                }
+                XCTAssertEqual(final.status, "completed", final.error ?? "Run did not complete")
+                XCTAssertNil(final.approval)
+                let replay = try await collectRun(desktop, id: id)
+                XCTAssertTrue(replay.contains { $0.event == "approval.request" })
+                XCTAssertTrue(replay.contains { $0.event == "approval.responded" })
+                XCTAssertEqual(replay.last?.event, "run.completed")
+            } catch {
+                if let id = runID, try await desktop.runStatus(id: id).isTerminal == false {
+                    try await desktop.stopRun(id: id)
+                    try await withTimeout(seconds: 15) {
+                        while try await !desktop.runStatus(id: id).isTerminal {
+                            try await Task.sleep(for: .milliseconds(200))
+                        }
+                    }
+                }
+                try await desktop.deleteSession(sessionId: session.id)
+                throw error
+            }
+            try await desktop.deleteSession(sessionId: session.id)
+        }
+    }
+
+    @MainActor
     func testRealGatewayReasoningOverrideReachesAgentWithoutPersisting() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",

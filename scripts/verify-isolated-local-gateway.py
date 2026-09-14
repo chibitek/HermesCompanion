@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run real iOS/two-client tests against an isolated, tool-free local Hermes gateway.
+"""Run real iOS/two-client checks against an isolated local Hermes gateway.
 
 Author: Chibitek Contributors
 Updated: 2026-09-14
@@ -7,7 +7,8 @@ Usage: supply the server repository, Python runtime, simulator, derived-data,
 artifact directory and model arguments shown by --help.
 
 Uses a fresh Hermes home and ephemeral API credential; never edits or restarts an
-installed gateway. The model endpoint must already be running on loopback.
+installed gateway. The default suite has no tools; --approval-check enables only
+code execution with one-shot approval for exact disposable file writes. The model endpoint must already be running on loopback.
 """
 import argparse
 import json
@@ -37,7 +38,10 @@ import gateway.platforms.api_server as source
 
 assert Path(source.__file__).resolve().is_relative_to(Path.cwd().resolve())
 assert Path(get_hermes_home()).resolve() == Path(os.environ["HERMES_HOME"]).resolve()
-assert all(_get_platform_tools(load_config(), platform) == set() for platform in ("api_server", "cron")), "Verification must have no tools enabled"
+approval_check = os.environ.get("HERMES_VERIFY_APPROVAL") == "1"
+expected_tools = {"code_execution"} if approval_check else set()
+assert _get_platform_tools(load_config(), "api_server") == expected_tools, "Unexpected API toolsets"
+assert _get_platform_tools(load_config(), "cron") == set(), "Scheduler must have no tools"
 assert not (Path.cwd() / ".worktrees").exists(), "Scheduler verification cannot prune source worktrees"
 discover_plugins()
 
@@ -113,13 +117,15 @@ async def main():
     try:
         if not await adapter.connect():
             raise RuntimeError("Temporary gateway failed to start; inspect gateway.log")
-        scheduler = asyncio.create_task(run_scheduler())
-        kanban = asyncio.create_task(exercise_native_kanban(stopped))
+        if not approval_check:
+            scheduler = asyncio.create_task(run_scheduler())
+            kanban = asyncio.create_task(exercise_native_kanban(stopped))
         def report_native_failure(task):
             if not task.cancelled() and task.exception() is not None:
                 traceback.print_exception(task.exception())
-        kanban.add_done_callback(report_native_failure)
-        print("Isolated gateway and scheduler ready", flush=True)
+        if kanban is not None:
+            kanban.add_done_callback(report_native_failure)
+        print("Isolated approval gateway ready" if approval_check else "Isolated gateway and scheduler ready", flush=True)
         await stopped.wait()
     finally:
         stopped.set()
@@ -142,6 +148,7 @@ def main():
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--model-url", default="http://localhost:11434/v1")
+    parser.add_argument("--approval-check", action="store_true", help="Run only the real code-execution approval check in a disposable home")
     args = parser.parse_args()
     endpoint = urllib.parse.urlsplit(args.model_url)
     if endpoint.hostname not in {"localhost", "127.0.0.1", "::1"} or endpoint.scheme not in {"http", "https"} or endpoint.username or endpoint.password or endpoint.query or endpoint.fragment:
@@ -171,7 +178,9 @@ def main():
         config = {
             "model": {"default": args.model, "provider": "custom:companion-verification", "base_url": args.model_url},
             "custom_providers": [{"name": "companion-verification", "base_url": args.model_url}],
-            "platform_toolsets": {"api_server": [], "cron": []},
+            "platform_toolsets": {"api_server": ["code_execution"] if args.approval_check else [], "cron": []},
+            "approvals": {"mode": "manual", "timeout": 120},
+            "terminal": {"env_type": "local", "cwd": home},
             "plugins": {"enabled": ["hermes-companion"]},
             "agent": {"max_turns": 2},
         }
@@ -183,7 +192,7 @@ def main():
             (folder / "retain.txt").write_text("Project deletion must retain linked server files.\n")
         shutil.copytree(repo / "GatewayPlugin/hermes-companion", Path(home, "plugins/hermes-companion"))
         env = {name: os.environ[name] for name in ("PATH", "HOME", "USER", "TMPDIR", "LANG") if name in os.environ}
-        env.update(HERMES_HOME=home, HERMES_KANBAN_HOME=home, API_SERVER_KEY=key, API_SERVER_PORT=str(port), PYTHONPATH=str(server_repo),
+        env.update(HERMES_VERIFY_APPROVAL="1" if args.approval_check else "0", HERMES_HOME=home, HERMES_KANBAN_HOME=home, API_SERVER_KEY=key, API_SERVER_PORT=str(port), PYTHONPATH=str(server_repo),
                    HERMES_VERIFY_KANBAN_BOARD=kanban_board,
                    HERMES_VERIFY_KANBAN_REPORT=str(artifacts / "native-kanban.json"))
         with (artifacts / "gateway.log").open("w") as log:
@@ -214,12 +223,18 @@ def main():
                 test_env = dict(os.environ, TEST_RUNNER_HERMES_LIVE_URL=base, TEST_RUNNER_HERMES_LIVE_KEY=key, TEST_RUNNER_HERMES_DISPOSABLE_WORKSPACE="1",
                                      TEST_RUNNER_HERMES_LIVE_PROJECT_FOLDER=str(project_folder),
                                      TEST_RUNNER_HERMES_LIVE_KANBAN_BOARD=kanban_board,
-                                     TEST_RUNNER_HERMES_LIVE_REFERENCE_FOLDER=str(reference_folder))
+                                     TEST_RUNNER_HERMES_LIVE_REFERENCE_FOLDER=str(reference_folder),
+                                     TEST_RUNNER_HERMES_APPROVAL_FOLDER=home if args.approval_check else "")
                 result = artifacts / "ios.xcresult"
                 command = ["xcodebuild", "-project", "HermesCompanion.xcodeproj", "-scheme", "HermesCompanion", "-configuration", "Debug",
                            "-destination", "platform=iOS Simulator,id=" + args.simulator, "-derivedDataPath", str(args.derived_data),
                            "-resultBundlePath", str(result), "-collect-test-diagnostics", "never", "-only-testing:HermesCompanionTests/LiveGatewayTests",
                            "CODE_SIGNING_ALLOWED=NO", "test"]
+                approval_test = "HermesCompanionTests/LiveGatewayTests/testRealGatewayApprovalControlsReachNativeExecution"
+                if args.approval_check:
+                    command[command.index("-only-testing:HermesCompanionTests/LiveGatewayTests")] = "-only-testing:" + approval_test
+                else:
+                    command.insert(-2, "-skip-testing:" + approval_test)
                 with (artifacts / "ios.log").open("w") as test_log:
                     tested = subprocess.run(command, cwd=repo, env=test_env, stdout=test_log, stderr=subprocess.STDOUT, timeout=420)
                 summary = json.loads(subprocess.check_output(["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", str(result)]))
@@ -260,20 +275,32 @@ def main():
                           "remaining_session_metadata": [
                               {field: row.get(field) for field in ("id", "title", "source", "message_count")}
                               for row in after.get("data", [])]}
+                if args.approval_check:
+                    allowed = Path(home, "approval-allowed.txt")
+                    denied = Path(home, "approval-denied.txt")
+                    report["approval"] = {
+                        "allowed_write_verified": allowed.exists() and allowed.read_text() == "Approved by iOS",
+                        "denied_write_absent": not denied.exists(),
+                    }
                 (artifacts / "verification.json").write_text(json.dumps(report, indent=2))
                 if tested.returncode or summary.get("passedTests", 0) < 1 or summary.get("failedTests") or summary.get("skippedTests"):
                     raise RuntimeError("Real iOS verification did not pass; inspect ios.log and verification.json")
                 if report["remaining_sessions"]:
                     raise RuntimeError("Verification left conversations in the isolated gateway")
-                if not native_kanban or not all(native_kanban.values()) or not kanban_archived:
+                if not args.approval_check and (not native_kanban or not all(native_kanban.values()) or not kanban_archived):
                     raise RuntimeError("Native Kanban round trip or owned board archive was not verified")
-                if not cron_output_verified:
+                if not args.approval_check and not cron_output_verified:
                     raise RuntimeError("Scheduler did not persist the expected local verification output")
                 if report["remaining_jobs"]:
                     raise RuntimeError("Verification left scheduled jobs in the isolated gateway")
                 if report["remaining_projects"] or report["active_project"] or not linked_files_retained:
                     raise RuntimeError("Project lifecycle verification left records or removed linked files")
-                print("Real iOS checks passed; chat/jobs/projects removed, owned Kanban board archived, linked files retained", flush=True)
+                if args.approval_check:
+                    if not all(report["approval"].values()):
+                        raise RuntimeError("Native approval write/deny outcomes were not verified")
+                    print("Real approval check passed; allowed write verified, denied write absent, sessions removed", flush=True)
+                else:
+                    print("Real iOS checks passed; chat/jobs/projects removed, owned Kanban board archived, linked files retained", flush=True)
             finally:
                 if process.poll() is None:
                     process.terminate()
