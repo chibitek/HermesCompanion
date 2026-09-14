@@ -226,7 +226,7 @@ struct GlassInputBar: View {
                             suppressNextSubmit = false
                             return
                         }
-                        if appearance.returnKeySends {
+                        if appearance.returnKeySends && canSend {
                             if isStreaming { onQueue() } else { onSend() }
                         }
                     }
@@ -356,10 +356,8 @@ struct GlassInputBar: View {
                             onSend()
                         case .queue:
                             onQueue()
-                        case .stop:
-                            onStop()
-                        case .voice:
-                            if !voiceTranscriber.isRecording { onOpenVoicePage?() }
+                        case .compose:
+                            focused = true
                         }
                     } label: {
                         Image(systemName: trailingActionIcon)
@@ -372,6 +370,14 @@ struct GlassInputBar: View {
                     .buttonStyle(.plain)
                     .disabled(voiceTranscriber.isRecording)
                     .accessibilityLabel(trailingActionLabel)
+                    .accessibilityHint(isStreaming ? "Guidance is queued after the current response. Touch and hold for Stop." : "Sends your message. Touch and hold for voice conversation.")
+                    .contextMenu {
+                        if isStreaming {
+                            Button("Stop Response", systemImage: "stop", role: .destructive) { onStop() }
+                        } else if let onOpenVoicePage {
+                            Button("Voice Conversation", systemImage: "waveform.badge.mic", action: onOpenVoicePage)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -518,7 +524,7 @@ struct GlassInputBar: View {
     }
 
     private var canSend: Bool {
-        !text.trimmingCharacters(in: .whitespaces).isEmpty || !attachments.isEmpty
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     private var controlBackground: some View {
@@ -534,48 +540,22 @@ struct GlassInputBar: View {
     }
 
     private var trailingActionIcon: String {
-        if isStreaming && canSend { return "arrow.up" }
-        if isStreaming { return "stop.fill" }
-        if canSend { return "arrow.up" }
-        // Use a more distinctive icon for voice conversation mode
-        return "waveform.badge.mic"
+        isStreaming ? "arrow.turn.up.right" : "arrow.up"
     }
 
     private var trailingActionForeground: Color {
-        if isStreaming && canSend { return .white }
-        if isStreaming { return theme.danger }
-        if canSend { return .white }
-        // For voice conversation mode, use accent color instead of white for better visibility
-        return theme.accent
+        canSend ? .white : theme.accent
     }
 
     private var trailingActionBackground: some View {
-        let shape = Circle()
-        if isStreaming && canSend {
-            return AnyView(shape.fill(theme.accent))
-        }
-        if isStreaming {
-            return AnyView(
-                shape
-                    .fill(theme.danger.opacity(0.12))
-                    .overlay(shape.stroke(theme.danger, lineWidth: 1))
-            )
-        }
-        if canSend {
-            return AnyView(shape.fill(theme.accent))
-        }
-        return AnyView(
-            shape
-                .fill(theme.accent.opacity(0.12))
-                .overlay(shape.stroke(theme.accent.opacity(0.3), lineWidth: 1))
-        )
+        Circle()
+            .fill(canSend ? theme.accent : theme.accent.opacity(0.12))
+            .overlay(Circle().stroke(canSend ? Color.clear : theme.accent.opacity(0.3), lineWidth: 1))
     }
 
     private var trailingActionLabel: String {
-        if isStreaming && canSend { return "Queue message" }
-        if isStreaming { return "Stop" }
-        if canSend { return "Send message" }
-        return "Open voice conversation"
+        if isStreaming { return canSend ? "Queue guidance" : "Write guidance" }
+        return canSend ? "Send message" : "Write message"
     }
 
     private func attachmentThumbnail(_ index: Int) -> some View {

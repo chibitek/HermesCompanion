@@ -9,10 +9,10 @@ final class ComposerSubmissionLogicTests: XCTestCase {
         )
     }
 
-    func testStreamingWithoutTextStillStops() {
+    func testStreamingWithoutTextComposesWithoutStopping() {
         XCTAssertEqual(
             ComposerSubmissionLogic.action(isStreaming: true, canSend: false),
-            .stop
+            .compose
         )
     }
 
@@ -23,10 +23,10 @@ final class ComposerSubmissionLogicTests: XCTestCase {
         )
     }
 
-    func testIdleWithoutTextOpensVoice() {
+    func testIdleWithoutTextComposesMessage() {
         XCTAssertEqual(
             ComposerSubmissionLogic.action(isStreaming: false, canSend: false),
-            .voice
+            .compose
         )
     }
 }

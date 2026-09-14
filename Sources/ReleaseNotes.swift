@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.77":
+            return [
+                "The composer shows a guidance arrow while Hermes is working and an up arrow when idle.",
+                "An empty tap focuses the composer. Touch and hold the arrow to stop an active response or open voice conversation when idle.",
+                "The blinking cursor at the end of the latest response remains the busy indicator."
+            ]
         case "1.8.76":
             return [
                 "Create and edit Kanban boards from your iPhone.",

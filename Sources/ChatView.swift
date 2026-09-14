@@ -492,6 +492,10 @@ struct ChatView: View {
     }
 
     private func queueMessage() {
+        guard attachments.isEmpty else {
+            store.error = AppError(message: "Follow-up guidance currently accepts text only. Wait for Hermes to finish before sending attachments. Your draft and attachments have been kept.")
+            return
+        }
         let visibleText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !visibleText.isEmpty else { return }
         let payload = SkillCommandLogic.messagePayload(for: visibleText)

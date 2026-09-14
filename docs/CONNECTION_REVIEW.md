@@ -117,3 +117,26 @@ revision `afbd3e296e` and a connected API platform. Subsequent live requests
 verified health, bridge 0.1.10 capabilities, and an authenticated workspace event.
 No production tasks or conversations were created for these checks. Build 173
 remains the installed/uploaded iOS build; this repair changes only the server.
+
+## Composer controls, build 174
+
+The requested composer change removes the red stop square from the primary
+action. While a response streams, the primary control uses a turning guidance
+arrow; when idle it always uses an up arrow. An empty tap focuses text entry.
+The existing trailing response cursor remains the busy indicator. Stop moves
+to the control's context menu; the idle context menu retains voice conversation.
+
+The current session-chat transport queues follow-ups after the response ends.
+This change preserves that behavior and labels it "Queue guidance" for
+accessibility; it does not claim the separate durable-run steering endpoint
+controls session-chat turns. Attachment guidance is refused explicitly while
+retaining the draft, since the existing follow-up queue accepts text only.
+
+All four composer action regressions passed. The release archive and exported
+application signature verified successfully. Build 1.8.77 (174) was installed
+on the paired phone; iOS refused automatic launch because the device was locked.
+This UI change does not add live session-chat
+steering; it preserves the existing queued-follow-up transport.
+
+Device inventory confirmed 1.8.77 (174). Apple accepted the uploaded build;
+TestFlight processing and tester availability remain unverified.
