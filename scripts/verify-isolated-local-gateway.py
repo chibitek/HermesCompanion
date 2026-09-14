@@ -102,6 +102,11 @@ def main():
             "agent": {"max_turns": 2},
         }
         Path(home, "config.yaml").write_text(json.dumps(config))
+        project_folder = Path(home, "verification-project")
+        reference_folder = Path(home, "verification-reference")
+        for folder in (project_folder, reference_folder):
+            folder.mkdir()
+            (folder / "retain.txt").write_text("Project deletion must retain linked server files.\n")
         shutil.copytree(repo / "GatewayPlugin/hermes-companion", Path(home, "plugins/hermes-companion"))
         env = {name: os.environ[name] for name in ("PATH", "HOME", "USER", "TMPDIR", "LANG") if name in os.environ}
         env.update(HERMES_HOME=home, HERMES_KANBAN_HOME=home, API_SERVER_KEY=key, API_SERVER_PORT=str(port), PYTHONPATH=str(server_repo))
@@ -123,8 +128,13 @@ def main():
                 before = get("/api/sessions")
                 if before.get("data"):
                     raise RuntimeError("Isolated gateway unexpectedly contains conversations before testing")
-                print("Temporary gateway ready; running real two-client iOS conversation test", flush=True)
-                test_env = dict(os.environ, TEST_RUNNER_HERMES_LIVE_URL=base, TEST_RUNNER_HERMES_LIVE_KEY=key, TEST_RUNNER_HERMES_DISPOSABLE_WORKSPACE="1")
+                projects_before = get("/api/companion/project-records?profile=default")
+                if projects_before.get("projects") or projects_before.get("active_id"):
+                    raise RuntimeError("Isolated gateway unexpectedly contains saved projects before testing")
+                print("Temporary gateway ready; running real two-client iOS checks", flush=True)
+                test_env = dict(os.environ, TEST_RUNNER_HERMES_LIVE_URL=base, TEST_RUNNER_HERMES_LIVE_KEY=key, TEST_RUNNER_HERMES_DISPOSABLE_WORKSPACE="1",
+                                     TEST_RUNNER_HERMES_LIVE_PROJECT_FOLDER=str(project_folder),
+                                     TEST_RUNNER_HERMES_LIVE_REFERENCE_FOLDER=str(reference_folder))
                 result = artifacts / "ios.xcresult"
                 command = ["xcodebuild", "-project", "HermesCompanion.xcodeproj", "-scheme", "HermesCompanion", "-configuration", "Debug",
                            "-destination", "platform=iOS Simulator,id=" + args.simulator, "-derivedDataPath", str(args.derived_data),
@@ -134,9 +144,15 @@ def main():
                     tested = subprocess.run(command, cwd=repo, env=test_env, stdout=test_log, stderr=subprocess.STDOUT, timeout=420)
                 summary = json.loads(subprocess.check_output(["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", str(result)]))
                 after = get("/api/sessions")
+                projects_after = get("/api/companion/project-records?profile=default")
+                linked_files_retained = all((folder / "retain.txt").is_file() and (folder / "retain.txt").read_text() == "Project deletion must retain linked server files.\n"
+                                            for folder in (project_folder, reference_folder))
                 report = {"source": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=server_repo, text=True).strip(),
                           "model": args.model, "features": capabilities.get("features"),
                           "tests": summary, "remaining_sessions": len(after.get("data", [])),
+                          "remaining_projects": len(projects_after.get("projects", [])),
+                          "active_project": projects_after.get("active_id"),
+                          "linked_project_files_retained": linked_files_retained,
                           "remaining_session_metadata": [
                               {field: row.get(field) for field in ("id", "title", "source", "message_count")}
                               for row in after.get("data", [])]}
@@ -145,7 +161,9 @@ def main():
                     raise RuntimeError("Real iOS verification did not pass; inspect ios.log and verification.json")
                 if report["remaining_sessions"]:
                     raise RuntimeError("Verification left conversations in the isolated gateway")
-                print("Real two-client iOS conversation passed; diagnostic conversations removed", flush=True)
+                if report["remaining_projects"] or report["active_project"] or not linked_files_retained:
+                    raise RuntimeError("Project lifecycle verification left records or removed linked files")
+                print("Real two-client iOS checks passed; owned records removed and linked files retained", flush=True)
             finally:
                 if process.poll() is None:
                     process.terminate()

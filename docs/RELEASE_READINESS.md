@@ -12,6 +12,12 @@ All eight real-gateway checks then passed separately with zero retained sessions
 or metadata. No gateway change was required; the six compatibility patches and
 bridge 0.1.10 from build 180 remain the deployed server baseline.
 
+A subsequent verification-only update added a real two-client project lifecycle
+check. All nine live checks passed with zero remaining sessions, projects or
+active selection; linked server files retained their exact contents. No app
+binary changed. [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md) records current
+evidence and remaining feature work, including scheduled-job capability coherence.
+
 The archive has matching app/widget versions and the signed export was verified.
 Physical-device inventory confirms 1.8.84 (181) installed, but launch was blocked
 by the locked phone. Physical visual/audio acceptance remains incomplete. Apple

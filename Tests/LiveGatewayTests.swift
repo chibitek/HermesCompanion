@@ -391,6 +391,89 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayProjectsSyncAcrossClientsAndRetainLinkedFiles() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"],
+              let folder = environment["HERMES_LIVE_PROJECT_FOLDER"],
+              let reference = environment["HERMES_LIVE_REFERENCE_FOLDER"] else {
+            throw XCTSkip("Project lifecycle verification requires the disposable workspace runner.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Project verification")
+        let phone = HermesAPIClient(config: config)
+        let second = HermesAPIClient(config: config)
+        let capabilities = try await phone.workspaceCapabilities()
+        XCTAssertEqual(capabilities.project_manage, true)
+        let store = AppStore(client: phone)
+        let live = Task { await store.runLiveSync() }
+        defer { live.cancel() }
+        try await waitForLiveSync { store.liveChangesAvailable }
+        let before = try await phone.managedProjects(profile: "default")
+        XCTAssertTrue(before.projects.isEmpty)
+        XCTAssertNil(before.active_id)
+        var payload = ProjectWrite()
+        payload.name = "Phone project verification"
+        payload.folders = [folder]
+        let creationRevision = store.workspaceRevision
+        let created = try await phone.saveProject(profile: "default", id: nil, payload: payload)
+        var deleted = false
+        let startedAt = Date()
+        do {
+            try await waitForLiveSync { store.workspaceRevision > creationRevision }
+            let read = try await second.managedProject(profile: "default", id: created.id)
+            XCTAssertEqual(read.name, payload.name)
+            XCTAssertEqual(read.primary_path, folder)
+            let revision = store.workspaceRevision
+            var edit = ProjectWrite()
+            edit.name = "Second client project edit"
+            edit.description = "Remote edit retained by the phone"
+            _ = try await second.saveProject(profile: "default", id: created.id, payload: edit)
+            try await waitForLiveSync { store.workspaceRevision > revision }
+            let updated = try await phone.managedProject(profile: "default", id: created.id)
+            XCTAssertEqual(updated.name, edit.name)
+            XCTAssertEqual(updated.description, edit.description)
+            _ = try await phone.changeProjectFolder(profile: "default", id: created.id, action: .add,
+                payload: ProjectFolderWrite(path: reference, label: "Reference", is_primary: true))
+            let linked = try await second.managedProject(profile: "default", id: created.id)
+            XCTAssertEqual(linked.primary_path, reference)
+            XCTAssertEqual(Set(linked.folders.map(\.path)), Set([folder, reference]))
+            try await second.archiveProject(profile: "default", id: created.id, restore: false)
+            let archived = try await phone.managedProject(profile: "default", id: created.id)
+            XCTAssertTrue(archived.archived)
+            try await phone.archiveProject(profile: "default", id: created.id, restore: true)
+            let restored = try await second.managedProject(profile: "default", id: created.id)
+            XCTAssertFalse(restored.archived)
+            try await phone.activateProject(profile: "default", id: created.id)
+            let active = try await second.managedProjects(profile: "default")
+            XCTAssertEqual(active.active_id, created.id)
+            do {
+                try await second.deleteProject(profile: "default", id: created.id)
+                XCTFail("Deleting an active project must be rejected")
+            } catch let APIError.http(failure) {
+                XCTAssertEqual(failure.status, 400)
+                XCTAssertTrue(failure.errorDescription?.contains("active") == true)
+            }
+            let retained = try await phone.managedProject(profile: "default", id: created.id)
+            XCTAssertEqual(retained.id, created.id)
+            try await second.activateProject(profile: "default", id: nil)
+            let deletionRevision = store.workspaceRevision
+            try await phone.deleteProject(profile: "default", id: created.id)
+            deleted = true
+            try await waitForLiveSync { store.workspaceRevision > deletionRevision }
+            let final = try await second.managedProjects(profile: "default")
+            XCTAssertTrue(final.projects.isEmpty)
+            XCTAssertNil(final.active_id)
+            print("PROJECT_SYNC_TIMING lifecycle_seconds=\(Date().timeIntervalSince(startedAt))")
+        } catch {
+            if !deleted {
+                try await phone.activateProject(profile: "default", id: nil)
+                try await phone.deleteProject(profile: "default", id: created.id)
+            }
+            throw error
+        }
+    }
+
+    @MainActor
     private func waitForLiveSync(_ condition: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(10)
         while !condition() {
