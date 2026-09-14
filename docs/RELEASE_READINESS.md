@@ -5,8 +5,11 @@
 Companion **1.8.80 (177)** is installed on the physical phone; device inventory
 confirms its version. Launch verification was blocked by the phone being locked.
 The app and extension were archived, and the exported app's signature was
-verified. Apple accepted the upload; TestFlight processing and group assignment
-are being checked. Build 177 includes the queued follow-up and structured stream
+verified. Build 177 is Testing in the internal TestFlight group. The existing
+tester remains Invited; the invitation was resent on September 14 after the tester
+reported the app absent from the active list. The connected phone meets the
+exported build requirements, but the unidentified Incompatible entry in the
+tester screenshot remains unresolved. Build 177 includes the queued follow-up and structured stream
 message repairs as well as the prior typed-chat audio and text-fidelity fixes.
 
 The App Store candidate remains **1.8.79 (176)**, Waiting for Review with manual

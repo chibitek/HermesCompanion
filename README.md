@@ -35,7 +35,10 @@ the current reply. The trailing cursor indicates an active response.
 Build 177 adds conversation-owned queued follow-ups, explicit draft recovery,
 and structured stream-message decoding with field-specific errors. It is
 installed on the physical phone; launch verification awaits an unlocked device.
-Apple accepted its upload, and TestFlight distribution is being checked.
+Build 177 is Testing in the internal TestFlight group. The existing tester remains
+Invited, and the invitation was resent on September 14. The tester reports the app
+is absent from the active TestFlight list; acceptance and installation through
+TestFlight remain unverified.
 
 The App Store candidate remains build 176. Apple confirmed its submission on September 14, and it is
 Waiting for Review with manual release selected. Reviewer gateway access and

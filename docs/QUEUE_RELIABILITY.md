@@ -55,5 +55,7 @@ that model latency is fixed for every workload; issue #55 remains open.
 
 This repair is packaged in **1.8.80 (177)**, installed on the physical phone
 and accepted for upload by Apple. Launch verification awaits an unlocked phone;
-TestFlight processing and distribution are being checked. The Apple review
+build 177 is Testing in the internal TestFlight group. The existing tester remains
+Invited and reports the app absent from the active list. The invitation was resent;
+TestFlight installation remains unverified. The Apple review
 candidate remains **1.8.79 (176)**, Waiting for Review with manual release.

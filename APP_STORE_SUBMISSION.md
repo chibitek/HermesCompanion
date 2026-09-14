@@ -3,8 +3,10 @@
 ## Current candidate
 
 The newer **1.8.80 (177)** testing build contains queue and structured-message
-repairs and is installed on the phone. Apple accepted its upload; TestFlight
-distribution is being checked. It has not replaced the review candidate below.
+repairs and is installed directly on the phone. It is Testing in the internal
+TestFlight group. The existing tester remains Invited; the invitation was resent
+on September 14 after the tester reported the app absent from the active list.
+TestFlight installation is unverified. It has not replaced the review candidate below.
 
 - Version: **1.8.79 (176)**.
 - Bundle identifier: `com.chibitek.hermescompanion`.

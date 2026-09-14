@@ -56,5 +56,7 @@ storage change is required.
 
 These fixes and the queue repair are packaged as **1.8.80 (177)**, installed on
 the physical phone and accepted for upload by Apple. Launch verification awaits
-an unlocked phone; TestFlight processing and distribution are being checked.
+an unlocked phone. Build 177 is Testing in the internal TestFlight group, but
+the existing tester remains Invited and reports the app absent from the active
+list. The invitation was resent; TestFlight installation remains unverified.
 Build 176 remains the separate submitted Apple review candidate.
