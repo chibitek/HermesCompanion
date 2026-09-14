@@ -1,19 +1,36 @@
 # Development Release Readiness
 
-## Current September 13 delivery state
+## Current September 14 delivery state
 
-Companion 1.8.75 build 172 is installed on the physical phone, and its log
-recorded a successful automatic connection after launch. Apple accepted its
-upload, but tester assignment and TestFlight availability are not yet verified.
-The installed gateway includes all four patches in `GatewayPatches`, and the
-live bridge advertises 0.1.9. Authenticated session reads and the change feed
-were verified over loopback and the server's Tailscale interface. This does not
-prove every phone network transition or every Hermes feature works.
+Companion **1.8.79 (176)** is installed on the physical phone. It includes the
+typed-chat audio-session repair and exact streamed-text preservation. Apple
+processed this build; the internal TestFlight group lists it as Testing and the
+account-holder tester as Invited. Invitation acceptance and installation through
+TestFlight have not been verified. The App Store candidate is also build 176,
+saved as Prepare for Submission with manual release selected.
 
-Selected-server recovery fixes were verified for build 172 and tracked in issue #50. See
-[CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) for the failure cases, repair, and
-verification record. Historical build and deployment snapshots below are
-retained as evidence of earlier checks, not current installed state.
+The running Hermes **0.21.2** gateway reports code revision
+`afbd3e296ef825922bdd8d79b7d6f4f933288d36`, containing all five compatibility
+patches. Installed bridge **0.1.10** files match the current public source.
+Authenticated native and bridge capabilities returned HTTP 200 on September 14.
+No restart was needed to reapply code already running.
+
+The latest ordinary iOS suite passed 142 tests, with four opt-in tests skipped.
+The repeated live-gateway suite passed all four tests, including exact streamed
+text, conversation updates, run replay, and board invalidation. Intermittent
+model latency remains open in issue #55, and physical music/microphone/Bluetooth
+acceptance remains open in issue #53. Existing test results are not repeated as
+newly run tests during a documentation-only update.
+
+The privacy policy now describes optional Tailscale, configured model providers,
+on-device speech recognition, and local diagnostic logs. Final App Review still
+needs working isolated reviewer access and verification of uploaded screenshots.
+No subscription, Watch, native Vision Pro, or unapproved CarPlay experience is
+included in this candidate's advertised scope.
+
+See [CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) and
+[APP_STORE_SUBMISSION.md](../APP_STORE_SUBMISSION.md). Historical build and
+deployment snapshots below describe earlier checks, not current installed state.
 
 ## Text-Only Audio Isolation Follow-Up
 

@@ -15,7 +15,7 @@
 
 Your Hermes agent, in your pocket. Stream responses in real time. Talk out loud with Matrix-style voice mode. Approve tool executions. Switch models on the fly. All from your iPhone.
 
-**Self-hosted. Your agent, your machine, your rules.** You run the Hermes Agent gateway on your own hardware — a Mac, a Linux box, a $5 VPS, or serverless infrastructure. Hermes Companion connects to it over an encrypted Tailscale tunnel. No cloud dependency. No middleman. Your data stays on your machines.
+**Self-hosted. Your agent, your machine, your rules.** Run a Hermes Agent gateway on your Mac, Linux machine, or server. Companion connects to the address you configure. Use HTTPS or a configured private network such as Tailscale. Your gateway can use local models or external providers; its configuration determines where content is processed.
 
 **Multiple servers. One app.** Connect to as many Hermes gateways as you want — your personal agent at home, your work agent at the office, a shared team server, a dedicated coding agent on a GPU box. Switch between them in Settings with a single tap. Each server keeps its own sessions, models, skills, and preferences.
 
@@ -25,7 +25,34 @@ Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://git
 
 ---
 
-## Hermes Talk
+## Current verified release: 1.8.79 (176)
+
+Build 176 includes the typed-chat audio fix and preserves spaces, paragraphs,
+code indentation, JSON, and literal markup in live replies. The composer shows
+a guidance arrow while busy and an up arrow while idle; guidance is queued after
+the current reply. The trailing cursor indicates an active response.
+
+The physical phone has build 176. TestFlight lists this build as Testing for the
+internal group, with the account-holder invitation sent. The App Store candidate
+is also build 176, saved as Prepare for Submission. Final review submission still
+needs working isolated reviewer access and screenshot/privacy verification.
+
+The running verified gateway is Hermes 0.21.2 with all five compatibility patches
+and Companion bridge 0.1.10. Authenticated native and bridge capability requests
+succeed, and installed bridge files match this source. Installing the iOS app does
+not update another user's gateway: follow [bridge installation](GatewayPlugin/README.md)
+and [gateway compatibility instructions](GatewayPatches/README.md) for that server.
+
+The ordinary suite passed 142 tests; a separate repeated live-gateway suite
+passed all four integration tests. Physical audio transitions and intermittent
+model latency remain under investigation. These results do not establish full
+Hermes feature parity. See [release readiness](docs/RELEASE_READINESS.md) and
+[App Store preparation](APP_STORE_SUBMISSION.md).
+
+## Historical development notes
+
+The snapshots below describe earlier builds. Their deployment and verification
+status is superseded by the current release record above.
 
 ### Development desktop transcript repair (1.8.72)
 
@@ -237,7 +264,7 @@ Six built-in themes in a visual grid picker. Each one transforms the entire app 
                                            └─────────────────────────┘
 ```
 
-**You own both ends.** The iPhone app is a thin client — it streams responses, displays tool events, and sends your messages. The Hermes Agent gateway on your machine does all the work: calling LLMs, running tools, managing memory, scheduling cron jobs. The connection between them is an encrypted Tailscale tunnel. No data passes through any third-party cloud. Connect to one server or ten — switch between them instantly in Settings.
+**You control the gateway.** The iPhone app streams responses, displays tool events, and sends your messages. Hermes handles model calls, tools, memory, and scheduled jobs. Your gateway's model and tool configuration determines whether content reaches external providers. Connect using HTTPS or your configured private network, and switch saved servers in Settings.
 
 ---
 
@@ -299,10 +326,11 @@ xcrun xcodebuild -project HermesCompanion.xcodeproj -scheme HermesCompanion \
 
 Hermes Companion is self-hosted and privacy-first:
 
-- **No cloud dependency.** The app connects directly to your Hermes gateway over an encrypted Tailscale WireGuard tunnel. No data passes through any third-party server.
+- **Direct gateway connection.** Your gateway may use local models or external providers. HTTPS or a configured VPN protects the connection; Tailscale is optional.
 - **Credentials in Keychain.** Your gateway URL and API key are stored in the iOS Keychain — not in plaintext, not in UserDefaults, not synced to iCloud.
 - **On-device voice transcription.** Speech-to-text runs locally via Apple's SFSpeechRecognizer. Your voice audio never leaves the phone until you choose to send the transcription.
 - **No analytics.** No telemetry, no tracking, no crash reporting to third parties. The app does not phone home.
+- **Local diagnostics.** On-device logs can contain connection details and conversation excerpts. Review them before sharing. See the [privacy policy](PRIVACY.md).
 - **Server-side approval policy.** Hermes controls when tools require approval. Run Controls displays the exact pending request and only the choices advertised by Hermes. Broader session/permanent scopes require an additional in-app confirmation.
 - **Open source.** The entire app is MIT-licensed and auditable. No hidden binaries, no proprietary SDKs.
 
@@ -316,7 +344,9 @@ Yes. Hermes Companion is a client — it connects to a [Hermes Agent](https://gi
 
 **Can I use this without Tailscale?**
 
-Technically yes — if your gateway is on a public IP or you use port forwarding. But that's insecure and not recommended. Tailscale gives you encrypted, zero-config networking for free. Install it, sign in, and you're done.
+Yes. A reachable, authenticated HTTPS gateway or a trusted local connection can
+work without Tailscale. Tailscale is one option for private remote access. Merely
+entering an HTTP address does not establish an encrypted tunnel.
 
 **Which models are supported?**
 

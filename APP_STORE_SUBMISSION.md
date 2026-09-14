@@ -82,11 +82,13 @@ guidance, and support are available on GitHub.
 - Inspect uploaded screenshots for accurate current behavior and absence of
   private information. The historical device-size checklist is not proof of
   current Apple screenshot requirements.
-- Reconcile the published privacy policy and App Store privacy disclosures with
-  the current implementation before final submission. `PRIVACY.md` still has
-  obsolete ElevenLabs and universal-Tailscale claims; its blanket statement
-  that data never reaches third parties is inappropriate for configured cloud
-  model providers. Do not copy the historical privacy-label table.
+- The current `PRIVACY.md` describes optional Tailscale, external model providers,
+  on-device recognition, and local diagnostic logs. App Store Connect currently
+  declares Data Not Collected by the developer. Local logs and independently
+  configured user gateways are distinct from automatic developer collection;
+  re-evaluate the disclosure if a hosted service or collecting SDK is introduced.
+  See [Apple's disclosure definitions](https://developer.apple.com/app-store/app-privacy-details/).
+  The App Store privacy-policy URL must serve this updated policy.
 
 ## Candidate validation
 

@@ -1,6 +1,13 @@
 # Hermes Companion sync repair verification
 
-September 13, 2026. Development version 1.8.72, build 169, bridge 0.1.9.
+Current delivery: **1.8.79 (176)** with bridge **0.1.10** and all five gateway
+compatibility patches. The phone and running gateway versions were rechecked on
+September 14. TestFlight is Testing for the internal group; the App Store candidate
+is Prepare for Submission. See [RELEASE_READINESS.md](RELEASE_READINESS.md).
+
+The September 13 build 169 / bridge 0.1.9 snapshot below is historical. Its
+deployment checklist has since been completed for the verified local gateway;
+full parity and physical-device acceptance remain separate requirements.
 This is a repair and verification record, not a full-parity or bug-free claim.
 
 ## Fixes prepared
@@ -40,7 +47,7 @@ Older history pages stay manually refreshed while being read. Discovery of new
 repository folders outside these state files still uses the existing workspace
 view refresh. Gateways without bridge 0.1.7 use periodic sync and show that mode.
 
-## Verification summary
+## Historical build 169 verification summary
 
 The build 169 simulator regression suite completed with 124 tests passed, two
 opt-in live tests skipped, and zero failures. Native HTTP contract and bridge
@@ -51,7 +58,7 @@ A real-provider integration attempt timed out. Complete two-way live conversatio
 success and complete desktop feature parity are not claimed. Physical-device
 voice, background recovery, and CarPlay still need dedicated verification.
 
-## Server compatibility and remaining work
+## Historical build 169 deployment checklist and coverage limits
 
 - Deploy the four reviewed native patches and Companion bridge 0.1.9 using the
   gateway operator's normal approval and maintenance process.
