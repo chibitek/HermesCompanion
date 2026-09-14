@@ -81,7 +81,7 @@ Do not extract:
 
 Already implemented:
 
-- Multi-server connections, server health, and automatic gateway fallback.
+- Multi-server connections, server health, and recovery on the selected gateway. Automatic fallback to unrelated saved servers was removed in the September 13 connection repair.
 - Session listing, creation, history, rename, delete, and fork.
 - Streaming session chat with assistant deltas, thinking, and tool events.
 - Session-backed model locking.

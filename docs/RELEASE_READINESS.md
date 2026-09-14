@@ -1,11 +1,19 @@
 # Development Release Readiness
 
-The September 13 sync repair is recorded in
-[SYNC_REPAIR_VERIFICATION.md](SYNC_REPAIR_VERIFICATION.md). It supersedes older
-claims of current server health: the skills and named custom-provider fixes are
-missing from the currently running checkout and must be restored before live
-conversation verification can pass. Build 162 and bridge 0.1.7 are unreleased.
+## Current September 13 delivery state
 
+Companion 1.8.75 build 172 is installed on the physical phone, and its log
+recorded a successful automatic connection after launch. Apple accepted its
+upload, but tester assignment and TestFlight availability are not yet verified.
+The installed gateway includes all four patches in `GatewayPatches`, and the
+live bridge advertises 0.1.9. Authenticated session reads and the change feed
+were verified over loopback and the server's Tailscale interface. This does not
+prove every phone network transition or every Hermes feature works.
+
+Selected-server recovery fixes were verified for build 172 and tracked in issue #50. See
+[CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) for the failure cases, repair, and
+verification record. Historical build and deployment snapshots below are
+retained as evidence of earlier checks, not current installed state.
 
 ## Text-Only Audio Isolation Follow-Up
 
@@ -35,7 +43,7 @@ physical iPhone remains unverified; this change has not been installed there.
 As of September 11, 2026. This is a verification record, not a release approval
 or a claim that the full product goal is complete.
 
-## Latest Verification Snapshot
+## Historical September 12 Verification Snapshot
 
 Source `390c86f` plus the local-only voice cleanup passed 93 iOS Simulator tests
 on September 12. Bridge 0.1.6 passed all 16 tests again. The release also
@@ -45,7 +53,7 @@ compilation does not establish signing, physical-device behavior, or feature
 completeness. Earlier evidence below is historical; this snapshot supersedes
 its build/test counts, not its unresolved release requirements.
 
-## Installed Versus Unreleased
+## Historical Installed Versus Unreleased
 
 The latest verified phone installation is 1.8.63 build 158, from merged PR 46.
 It contains the September 12 local-only voice cleanup. The local Hermes gateway
@@ -86,7 +94,7 @@ The prior verified phone installation was 1.8.62 build 156, from merged PR 42.
 
 ## Required Before Release
 
-- Obtain approval to push/open the PR, merge, and install the updated bridge/app.
+- Public branch updates, server patch deployment, Apple upload, and phone installation were authorized. The feature PR remains a draft; merging is not complete.
 - Increment the build number and perform a signed device build/install. An
   unsigned Release compilation does not verify signing or installation.
 - Verify the new project and Kanban screens on the phone, including long text,

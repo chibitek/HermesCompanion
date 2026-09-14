@@ -2,6 +2,193 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    private static let connectionHealth = #"{"status":"ok","platform":"hermes-agent","version":"0.21.2"}"#
+    private static let connectionCapabilities = #"{"object":"capabilities","platform":"hermes-agent","model":"local","auth":{"type":"bearer","required":true},"features":{},"endpoints":{}}"#
+
+    private func connectionClient(_ connection: ConnectionConfig) -> HermesAPIClient {
+        let session = URLSessionConfiguration.ephemeral
+        session.protocolClasses = [SessionHistoryURLProtocol.self]
+        return HermesAPIClient(config: connection, session: URLSession(configuration: session))
+    }
+
+    private static func answerConnectionRequest(_ request: SessionHistoryURLProtocol) {
+        switch request.request.url!.path {
+        case "/health": request.succeed(body: connectionHealth)
+        case "/v1/capabilities": request.succeed(body: connectionCapabilities)
+        case "/v1/model-options": request.succeed(body: "{}", status: 404)
+        default: request.succeed(body: #"{"object":"list","data":[]}"#)
+        }
+    }
+
+    @MainActor
+    func testFailedAutomaticConnectionRecoversOnSameServerWithoutRestart() async throws {
+        let config = ConnectionConfig(baseURL: "https://selected.invalid", apiKey: "", label: "Selected")
+        let client = connectionClient(config)
+        let store = AppStore(client: client, clientFactory: { _ in client })
+        store.connectionConfig = config
+        store.savedConnections = [config, ConnectionConfig(baseURL: "https://unrelated.invalid", apiKey: "", label: "Other")]
+        SessionHistoryURLProtocol.handler = { request in
+            XCTAssertEqual(request.request.url!.host, "selected.invalid")
+            request.client?.urlProtocol(request, didFailWithError: URLError(.timedOut))
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.autoConnect()
+        XCTAssertFalse(store.isConnected)
+        XCTAssertFalse(store.isLoadingConnection)
+        XCTAssertTrue(store.apiClient === client)
+        XCTAssertEqual(store.connectionConfig, config)
+        XCTAssertTrue(store.error?.message.contains("GET /health") == true)
+        SessionHistoryURLProtocol.handler = Self.answerConnectionRequest
+        await store.syncNow()
+        XCTAssertTrue(store.isConnected)
+        XCTAssertTrue(store.apiClient === client)
+        XCTAssertNil(store.error)
+        XCTAssertNil(store.syncError)
+        XCTAssertNotNil(store.capabilities)
+    }
+
+    @MainActor
+    func testRespondingHealthCannotRecoverRejectedGatewayCredentials() async {
+        let config = ConnectionConfig(baseURL: "https://selected.invalid", apiKey: "", label: "Selected")
+        let client = connectionClient(config)
+        let store = AppStore(client: client, clientFactory: { _ in client })
+        store.connectionConfig = config
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path == "/health" { request.succeed(body: Self.connectionHealth) }
+            else { request.succeed(body: #"{"error":{"code":"gateway_auth_failed","message":"Invalid gateway API key"}}"#, status: 401) }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.autoConnect()
+        await store.syncNow()
+        XCTAssertNotNil(store.lastServerResponseAt)
+        XCTAssertFalse(store.isConnected)
+        XCTAssertNil(store.capabilities)
+        XCTAssertTrue(store.syncError?.contains("401") == true)
+    }
+
+    @MainActor
+    func testSessionCatalogFailureRecoversWithoutStaleConnectionAlert() async {
+        let config = ConnectionConfig(baseURL: "https://selected.invalid", apiKey: "", label: "Selected")
+        let client = connectionClient(config)
+        let store = AppStore(client: client, clientFactory: { _ in client })
+        store.connectionConfig = config
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path == "/api/sessions" {
+                request.client?.urlProtocol(request, didFailWithError: URLError(.timedOut))
+            } else { Self.answerConnectionRequest(request) }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.autoConnect()
+        XCTAssertFalse(store.isConnected)
+        XCTAssertNotNil(store.error)
+        SessionHistoryURLProtocol.handler = Self.answerConnectionRequest
+        await store.syncNow()
+        XCTAssertTrue(store.isConnected)
+        XCTAssertNil(store.error)
+        XCTAssertNil(store.syncError)
+    }
+
+    @MainActor
+    func testDelayedAutomaticConnectionCannotUndoDisconnect() async {
+        let config = ConnectionConfig(baseURL: "https://selected.invalid", apiKey: "", label: "Selected")
+        let client = connectionClient(config)
+        let store = AppStore(client: client, clientFactory: { _ in client })
+        store.connectionConfig = config
+        let pending = expectation(description: "Connection health in flight")
+        var health: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in health = request; pending.fulfill() }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let connecting = Task { await store.autoConnect() }
+        await fulfillment(of: [pending], timeout: 3)
+        store.disconnect()
+        health?.succeed(body: Self.connectionHealth)
+        await connecting.value
+        XCTAssertNil(store.apiClient)
+        XCTAssertNil(store.connectionConfig)
+        XCTAssertNil(store.capabilities)
+        XCTAssertFalse(store.isLoadingConnection)
+        XCTAssertFalse(store.isConnected)
+    }
+
+    @MainActor
+    func testDelayedManualConnectionCannotUndoDisconnect() async {
+        let config = ConnectionConfig(baseURL: "https://selected.invalid", apiKey: "", label: "Selected")
+        let client = connectionClient(config)
+        let store = AppStore(client: client, clientFactory: { _ in client })
+        let pending = expectation(description: "Manual connection health in flight")
+        var health: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in health = request; pending.fulfill() }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let connecting = Task { await store.connect(config: config) }
+        await fulfillment(of: [pending], timeout: 3)
+        store.disconnect()
+        health?.succeed(body: Self.connectionHealth)
+        let connected = await connecting.value
+        XCTAssertFalse(connected)
+        XCTAssertNil(store.apiClient)
+        XCTAssertNil(store.connectionConfig)
+        XCTAssertFalse(store.isLoadingConnection)
+    }
+
+    @MainActor
+    func testLateOldConnectionDoesNotFinishOrReplaceNewAttempt() async {
+        let oldConfig = ConnectionConfig(baseURL: "https://old.invalid", apiKey: "", label: "Old")
+        let newConfig = ConnectionConfig(baseURL: "https://new.invalid", apiKey: "", label: "New")
+        let oldClient = connectionClient(oldConfig)
+        let newClient = connectionClient(newConfig)
+        let store = AppStore(client: oldClient, clientFactory: { $0 == oldConfig ? oldClient : newClient })
+        store.connectionConfig = oldConfig
+        let oldPending = expectation(description: "Old health pending")
+        let newPending = expectation(description: "New health pending")
+        var oldHealth: SessionHistoryURLProtocol?
+        var newHealth: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path == "/health" {
+                Task { @MainActor in
+                    if request.request.url!.host == "old.invalid" { oldHealth = request; oldPending.fulfill() }
+                    else { newHealth = request; newPending.fulfill() }
+                }
+            } else { Self.answerConnectionRequest(request) }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let first = Task { await store.autoConnect() }
+        await fulfillment(of: [oldPending], timeout: 3)
+        store.disconnect()
+        store.connectionConfig = newConfig
+        let second = Task { await store.autoConnect() }
+        await fulfillment(of: [newPending], timeout: 3)
+        oldHealth?.succeed(body: Self.connectionHealth)
+        await first.value
+        XCTAssertTrue(store.isLoadingConnection)
+        XCTAssertTrue(store.apiClient === newClient)
+        XCTAssertNil(store.capabilities)
+        newHealth?.succeed(body: Self.connectionHealth)
+        await second.value
+        XCTAssertTrue(store.isConnected)
+        XCTAssertEqual(store.connectionConfig, newConfig)
+    }
+
+    @MainActor
+    func testDuplicateAutomaticConnectionPreservesActiveConversation() async throws {
+        let config = ConnectionConfig(baseURL: "https://selected.invalid", apiKey: "", label: "Selected")
+        let client = connectionClient(config)
+        var creations = 0
+        let store = AppStore(client: client, clientFactory: { _ in creations += 1; return client })
+        store.connectionConfig = config
+        SessionHistoryURLProtocol.handler = Self.answerConnectionRequest
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.autoConnect()
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"retained"}"#.utf8))
+        await store.autoConnect()
+        XCTAssertEqual(creations, 1)
+        XCTAssertEqual(store.activeSession?.id, "retained")
+        XCTAssertTrue(store.isConnected)
+    }
+
     @MainActor
     func testLiveWorkspaceFeedRecoversAfterBridgeInstallationWithoutRestart() async throws {
         let config = URLSessionConfiguration.ephemeral

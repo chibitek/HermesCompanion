@@ -39,3 +39,17 @@ a specific bridge version is absent.
 The regression check exercises a 404 followed by a live SSE response using the
 same client and foreground sync task. It verifies the warning clears and a
 workspace change is processed without reconnecting or restarting the app.
+
+## Selected-server recovery review
+
+Correctness review found that automatic and manual connection completions could write state after a disconnect or server switch. Automatic fallback also selected unrelated saved servers after a timeout or authentication failure. The repair keeps retries on the chosen server and checks client identity after each asynchronous boundary, so a delayed response cannot restore an obsolete connection.
+
+The lifecycle review found duplicate startup connection entry points in the app and splash view. A second successful connection replaced the API client and cleared chat state. Startup uses the splash preference once, while foreground sync revalidates a failed selected connection without replacing its client or transcript. Regression coverage exercises delayed responses, disconnects, and recovery after a temporary transport failure. These findings do not yet establish full feature parity or physical-device recovery across every network transition.
+
+Seven focused recovery regressions passed: selected-server recovery after timeout, rejected credentials despite healthy `/health`, session-catalog recovery, delayed automatic/manual responses after disconnect, superseded connection attempts, and duplicate startup preserving the active conversation. The broader simulator run passed 132 tests with zero failures and two opt-in live tests skipped; the two latest authentication/catalog regressions passed separately.
+
+Both opt-in integration tests then passed against the patched native gateway, bridge 0.1.9, and the installed local model in a temporary tool-free Hermes home. The strengthened conversation test starts the real foreground sync loop and requires a second client's rename and reply to appear automatically within ten seconds, without calling `syncNow` from the test. Independent run viewers and event replay also matched. All diagnostic sessions were removed and the temporary gateway exited. This verifies the real iOS client/server contract on the simulator, not physical-device Wi-Fi transitions, voice, or full feature parity.
+
+The connection changes are packaged in 1.8.75 build 172. Worktree and full published-branch history secret scans found no leaks before publication. Personal/device identifiers, pairing material, and environment files are excluded from public changes.
+
+Build 172 was archived, its exported application signature verified, and installed on the physical phone. Device inventory confirmed 1.8.75 (172), launch succeeded, and the application log recorded a successful automatic connection. Apple accepted the upload; TestFlight tester assignment and distribution remain unverified. The native gateway was not restarted for this client update.

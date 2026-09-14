@@ -17,13 +17,6 @@ struct HermesCompanionApp: App {
                 .tint(appearance.accent)
                 .task {
                     ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
-                    // Auto-connect if a saved config exists in Keychain.
-                    // AppStore.init already loads it into connectionConfig;
-                    // here we verify the server is reachable and populate
-                    // capabilities/sessions so the user goes straight to chat.
-                    if store.connectionConfig != nil && store.capabilities == nil {
-                        await store.autoConnect()
-                    }
                     // CarPlay voice controller shares this store.
                     CarPlayVoiceController.shared.attach(store: store)
                     // Request notification permission so we can alert the
@@ -31,8 +24,8 @@ struct HermesCompanionApp: App {
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
                 }
-                .task(id: "\(scenePhase)-\(String(describing: store.apiClient.map(ObjectIdentifier.init)))") {
-                    guard scenePhase == .active else { return }
+                .task(id: "\(scenePhase)-\(String(describing: store.apiClient.map(ObjectIdentifier.init)))-\(store.isLoadingConnection)") {
+                    guard scenePhase == .active, !store.isLoadingConnection else { return }
                     await store.runLiveSync()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
@@ -95,8 +88,7 @@ struct RootView: View {
                             // "Add New Server" — show full setup form
                             showServerPicker = false
                         } else {
-                            store.connectionConfig = config
-                            await store.autoConnect()
+                            await store.switchToConnection(config)
                         }
                     }
                 }
@@ -121,12 +113,11 @@ struct RootView: View {
             guard finished, !autoConnectAttempted else { return }
             autoConnectAttempted = true
             Task {
-                // If we have saved connections, ping all of them for health status
-                if !store.savedConnections.isEmpty {
-                    await store.checkAllServerHealth()
-                }
-                // Auto-connect to last server if toggle is on and we have a config
-                let shouldAutoReconnect = SharedDefaults.shared.bool(forKey: "auto_reconnect_last_server")
+                // Unreachable saved servers must not delay the selected connection.
+                async let healthChecks: Void = store.checkAllServerHealth()
+                let defaults = SharedDefaults.shared
+                let shouldAutoReconnect = defaults.object(forKey: "auto_reconnect_last_server") == nil
+                    || defaults.bool(forKey: "auto_reconnect_last_server")
                 if shouldAutoReconnect, store.connectionConfig != nil {
                     await store.autoConnect()
                     // If auto-connect failed, show the server picker
@@ -137,6 +128,7 @@ struct RootView: View {
                     // Always show server picker by default
                     showServerPicker = true
                 }
+                await healthChecks
             }
         }
         .alert("What's New in Hermes \(currentVersion)", isPresented: $showReleaseNotes) {

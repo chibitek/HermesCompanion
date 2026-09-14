@@ -183,8 +183,14 @@ final class AppStore: ObservableObject {
 
     // MARK: - Init
 
-    init(client: HermesAPIClient) {
+    private var makeClient: (ConnectionConfig) -> HermesAPIClient = { HermesAPIClient(config: $0) }
+    private var connectionRecoveryEnabled = false
+    private var connectionErrorID: UUID?
+
+    init(client: HermesAPIClient, clientFactory: ((ConnectionConfig) -> HermesAPIClient)? = nil) {
         apiClient = client
+        connectionRecoveryEnabled = true
+        if let clientFactory { makeClient = clientFactory }
     }
 
     init() {
@@ -280,68 +286,63 @@ final class AppStore: ObservableObject {
     /// Performs a health check and, if successful, loads capabilities and
     /// sessions so the user goes straight to chat without re-entering credentials.
     func autoConnect() async {
-        guard !isLoadingConnection, let config = connectionConfig else { return }
+        guard !isLoadingConnection, !hasExplicitlyConnected, let config = connectionConfig else { return }
         isLoadingConnection = true
-        let client = HermesAPIClient(config: config)
+        connectionRecoveryEnabled = true
+        let client = makeClient(config)
+        self.apiClient = client
+        defer { if apiClient === client { isLoadingConnection = false } }
         do {
-            // Health check with a 10-second timeout so we don't hang forever
-            // when Tailscale is down or the server is unreachable.
-            let health = try await withTimeout(seconds: 10) {
-                try await client.checkHealth()
-            }
+            let health = try await client.checkHealth()
+            guard apiClient === client, !Task.isCancelled else { return }
             guard health.status == "ok", health.isHermesAPI else {
-                FileLogger.shared.log("AppStore: autoConnect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
-                if await fallbackToReachableServer(excluding: config.baseURL) {
-                    self.isLoadingConnection = false
-                    return
-                }
-                self.error = AppError(message: Self.invalidHealthMessage(health))
-                self.isLoadingConnection = false
-                return
+                throw APIError.invalidEndpoint(Self.invalidHealthMessage(health))
             }
             let capabilities = try await client.getCapabilities()
-            self.apiClient = client
+            guard apiClient === client, !Task.isCancelled else { return }
             self.capabilities = capabilities
             await refreshSessions()
-            self.isLoadingConnection = false
+            guard apiClient === client, !Task.isCancelled else { return }
+            guard syncError == nil else {
+                connectionErrorID = error?.id
+                return
+            }
             hasExplicitlyConnected = true
+            clearConnectionError()
             FileLogger.shared.log("AppStore: automatic connection succeeded")
+            isLoadingConnection = false
             await refreshCapabilities()
-        } catch let e as APIError {
-            FileLogger.shared.log("AppStore: automatic connection failed: \(e.errorDescription ?? "Unknown API error")")
-            if await fallbackToReachableServer(excluding: config.baseURL) {
-                self.isLoadingConnection = false
-                return
-            }
-            self.error = AppError(message: e.errorDescription ?? "Connection failed. Select a server to retry.")
-            self.isLoadingConnection = false
         } catch {
+            guard apiClient === client, !Task.isCancelled else { return }
+            let failure = AppError(message: "Could not connect to the selected server: \(error.localizedDescription) Retrying this server automatically while the app is open.")
+            self.error = failure
+            connectionErrorID = failure.id
+            syncError = failure.message
             FileLogger.shared.log("AppStore: automatic connection failed: \(error.localizedDescription)")
-            if await fallbackToReachableServer(excluding: config.baseURL) {
-                self.isLoadingConnection = false
-                return
-            }
-            self.error = AppError(message: "Could not connect to \(config.label): \(error.localizedDescription). Check the gateway URL and network, then retry.")
-            self.isLoadingConnection = false
         }
+    }
+
+    private func clearConnectionError() {
+        if error?.id == connectionErrorID { error = nil }
+        connectionErrorID = nil
     }
 
     func connect(config: ConnectionConfig) async -> Bool {
         isLoadingConnection = true
-        defer { isLoadingConnection = false }
-        let client = HermesAPIClient(config: config)
+        let client = makeClient(config)
         self.apiClient = client
-        // An explicit (re)connect supersedes any pending background retry.
-        reconnectWorkItem?.cancel()
-        reconnectWorkItem = nil
+        connectionRecoveryEnabled = false
+        defer { if apiClient === client { isLoadingConnection = false } }
         do {
             let health = try await client.checkHealth()
+            guard apiClient === client, !Task.isCancelled else { return false }
             guard health.status == "ok", health.isHermesAPI else {
                 self.error = AppError(message: Self.invalidHealthMessage(health))
                 FileLogger.shared.log("AppStore: connect rejected \(config.baseURL) — \(Self.invalidHealthMessage(health))")
                 return false
             }
             let capabilities = try await client.getCapabilities()
+            guard apiClient === client, !Task.isCancelled else { return false }
             // Persist: add/update in the multi-connection list, then mark as active.
             do {
                 let updated = try KeychainManager.shared.addOrUpdate(config)
@@ -354,39 +355,38 @@ final class AppStore: ObservableObject {
             loadPreferences(for: config)
             self.capabilities = capabilities
             await refreshSessions()
+            guard apiClient === client, !Task.isCancelled else { return false }
+            connectionRecoveryEnabled = true
+            guard syncError == nil else {
+                connectionErrorID = error?.id
+                return false
+            }
             hasExplicitlyConnected = true
+            clearConnectionError()
             FileLogger.shared.log("AppStore: manual connection succeeded")
             Task { await refreshCapabilities() }
             return true
         } catch let e as APIError {
+            guard apiClient === client, !Task.isCancelled else { return false }
             FileLogger.shared.log("AppStore: manual connection failed: \(e.errorDescription ?? "Unknown API error")")
             self.error = AppError(message: e.errorDescription ?? "Connection failed")
             self.apiClient = nil
+            isLoadingConnection = false
             return false
         } catch {
+            guard apiClient === client, !Task.isCancelled else { return false }
             FileLogger.shared.log("AppStore: manual connection failed: \(error.localizedDescription)")
             self.error = AppError(message: "Connection failed: \(error.localizedDescription)")
             self.apiClient = nil
+            isLoadingConnection = false
             return false
         }
     }
 
-    private func fallbackToReachableServer(excluding baseURL: String) async -> Bool {
-        let candidates = savedConnections.filter {
-            $0.baseURL != baseURL
-        }
-        for candidate in candidates {
-            FileLogger.shared.log("AppStore: autoConnect fallback trying \(candidate.baseURL)")
-            if await connect(config: candidate) {
-                FileLogger.shared.log("AppStore: autoConnect fallback connected \(candidate.baseURL)")
-                return true
-            }
-        }
-        FileLogger.shared.log("AppStore: autoConnect fallback found no reachable Hermes API gateway")
-        return false
-    }
-
     func disconnect() {
+        isLoadingConnection = false
+        connectionRecoveryEnabled = false
+        clearConnectionError()
         streamTask?.cancel()
         apiClient = nil
         connectionConfig = nil
@@ -412,7 +412,10 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Failed to set active: \(error.localizedDescription)")
             return
         }
-        // Tear down current state
+        // Supersede any pending connection before starting the selected server.
+        isLoadingConnection = false
+        connectionRecoveryEnabled = false
+        clearConnectionError()
         streamTask?.cancel()
         apiClient = nil
         capabilities = nil
@@ -786,7 +789,7 @@ final class AppStore: ObservableObject {
     /// Runs only while the app is foregrounded. Serial reads prevent overlapping
     /// polls; transcript, selection and turn IDs reject stale in-flight snapshots.
     func runLiveSync() async {
-        guard let client = apiClient else { return }
+        guard connectionRecoveryEnabled, let client = apiClient else { return }
         let changes = Task { await watchWorkspaceChanges(client: client) }
         defer { changes.cancel() }
         while !Task.isCancelled {
@@ -835,10 +838,11 @@ final class AppStore: ObservableObject {
     }
 
     func syncNow() async {
-        guard !isSyncing, !isLoadingConnection, let client = apiClient else { return }
+        guard connectionRecoveryEnabled, !isSyncing, !isLoadingConnection, let client = apiClient else { return }
         isSyncing = true
         defer { isSyncing = false }
         do {
+            let recoveringConnection = !hasExplicitlyConnected && connectionConfig != nil
             let start = Date()
             let health = try await client.checkHealth()
             guard apiClient === client, !Task.isCancelled else { return }
@@ -847,6 +851,11 @@ final class AppStore: ObservableObject {
             }
             serverLatencyMs = Int(Date().timeIntervalSince(start) * 1_000)
             lastServerResponseAt = Date()
+            if recoveringConnection {
+                let verifiedCapabilities = try await client.getCapabilities()
+                guard apiClient === client, !Task.isCancelled else { return }
+                capabilities = verifiedCapabilities
+            }
             // The catalog is much larger than a health response. Refresh it on
             // its own cadence; selected chat changes are fetched every cycle.
             if !isStreaming, lastSessionListSyncAt == nil || Date().timeIntervalSince(lastSessionListSyncAt!) >= 10 {
@@ -859,12 +868,21 @@ final class AppStore: ObservableObject {
                 guard apiClient === client, sessionRefreshID == refreshID, !Task.isCancelled else { return }
                 lastSessionListSyncAt = Date()
             }
+            if recoveringConnection {
+                await restoreActiveSessionIfAvailable()
+                guard apiClient === client, !Task.isCancelled else { return }
+            }
             if let active = activeSession, !isStreaming {
                 try await refreshActiveSessionMessages(active, client: client)
             }
             guard apiClient === client, !Task.isCancelled else { return }
             syncError = nil
+            if connectionConfig != nil, capabilities != nil, connectionRecoveryEnabled {
+                hasExplicitlyConnected = true
+                clearConnectionError()
+            }
             if !isStreaming, activeSession != nil { lastSyncedAt = Date() }
+            if recoveringConnection { await refreshCapabilities() }
         } catch {
             guard apiClient === client, !Task.isCancelled else { return }
             syncError = "Sync paused: \(error.localizedDescription) Retrying automatically."
@@ -1758,10 +1776,10 @@ final class AppStore: ObservableObject {
     /// dropped while in the background. Preserves the active session and
     /// messages so the user doesn't lose context.
     private var isReconnecting = false
-    private var reconnectWorkItem: DispatchWorkItem?
 
     func reconnectIfNeeded() async {
-        guard connectionConfig != nil, !isReconnecting, let client = apiClient else { return }
+        guard connectionRecoveryEnabled, connectionConfig != nil, !isReconnecting,
+              !isLoadingConnection, let client = apiClient else { return }
         isReconnecting = true
         defer { isReconnecting = false }
         // URLSession reconnects its transport itself. Replacing the API client

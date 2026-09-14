@@ -26,15 +26,18 @@ final class LiveGatewayTests: XCTestCase {
             XCTAssertNotNil(response)
             let durable = try await otherClient.getMessages(sessionId: session.id)
             XCTAssertTrue(durable.contains { $0.isAssistant && ($0.content?.contains("HERMES_SYNC_CHECK") == true) })
+            let liveSync = Task { await store.runLiveSync() }
+            defer { liveSync.cancel() }
+            try await waitForLiveSync { store.liveChangesAvailable }
             _ = try await otherClient.patchSession(sessionId: session.id, title: "Companion sync verified")
-            await store.syncNow()
-            XCTAssertEqual(store.activeSession?.title, "Companion sync verified")
+            try await waitForLiveSync { store.activeSession?.title == "Companion sync verified" }
 
             let remote = try await withTimeout(seconds: 90) { try await otherClient.sendChat(sessionId: session.id,
                 message: "Second-client connection verification only. Reply with exactly HERMES_REMOTE_CHECK. Do not use tools or take actions.") }
             XCTAssertTrue(remote.message.content.contains("HERMES_REMOTE_CHECK"))
-            await store.syncNow()
-            XCTAssertTrue(store.messages.contains { $0.isAssistant && $0.content.contains("HERMES_REMOTE_CHECK") })
+            try await waitForLiveSync {
+                store.messages.contains { $0.isAssistant && $0.content.contains("HERMES_REMOTE_CHECK") }
+            }
             XCTAssertNotNil(store.lastSyncedAt)
             XCTAssertNil(store.syncError)
         } catch {
@@ -103,6 +106,17 @@ final class LiveGatewayTests: XCTestCase {
             throw error
         }
         try await second.deleteSession(sessionId: session.id)
+    }
+
+    @MainActor
+    private func waitForLiveSync(_ condition: @MainActor () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                throw APIError.invalidEndpoint("Automatic live sync did not reflect the remote change within 10 seconds")
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     private func collectRun(_ client: HermesAPIClient, id: String, after: Int? = nil) async throws -> [SSEEventPayload] {
