@@ -22,4 +22,8 @@ and traced the AppStore success and failure branches. No gateway change is neede
 HTTP errors remain handled before receipt decoding. Earlier tests that accepted
 an unrelated `ok: true` body now use the native confirmation contract.
 
-Build 177 does not contain this source repair. Delivery is pending the next testing build.
+This repair is packaged in 1.8.81 (178). The signed export was verified, device
+inventory confirms installation, and launching the app succeeded. Apple accepted
+the upload; TestFlight processing and assignment are being checked. The first
+install command lost its device connection, so installation was confirmed by a
+separate inventory check. Build 177 and the submitted build 176 do not contain it.

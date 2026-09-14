@@ -14,6 +14,18 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.81":
+            return [
+                "Deleting a conversation now waits for confirmation from Hermes before removing it or its queued drafts.",
+                "If deletion is not confirmed, your conversation stays available with a specific explanation.",
+                "Includes recoverable queued follow-ups and more reliable live response handling from the previous update."
+            ]
+        case "1.8.80":
+            return [
+                "Queued follow-ups stay with their original conversation when you switch chats or restart the app.",
+                "Review uncertain deliveries in Follow-ups and move a message back to the composer without sending it automatically.",
+                "Live response acknowledgements retain their message details, and malformed stream fields produce specific errors."
+            ]
         case "1.8.79":
             return [
                 "Live replies preserve spaces, paragraphs, and code indentation as Hermes sends them.",

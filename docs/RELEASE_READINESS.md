@@ -2,20 +2,22 @@
 
 ## Current September 14 delivery state
 
-Companion **1.8.80 (177)** is installed on the physical phone; device inventory
-confirms its version. Launch verification was blocked by the phone being locked.
-The app and extension were archived, and the exported app's signature was
-verified. Build 177 is Testing in the internal TestFlight group. The existing
-tester remains Invited; the invitation was resent on September 14 after the tester
-reported the app absent from the active list. The connected phone meets the
-exported build requirements, but the unidentified Incompatible entry in the
-tester screenshot remains unresolved. Build 177 includes the queued follow-up and structured stream
-message repairs as well as the prior typed-chat audio and text-fidelity fixes.
+Companion **1.8.81 (178)** is installed on the physical phone; device inventory
+confirms its version and launching the app succeeded. The first installation
+command lost its connection; the later inventory check established completion.
+The app and widget have matching versions, and the signed export was verified.
+Apple accepted the upload; TestFlight processing and assignment are being checked.
+Build 178 adds confirmed session deletion and specific in-app update notes to the
+queue, structured-message, typed-chat audio and text-fidelity repairs.
+
+Build 177 is Testing in the internal TestFlight group. The existing tester remains
+Invited; the invitation was resent on September 14 after the tester reported the
+app absent from the active list. TestFlight acceptance and installation remain
+unverified, and the screenshot's Incompatible entry is still unidentified.
+The connected phone meets the exported build's requirements.
 
 The App Store candidate remains **1.8.79 (176)**, Waiting for Review with manual
-release selected. Its internal TestFlight group was Testing, with the existing
-account-holder tester Invited. Invitation acceptance and installation through
-TestFlight have not been verified. Build 177 has not replaced the review submission.
+release selected. Build 178 has not replaced the review submission.
 
 The running Hermes **0.21.2** gateway reports code revision
 `afbd3e296ef825922bdd8d79b7d6f4f933288d36`, containing all five compatibility
@@ -23,7 +25,7 @@ patches. Installed bridge **0.1.10** files match the current public source.
 Authenticated native and bridge capabilities returned HTTP 200 on September 14.
 No restart was needed to reapply code already running.
 
-The latest source suite passed **158 tests**, with six live checks skipped.
+The latest source suite passed **159 tests**, with six live checks skipped.
 All six checks then passed against the real gateway and local model in an
 isolated workspace. A first six-test run failed its final cleanup gate despite
 passing the tests; after adding per-test cleanup assertions, the repeat passed
@@ -42,14 +44,14 @@ See [CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) and
 [APP_STORE_SUBMISSION.md](../APP_STORE_SUBMISSION.md). Historical build and
 deployment snapshots below describe earlier checks, not current installed state.
 
-## Verified source change after build 177
+## Session deletion repair in build 178
 
 Session deletion now requires the native receipt type, requested conversation ID
 and `deleted: true` before clearing local conversation or queued drafts. Failed
 confirmation preserves local state with a specific diagnostic. The full suite
 passed 159 ordinary tests with six skipped, and all six real-gateway checks passed
-separately with zero retained sessions. This source repair is not in build 177 or
-the submitted build 176. See [SESSION_DELETION_RECEIPTS.md](SESSION_DELETION_RECEIPTS.md).
+separately with zero retained sessions. The repair is installed in build 178,
+but is not in build 177 or the submitted build 176. See [SESSION_DELETION_RECEIPTS.md](SESSION_DELETION_RECEIPTS.md).
 
 ## Queue and stream repair in build 177
 
