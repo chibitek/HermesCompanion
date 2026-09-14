@@ -853,13 +853,16 @@ final class AppStore: ObservableObject {
     /// polls; transcript, selection and turn IDs reject stale in-flight snapshots.
     func runLiveSync() async {
         guard connectionRecoveryEnabled, let client = apiClient else { return }
-        let changes = Task { await watchWorkspaceChanges(client: client) }
-        defer { changes.cancel() }
-        while !Task.isCancelled {
-            guard apiClient === client else { return }
-            await syncNow()
-            do { try await Task.sleep(for: .seconds(syncError == nil ? 2 : 5)) }
-            catch { return }
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.watchWorkspaceChanges(client: client) }
+            // Scope exit cancels and joins the watcher before another sync owner starts.
+            defer { group.cancelAll() }
+            while !Task.isCancelled {
+                guard apiClient === client else { return }
+                await syncNow()
+                do { try await Task.sleep(for: .seconds(syncError == nil ? 2 : 5)) }
+                catch { return }
+            }
         }
     }
 

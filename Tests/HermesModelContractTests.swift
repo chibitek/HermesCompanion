@@ -414,6 +414,29 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertEqual(controller.status?.output, "Stopped before processing")
     }
 
+    func testRequestBodyCaptureWaitsForBoundStreamBytes() throws {
+        var input: InputStream?
+        var output: OutputStream?
+        Stream.getBoundStreams(withBufferSize: 4096, inputStream: &input, outputStream: &output)
+        let reader = try XCTUnwrap(input)
+        let writer = try XCTUnwrap(output)
+        let expected = Data(#"{"input":"Original","session_id":"session"}"#.utf8)
+        var request = URLRequest(url: URL(string: "https://hermes.invalid/v1/runs")!)
+        request.httpBodyStream = reader
+        let transport = SessionHistoryURLProtocol(request: request, cachedResponse: nil, client: nil)
+        writer.open()
+        let producerFinished = expectation(description: "Bound stream producer finished")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+            expected.withUnsafeBytes { bytes in
+                _ = writer.write(bytes.bindMemory(to: UInt8.self).baseAddress!, maxLength: bytes.count)
+            }
+            writer.close()
+            producerFinished.fulfill()
+        }
+        XCTAssertEqual(transport.bodyData(), expected)
+        wait(for: [producerFinished], timeout: 2)
+    }
+
     @MainActor
     func testLostRunAdmissionReusesKeyAndOriginalRequest() async throws {
         let config = URLSessionConfiguration.ephemeral
@@ -431,6 +454,8 @@ final class HermesModelContractTests: XCTestCase {
         var keys: [String] = []
         var bodies: [[String: Any]] = []
         SessionHistoryURLProtocol.handler = { request in
+            XCTAssertEqual(request.request.url?.path, "/v1/runs", "A request outlived the previous sync owner")
+            XCTAssertEqual(request.request.httpMethod, "POST")
             keys.append(request.request.value(forHTTPHeaderField: "Idempotency-Key") ?? "")
             bodies.append((try? JSONSerialization.jsonObject(with: request.bodyData())) as? [String: Any] ?? [:])
             if keys.count == 1 { request.fail() }
@@ -982,6 +1007,27 @@ final class HermesModelContractTests: XCTestCase {
                                                 fallback: ["legacy": ModelInfo(id: "legacy", ownedBy: "author", provider: "gateway")])
         XCTAssertEqual(choices, [ModelSourceChoice(model: "legacy", provider: "gateway"),
                                  ModelSourceChoice(model: "unknown", provider: nil)])
+    }
+
+    func testJobDeliveryDiagnosticsPreserveReasonWithoutInventingExecutionFailure() throws {
+        let job = try JSONDecoder().decode(HermesJob.self, from: Data(#"{"id":"job","name":"Report","last_status":"delivery_failed","last_error":null,"last_delivery_error":"api_server: delivery is not supported"}"#.utf8))
+        XCTAssertEqual(job.lastRunSummary, "Execution completed")
+        XCTAssertEqual(job.diagnostics.map(\.title), ["Delivery failed"])
+        XCTAssertEqual(job.diagnostics.first?.detail, job.lastDeliveryError)
+        XCTAssertEqual(job.diagnostics.first?.isFailure, true)
+        let recovered = try JSONDecoder().decode(HermesJob.self, from: Data(#"{"id":"job","name":"Report","last_status":"ok","last_delivery_error":null}"#.utf8))
+        XCTAssertTrue(recovered.diagnostics.isEmpty)
+    }
+
+    func testJobQueuedAndUnverifiedDeliveryRemainDistinctAndReadable() throws {
+        let job = try JSONDecoder().decode(HermesJob.self, from: Data(#"{"id":"job","name":"Report","last_status":"delivery_queued","last_delivery_queued":{"bot:test":{"status":"queued"}},"last_delivery_unverified":["bot:test","channel:unconfirmed","channel:unconfirmed"]}"#.utf8))
+        XCTAssertEqual(job.diagnostics.map(\.id), ["queued", "unverified"])
+        XCTAssertEqual(job.diagnostics.first?.detail, "bot:test: queued")
+        XCTAssertTrue(job.diagnostics.last?.detail.contains("channel:unconfirmed") == true)
+        XCTAssertFalse(job.diagnostics.last?.detail.contains("bot:test") == true)
+        XCTAssertTrue(job.diagnostics.allSatisfy { !$0.isFailure })
+        let legacy = try JSONDecoder().decode(HermesJob.self, from: Data(#"{"id":"job","name":"Legacy","last_status":"delivery_failed"}"#.utf8))
+        XCTAssertTrue(legacy.diagnostics.first?.detail.contains("without its reason") == true)
     }
 
     @MainActor
@@ -2243,7 +2289,9 @@ private final class SessionHistoryURLProtocol: URLProtocol, @unchecked Sendable 
         defer { stream.close() }
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
+        // Availability can be false while URLSession is still producing the body.
+        // Read until EOF so a temporary gap cannot become an empty admission request.
+        while true {
             let count = stream.read(&buffer, maxLength: buffer.count)
             if count <= 0 { break }
             data.append(contentsOf: buffer.prefix(count))

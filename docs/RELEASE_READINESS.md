@@ -1,6 +1,25 @@
 # Development Release Readiness
 
-## Current scheduled-job sync update: 1.8.85 (182)
+## Prepared delivery diagnostics update: 1.8.86 (183)
+
+Scheduled jobs now separate execution status from delivery failures, queued
+receipts and unverified delivery. Expandable rows retain the complete reason,
+and successful recovery clears stale delivery warnings. See
+[JOB_DELIVERY_DIAGNOSTICS.md](JOB_DELIVERY_DIAGNOSTICS.md).
+
+Investigation #66 found a request-body helper that stopped on temporary stream
+unavailability and a workspace watcher that could outlive its sync owner. A real
+bound-stream regression failed before the helper repair. Live sync now cancels
+and joins its watcher. The final full simulator suite passed 177 ordinary tests,
+with twelve opt-in real-gateway checks skipped for their separate run. All twelve
+then passed against the final source with zero retained jobs, sessions, projects
+or active selection, unchanged linked files and verified saved scheduler output.
+
+Build 182 remains the delivered Apple candidate until build 183 is processed.
+Physical visual/audio acceptance, external messaging delivery, full native job
+configuration, reviewer access and complete feature parity remain unfinished.
+
+## Historical scheduled-job sync update: 1.8.85 (182)
 
 Remote scheduled-job changes now refresh the Companion list through workspace
 invalidation, with a 30-second foreground polling fallback. Older responses
@@ -12,7 +31,8 @@ Validation: 174 ordinary simulator tests passed in the final full rerun; all ten
 real-gateway checks passed separately. No jobs, sessions, projects or active
 project remained, and linked files retained their contents. The job regression
 failed before repair and passed afterward. Intermittent admission-test issue #66
-and native job capability/execution issue #65 remain open. The gateway is unchanged.
+was still open at that delivery. Native job capability/execution issue #65 was
+resolved by the subsequent server verification below.
 
 Build 182 has matching app/widget versions and a verified signed export. Device
 inventory confirms installation; launch was blocked by the locked phone, so

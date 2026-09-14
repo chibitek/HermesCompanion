@@ -412,16 +412,23 @@ struct PlatformHubView: View {
                                 .font(.caption)
                                 .foregroundStyle(theme.textSecondary)
                         }
-                        if let lastStatus = job.lastStatus, !lastStatus.isEmpty {
-                            Text("Last: \(lastStatus)")
+                        if let summary = job.lastRunSummary, !summary.isEmpty {
+                            Text(summary)
                                 .font(.caption)
                                 .foregroundStyle(theme.textSecondary)
                         }
-                        if let error = job.lastError, !error.isEmpty {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(theme.danger)
-                                .lineLimit(2)
+                        ForEach(job.diagnostics) { diagnostic in
+                            DisclosureGroup {
+                                Text(diagnostic.detail)
+                                    .font(.caption)
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } label: {
+                                Label(diagnostic.title, systemImage: diagnostic.isFailure
+                                    ? "exclamationmark.triangle" : "clock")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(diagnostic.isFailure ? theme.danger : theme.textSecondary)
                         }
 
                         Button {

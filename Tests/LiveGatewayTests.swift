@@ -474,6 +474,65 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayJobDeliveryFailureAndRecoverySyncDiagnostics() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Delivery verification requires the disposable workspace runner.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Delivery verification")
+        let phone = HermesAPIClient(config: config)
+        let second = HermesAPIClient(config: config)
+        let store = AppStore(client: phone)
+        let live = Task { await store.runLiveSync() }
+        defer { live.cancel() }
+        try await waitForLiveSync { store.liveChangesAvailable }
+        // API-created jobs have api_server/api as their origin. This unsupported
+        // return channel fails locally; no external recipient is configured.
+        let job = try await phone.createJob(HermesJobWrite(name: "Delivery recovery verification",
+            schedule: "0 0 1 1 *", prompt: "Connection verification. Reply only READY. Do not use tools or take actions.", deliver: "origin", skills: []))
+        do {
+            try await second.runJob(jobId: job.id)
+            let firstDeadline = ContinuousClock.now + .seconds(180)
+            while store.platformJobs.first(where: { $0.id == job.id })?.lastStatus == nil,
+                  ContinuousClock.now < firstDeadline { try await Task.sleep(for: .milliseconds(200)) }
+            let failed = try XCTUnwrap(store.platformJobs.first(where: { $0.id == job.id }))
+            XCTAssertEqual(failed.lastStatus, "delivery_failed")
+            XCTAssertNil(failed.lastError, "Delivery failure must not invent an agent execution error")
+            let reason = try XCTUnwrap(failed.lastDeliveryError)
+            XCTAssertFalse(reason.isEmpty)
+            XCTAssertEqual(failed.diagnostics.first(where: { $0.id == "delivery" })?.detail, reason)
+            let failedAt = try XCTUnwrap(failed.lastRunAt)
+            _ = try await second.updateJob(jobId: job.id, updates:
+                HermesJobWrite(name: nil, schedule: nil, prompt: nil, deliver: "local", skills: nil))
+            try await second.runJob(jobId: job.id)
+            let recoveryDeadline = ContinuousClock.now + .seconds(180)
+            while ContinuousClock.now < recoveryDeadline {
+                if let current = store.platformJobs.first(where: { $0.id == job.id }),
+                   current.lastRunAt != failedAt, current.lastStatus == "ok" { break }
+                try await Task.sleep(for: .milliseconds(200))
+            }
+            let recovered = try XCTUnwrap(store.platformJobs.first(where: { $0.id == job.id }))
+            XCTAssertEqual(recovered.lastStatus, "ok")
+            XCTAssertNotEqual(recovered.lastRunAt, failedAt)
+            XCTAssertNil(recovered.lastDeliveryError)
+            XCTAssertTrue(recovered.diagnostics.isEmpty)
+            let canonical = try await second.listJobs().first(where: { $0.id == job.id })
+            XCTAssertEqual(canonical?.lastRunAt, recovered.lastRunAt)
+            XCTAssertNil(canonical?.lastDeliveryError)
+            let sessions = try await phone.listSessions().filter { $0.id.hasPrefix("cron_\(job.id)_") }
+            XCTAssertEqual(sessions.count, 2)
+            for session in sessions { try await phone.deleteSession(sessionId: session.id) }
+        } catch {
+            try await phone.pauseJob(jobId: job.id)
+            try await phone.deleteJob(jobId: job.id)
+            throw error
+        }
+        try await phone.deleteJob(jobId: job.id)
+        try await waitForLiveSync { !store.platformJobs.contains(where: { $0.id == job.id }) }
+    }
+
+    @MainActor
     func testRealGatewayJobsSyncAcrossClients() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",

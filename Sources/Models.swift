@@ -992,8 +992,50 @@ struct HermesJob: Codable, Identifiable, Hashable {
     let lastRunAt: String?
     let lastStatus: String?
     let lastError: String?
+    let lastDeliveryError: String?
+    let lastDeliveryUnverified: [String]?
+    let lastDeliveryQueued: [String: HermesJobDeliveryReceipt]?
     let deliver: String?
     let skills: [String]?
+
+    var lastRunSummary: String? {
+        switch lastStatus {
+        case "ok", "delivery_failed", "delivery_queued": return "Execution completed"
+        case "error": return "Execution failed"
+        case "blocked_config": return "Blocked by configuration"
+        case "interrupted": return "Execution interrupted"
+        default: return lastStatus
+        }
+    }
+
+    var diagnostics: [HermesJobDiagnostic] {
+        var result: [HermesJobDiagnostic] = []
+        if let error = lastError, !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(.init(id: "execution", title: "Execution failed", detail: error, isFailure: true))
+        }
+        if let error = lastDeliveryError, !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(.init(id: "delivery", title: "Delivery failed", detail: error, isFailure: true))
+        } else if lastStatus == "delivery_failed" {
+            result.append(.init(id: "delivery", title: "Delivery failed", detail:
+                "Hermes recorded a delivery failure without its reason. Open this job's execution log on the server and check its delivery target before running it again.", isFailure: true))
+        }
+        let queued = lastDeliveryQueued ?? [:]
+        if !queued.isEmpty || lastStatus == "delivery_queued" {
+            let details = queued.keys.sorted().map { target in
+                "\(target): \(queued[target]?.status ?? "awaiting confirmation")"
+            }.joined(separator: "\n")
+            result.append(.init(id: "queued", title: "Delivery queued", detail: details.isEmpty
+                ? "Hermes accepted delivery for later processing but has not confirmed completion."
+                : details, isFailure: false))
+        }
+        let unverified = Set(lastDeliveryUnverified ?? []).filter { !$0.isEmpty && queued[$0] == nil }.sorted()
+        if !unverified.isEmpty {
+            result.append(.init(id: "unverified", title: "Delivery not confirmed", detail:
+                "These targets accepted the request without delivery evidence:\n" + unverified.joined(separator: "\n")
+                + "\nCheck the destination before running the job again to avoid duplicates.", isFailure: false))
+        }
+        return result
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name, prompt, enabled, state, deliver, skills
@@ -1002,7 +1044,21 @@ struct HermesJob: Codable, Identifiable, Hashable {
         case lastRunAt = "last_run_at"
         case lastStatus = "last_status"
         case lastError = "last_error"
+        case lastDeliveryError = "last_delivery_error"
+        case lastDeliveryUnverified = "last_delivery_unverified"
+        case lastDeliveryQueued = "last_delivery_queued"
     }
+}
+
+struct HermesJobDeliveryReceipt: Codable, Hashable {
+    let status: String?
+}
+
+struct HermesJobDiagnostic: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let detail: String
+    let isFailure: Bool
 }
 
 struct HermesJobsResponse: Codable {
