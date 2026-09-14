@@ -1,5 +1,10 @@
 # App Store Submission — Hermes Companion
 
+This is the historical free-app submission draft, not the upcoming paid release.
+Do not submit its pricing or subscription claims unchanged. Current paid-release
+requirements and unresolved decisions are in
+[SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).
+
 ## App Info
 
 | Field | Value |
