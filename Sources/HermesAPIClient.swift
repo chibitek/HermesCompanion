@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 private final class AttachmentRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask,
@@ -73,14 +74,15 @@ final class HermesAPIClient: Sendable {
 
     /// Keep the request context when URLSession reports a transport failure.
     /// Long-running chat and uploads retain the session's existing deadlines.
-    private func perform(_ request: URLRequest, timeout: Double? = nil) async throws -> (Data, URLResponse) {
+    private func perform(_ request: URLRequest, timeout: Double? = nil, rejectRedirects: Bool = false) async throws -> (Data, URLResponse) {
+        let delegate = rejectRedirects ? AttachmentRedirectPolicy() : nil
         do {
             if let timeout {
-                return try await withTimeout(seconds: timeout) { [session] in
-                    try await session.data(for: request)
+                return try await withTimeout(seconds: timeout) { [session, delegate] in
+                    try await session.data(for: request, delegate: delegate)
                 }
             }
-            return try await session.data(for: request)
+            return try await session.data(for: request, delegate: delegate)
         } catch {
             if Task.isCancelled || error is CancellationError { throw CancellationError() }
             throw APIError.transport(TransportFailure(request: request, error: error, timeout: timeout))
@@ -363,28 +365,118 @@ final class HermesAPIClient: Sendable {
     }
 
     private func writeWorkspace<Body: Encodable, Result: Decodable>(method: String, path: String,
-        board: String, taskID: String?, body: Body) async throws -> Result {
+        board: String, taskID: String?, body: Body, timeout: Double = 20) async throws -> Result {
         var query = [URLQueryItem(name: "board", value: board)]
         if let taskID { query.append(URLQueryItem(name: "task_id", value: taskID)) }
         var req = try request(method: method, path: path, queryItems: query)
         req.httpBody = try JSONEncoder().encode(body)
-        req.timeoutInterval = 20
+        req.timeoutInterval = timeout
         let outgoing = req
-        let (data, response) = try await perform(outgoing, timeout: 20)
+        let isUpload = path.hasPrefix("/api/companion/task-upload-")
+        let (data, response) = try await perform(outgoing, timeout: timeout, rejectRedirects: isUpload)
+        if isUpload, let http = response as? HTTPURLResponse, (300..<400).contains(http.statusCode) {
+            throw APIError.invalidEndpoint("The attachment endpoint redirected this upload. Recheck the selected server address; the upload was not forwarded to the redirect destination.")
+        }
         try checkHTTPStatus(response, data: data)
         return try decode(Result.self, data: data, response: response)
+    }
+
+    // Only operation IDs are retained here, never gateway credentials or file contents.
+    // Reselecting the same file after a lost response resumes its original operation.
+    @MainActor
+    func pendingTaskUploadID(board: String, taskID: String, filename: String, data: Data, discard: Bool = false) -> String {
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let scope = [config.baseURL, board, taskID, filename, digest].joined(separator: "\n")
+        let key = "hermes.task-upload." + SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
+        if discard { UserDefaults.standard.removeObject(forKey: key); return "" }
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let identifier = UUID().uuidString.lowercased()
+        UserDefaults.standard.set(identifier, forKey: key)
+        return identifier
+    }
+
+    func uploadTaskAttachment(board: String, taskID: String, uploadID: String, filename: String,
+                              contentType: String, data: Data,
+                              progress: @MainActor @Sendable (Int, Int) -> Void = { _, _ in }) async throws -> ServerTaskAttachment {
+        let capabilities = try await workspaceCapabilities()
+        guard capabilities.task_attachment_write == true,
+              let maximum = capabilities.task_attachment_max_bytes, maximum > 0,
+              let chunkSize = capabilities.task_attachment_chunk_bytes, (1...4_194_304).contains(chunkSize) else {
+            throw APIError.invalidEndpoint("Task uploads require Companion bridge 0.1.11 with attachment upload support. Update the selected server.")
+        }
+        guard data.count <= maximum else {
+            throw APIError.invalidEndpoint("This attachment contains \(data.count) bytes; the server accepts at most \(maximum). Choose a smaller file.")
+        }
+        let metadata = TaskUploadMetadata(upload_id: uploadID, filename: filename, content_type: contentType,
+            size: data.count, sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+        func validated(_ receipt: TaskUploadReceipt) throws -> TaskUploadReceipt {
+            guard receipt.board == board, receipt.task_id == taskID, receipt.upload_id == uploadID,
+                  (0...data.count).contains(receipt.offset) else {
+                throw APIError.invalidEndpoint("The upload receipt does not match this task, file or byte range. Refresh attachments before retrying.")
+            }
+            return receipt
+        }
+        var receipt: TaskUploadReceipt = try await writeWorkspace(method: "POST", path: "/api/companion/task-upload-begin",
+            board: board, taskID: taskID, body: metadata)
+        receipt = try validated(receipt)
+        await progress(receipt.offset, data.count)
+        while receipt.offset < data.count {
+            try Task.checkCancellation()
+            let start = receipt.offset
+            let end = min(data.count, start + chunkSize)
+            let next: TaskUploadReceipt = try await writeWorkspace(method: "POST", path: "/api/companion/task-upload-chunk",
+                board: board, taskID: taskID, body: TaskUploadChunk(upload_id: uploadID, offset: start,
+                    data: data.subdata(in: start..<end).base64EncodedString()), timeout: 120)
+            receipt = try validated(next)
+            guard receipt.offset >= end else {
+                throw APIError.invalidEndpoint("The server did not confirm the uploaded byte range. Retry to resume from its saved position.")
+            }
+            await progress(receipt.offset, data.count)
+        }
+        let finished: TaskUploadReceipt = try await writeWorkspace(method: "POST", path: "/api/companion/task-upload-finish",
+            board: board, taskID: taskID, body: ["upload_id": uploadID])
+        receipt = try validated(finished)
+        guard receipt.offset == data.count, let attachment = receipt.attachment,
+              attachment.id > 0, attachment.task_id == taskID, attachment.size == data.count else {
+            throw APIError.invalidEndpoint("Hermes did not confirm a complete attachment for this task. Refresh the attachment list before retrying.")
+        }
+        return attachment
+    }
+
+    func deleteTaskAttachment(board: String, taskID: String, attachmentID: Int) async throws {
+        let receipt: TaskAttachmentDeletionReceipt = try await writeWorkspace(method: "DELETE", path: "/api/companion/task-attachment",
+            board: board, taskID: taskID, body: ["attachment_id": attachmentID])
+        guard receipt.board == board, receipt.task_id == taskID, receipt.attachment_id == attachmentID, receipt.deleted else {
+            throw APIError.invalidEndpoint("Hermes did not confirm removal of this attachment from this task. Refresh before retrying.")
+        }
+    }
+
+    func changeTaskDependency(board: String, taskID: String, parentID: String, childID: String, linked: Bool) async throws {
+        let receipt: TaskLinkReceipt = try await writeWorkspace(method: linked ? "POST" : "DELETE", path: "/api/companion/task-link",
+            board: board, taskID: taskID, body: ["parent_id": parentID, "child_id": childID])
+        guard receipt.board == board, receipt.parent_id == parentID, receipt.child_id == childID, receipt.linked == linked else {
+            throw APIError.invalidEndpoint("Hermes returned an unconfirmed dependency change. Refresh both tasks before retrying.")
+        }
     }
 
     // MARK: - Health
 
     func downloadTaskAttachment(board: String, taskID: String, attachment: ServerTaskAttachment) async throws -> URL {
-        guard attachment.task_id == taskID, attachment.size >= 0 else { throw APIError.invalidResponse }
+        guard attachment.task_id == taskID, attachment.id > 0, attachment.size >= 0 else {
+            throw APIError.invalidEndpoint("The attachment metadata has an invalid ID, task owner or file size. Refresh this task before downloading.")
+        }
         let req = try request(method: "GET", path: "/api/companion/task-attachment", queryItems: [
             URLQueryItem(name: "board", value: board),
             URLQueryItem(name: "task_id", value: taskID),
             URLQueryItem(name: "attachment_id", value: String(attachment.id))
         ])
-        let (temporary, response) = try await session.download(for: req, delegate: AttachmentRedirectPolicy())
+        let temporary: URL
+        let response: URLResponse
+        do { (temporary, response) = try await session.download(for: req, delegate: AttachmentRedirectPolicy()) }
+        catch {
+            if Task.isCancelled || error is CancellationError { throw CancellationError() }
+            throw APIError.transport(TransportFailure(request: req, error: error, timeout: nil))
+        }
         defer { try? FileManager.default.removeItem(at: temporary) }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             let handle = try FileHandle(forReadingFrom: temporary)
@@ -395,7 +487,9 @@ final class HermesAPIClient: Sendable {
         }
         try Task.checkCancellation()
         let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize
-        guard size == attachment.size else { throw APIError.invalidResponse }
+        guard size == attachment.size else {
+            throw APIError.invalidEndpoint("The attachment download returned \(size.map(String.init) ?? "an unknown number of") bytes; this task lists \(attachment.size). Refresh the task because the file may have changed, then download again.")
+        }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-attachment-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         do {

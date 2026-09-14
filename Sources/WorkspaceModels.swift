@@ -209,6 +209,10 @@ struct WorkspaceCapabilities: Decodable {
     let task_statuses: [String]
     let project_manage: Bool?
     let board_manage: Bool?
+    let task_attachment_write: Bool?
+    let task_link_write: Bool?
+    let task_attachment_max_bytes: Int?
+    let task_attachment_chunk_bytes: Int?
 }
 
 struct ServerTaskWrite: Encodable {
@@ -288,4 +292,40 @@ struct ServerBoardActionReceipt: Decodable {
     let slug: String
     let action: String
     let current: String
+}
+
+struct TaskUploadMetadata: Encodable {
+    let upload_id: String
+    let filename: String
+    let content_type: String
+    let size: Int
+    let sha256: String
+}
+
+struct TaskUploadChunk: Encodable {
+    let upload_id: String
+    let offset: Int
+    let data: String
+}
+
+struct TaskUploadReceipt: Decodable {
+    let board: String
+    let task_id: String
+    let upload_id: String
+    let offset: Int
+    let attachment: ServerTaskAttachment?
+}
+
+struct TaskAttachmentDeletionReceipt: Decodable {
+    let board: String
+    let task_id: String
+    let attachment_id: Int
+    let deleted: Bool
+}
+
+struct TaskLinkReceipt: Decodable {
+    let board: String
+    let parent_id: String
+    let child_id: String
+    let linked: Bool
 }

@@ -137,6 +137,71 @@ class TaskWriteTests(unittest.IsolatedAsyncioTestCase):
         domain.assert_not_called()
         self.assertFalse(self.db.kanban_db_path().exists())
 
+    async def testResumableAttachmentUploadReplayOwnershipAndDeletion(self):
+        import base64, hashlib, uuid
+        task = await self.create()
+        other = await self.create("other")
+        query = "?board=default&task_id=" + task["id"]
+        data = "Phone attachment: café\n".encode()
+        metadata = {"upload_id": str(uuid.uuid4()), "filename": "proof.txt", "content_type": "text/plain",
+                    "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        async def post(route, body, status=200):
+            response = await self.client.post("/api/companion/" + route + query, json=body)
+            self.assertEqual(response.status, status, await response.text())
+            return await response.json()
+        self.assertEqual((await post("task-upload-begin", metadata))["offset"], 0)
+        chunk = {"upload_id": metadata["upload_id"], "offset": 0, "data": base64.b64encode(data).decode()}
+        self.assertEqual((await post("task-upload-chunk", chunk))["offset"], len(data))
+        self.assertEqual((await post("task-upload-chunk", chunk))["offset"], len(data))
+        self.assertEqual((await post("task-upload-begin", metadata))["offset"], len(data))
+        await post("task-upload-begin", {**metadata, "filename": "changed.txt"}, 409)
+        receipt = await post("task-upload-finish", {"upload_id": metadata["upload_id"]})
+        attachment = receipt["attachment"]
+        retry = await post("task-upload-finish", {"upload_id": metadata["upload_id"]})
+        self.assertEqual(retry["attachment"]["id"], attachment["id"])
+        # Recover the native receipt even if the final sidecar commit was lost.
+        with bridge.upload_state({"board": "default", "task_id": task["id"]}, metadata) as directory:
+            (directory / "state.json").unlink()
+        await post("task-upload-begin", metadata)
+        retry = await post("task-upload-finish", {"upload_id": metadata["upload_id"]})
+        self.assertEqual(retry["attachment"]["id"], attachment["id"])
+        response = await self.client.get("/api/companion/task-attachment" + query + "&attachment_id=" + str(attachment["id"]))
+        self.assertEqual(await response.read(), data)
+        response = await self.client.delete("/api/companion/task-attachment?board=default&task_id=" + other["id"], json={"attachment_id": attachment["id"]})
+        self.assertEqual(response.status, 404)
+        response = await self.client.delete("/api/companion/task-attachment" + query, json={"attachment_id": attachment["id"]})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual((await response.json())["deleted"], True)
+        await post("task-upload-finish", {"upload_id": metadata["upload_id"]}, 409)
+        with bridge.upload_state({"board": "default", "task_id": task["id"]}, metadata) as directory:
+            (directory / "state.json").unlink()
+        await post("task-upload-begin", metadata, 409)
+
+    async def testUploadAuthorizationLimitsAndDependencyRules(self):
+        import hashlib, uuid
+        task = await self.create()
+        other = await self.create("dependency")
+        query = "?board=default&task_id=" + task["id"]
+        payload = {"parent_id": task["id"], "child_id": other["id"]}
+        response = await self.client.post("/api/companion/task-link" + query, json=payload)
+        self.assertEqual(response.status, 200, await response.text())
+        response = await self.client.post("/api/companion/task-link" + query, json={"parent_id": other["id"], "child_id": task["id"]})
+        self.assertEqual(response.status, 400)
+        self.assertIn("cycle", await response.text())
+        for _ in range(2):
+            response = await self.client.delete("/api/companion/task-link" + query, json=payload)
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertFalse((await response.json())["linked"])
+        metadata = {"upload_id": str(uuid.uuid4()), "filename": "proof.txt", "content_type": "text/plain",
+                    "size": 25 * 1024 * 1024 + 1, "sha256": hashlib.sha256(b"").hexdigest()}
+        response = await self.client.post("/api/companion/task-upload-begin" + query, json=metadata)
+        self.assertEqual(response.status, 413)
+        self.allowed = False
+        with patch.object(bridge, "attachment_context") as inspect_task:
+            response = await self.client.post("/api/companion/task-upload-begin" + query, json={**metadata, "size": 0})
+            self.assertEqual(response.status, 401)
+            inspect_task.assert_not_called()
+
     async def testUnknownBoardAndMissingTaskAreRejected(self):
         response = await self.client.post("/api/companion/tasks?board=foreign", json={"title": "Unreachable", "idempotency_key": "two"})
         self.assertEqual(response.status, 400)

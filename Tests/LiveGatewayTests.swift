@@ -444,6 +444,49 @@ final class LiveGatewayTests: XCTestCase {
             let download = try await phone.downloadTaskAttachment(board: slug, taskID: taskID, attachment: attachment)
             defer { try? FileManager.default.removeItem(at: download.deletingLastPathComponent()) }
             XCTAssertEqual(try Data(contentsOf: download), Data("Hermes attachment round trip: café\n".utf8))
+            // Exercise the full native 25 MiB limit without exceeding the API's
+            // 10 MB per-request protection. Retrying completion must not duplicate it.
+            let phoneBytes = Data(repeating: 0x5a, count: 25 * 1024 * 1024)
+            let uploadID = UUID().uuidString.lowercased()
+            let uploaded = try await phone.uploadTaskAttachment(board: slug, taskID: taskID, uploadID: uploadID,
+                filename: "phone-limit-proof.bin", contentType: "application/octet-stream", data: phoneBytes)
+            let replay = try await phone.uploadTaskAttachment(board: slug, taskID: taskID, uploadID: uploadID,
+                filename: "phone-limit-proof.bin", contentType: "application/octet-stream", data: phoneBytes)
+            XCTAssertEqual(uploaded.id, replay.id)
+            let withPhoneFile = try await second.workspaceTask(board: slug, id: taskID)
+            XCTAssertEqual(withPhoneFile.attachments?.count, 2)
+            let phoneDownload = try await second.downloadTaskAttachment(board: slug, taskID: taskID, attachment: uploaded)
+            XCTAssertEqual(try Data(contentsOf: phoneDownload), phoneBytes)
+            try FileManager.default.removeItem(at: phoneDownload.deletingLastPathComponent())
+            let wrongSize = try JSONDecoder().decode(ServerTaskAttachment.self, from: JSONSerialization.data(withJSONObject:
+                ["id": uploaded.id, "task_id": taskID, "filename": uploaded.filename, "size": uploaded.size + 1]))
+            do {
+                let invalid = try await phone.downloadTaskAttachment(board: slug, taskID: taskID, attachment: wrongSize)
+                try? FileManager.default.removeItem(at: invalid.deletingLastPathComponent())
+                XCTFail("A mismatched file size must not be accepted")
+            } catch {
+                XCTAssertTrue(error.localizedDescription.contains("bytes; this task lists"))
+            }
+            try await phone.deleteTaskAttachment(board: slug, taskID: taskID, attachmentID: uploaded.id)
+            let afterPhoneDelete = try await second.workspaceTask(board: slug, id: taskID)
+            XCTAssertFalse(afterPhoneDelete.attachments?.contains { $0.id == uploaded.id } == true)
+            var linkedCreation = ServerTaskWrite()
+            linkedCreation.title = "Phone dependency edit"
+            linkedCreation.idempotency_key = UUID().uuidString
+            let linkedTask = try await phone.createWorkspaceTask(board: slug, payload: linkedCreation)
+            try await phone.changeTaskDependency(board: slug, taskID: taskID, parentID: taskID, childID: linkedTask.task.id, linked: true)
+            let linkedDetail = try await second.workspaceTask(board: slug, id: linkedTask.task.id)
+            XCTAssertTrue(linkedDetail.links?.parents.contains(taskID) == true)
+            do {
+                try await phone.changeTaskDependency(board: slug, taskID: taskID, parentID: linkedTask.task.id, childID: taskID, linked: true)
+                XCTFail("Native dependency cycles must be rejected")
+            } catch { XCTAssertTrue(error.localizedDescription.contains("cycle")) }
+            try await phone.changeTaskDependency(board: slug, taskID: taskID, parentID: taskID, childID: linkedTask.task.id, linked: false)
+            let unlinked = try await second.workspaceTask(board: slug, id: linkedTask.task.id)
+            XCTAssertTrue(unlinked.links?.parents.isEmpty == true)
+            var archiveLinked = ServerTaskWrite()
+            archiveLinked.status = "archived"
+            _ = try await phone.updateWorkspaceTask(board: slug, taskID: linkedTask.task.id, payload: archiveLinked)
             var changes = ServerTaskWrite()
             changes.priority = 2
             _ = try await phone.updateWorkspaceTask(board: slug, taskID: taskID, payload: changes)

@@ -1,6 +1,7 @@
 # Companion Workspace Bridge
 
-Version 0.1.10 adds native board creation, metadata editing, active-board selection,
+Version 0.1.11 adds resumable task attachment uploads, deletion and dependency editing.
+Version 0.1.10 added native board creation, metadata editing, active-board selection,
 and archiving. Board writes require `board_manage` in the capability response.
 Repeated creation returns an existing board without overwriting its metadata;
 ordinary edits send only changed fields. Archive retains the server board files
@@ -114,6 +115,29 @@ profiles. The plugin uses the gateway's existing authorization check unchanged.
 - `POST /api/companion/task-comment?board=...&task_id=...`: add a nonempty body
   attributed to Companion. Comments have no automatic retry or idempotency;
   inspect the task after an uncertain response before submitting again.
+
+Bridge 0.1.11 advertises `task_attachment_write`, `task_link_write`, the native
+25 MiB attachment limit, and a 4 MiB chunk limit. Uploads use authenticated JSON
+`POST` routes `task-upload-begin`, `task-upload-chunk`, and `task-upload-finish`,
+all under `/api/companion/` and scoped by `board` and `task_id`. Base64 chunks
+fit the gateway's existing 10 MB request limit. That limit is unchanged.
+
+The begin request binds an operation UUID to filename, size and SHA-256. Each
+chunk carries the confirmed byte offset. Matching replayed bytes are accepted;
+different bytes or metadata are rejected. Finish verifies the complete checksum
+and returns a native attachment receipt. A native operation marker recovers a
+committed attachment after an interrupted response or lost staging metadata.
+Native attachment events prevent an old retry from recreating a remotely deleted
+attachment. Staged bytes expire lazily after seven days, with hourly cleanup
+checks; native attachments are never removed by staging cleanup. The client
+keeps only a connection/task/file-scoped operation UUID in preferences and can
+resume after selecting the same file again. Upload redirects are refused.
+
+`DELETE /api/companion/task-attachment` accepts an attachment ID after verifying
+its ownership. `POST` and `DELETE /api/companion/task-link` accept parent and child
+IDs, require the selected task to be one endpoint and both tasks to belong to
+the selected board, and preserve native cycle and workflow checks. The phone
+confirms deletions and shows the server's specific rejection and retry guidance.
 
 There is no arbitrary RPC forwarding, arbitrary file reader, or new listener.
 The canonical Hermes handlers retain their own schema migration and discovery

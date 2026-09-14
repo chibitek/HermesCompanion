@@ -43,6 +43,15 @@ gracefully restarted on `faecddc545` and returned healthy status, `jobs_admin:
 true`, eight job endpoints and bridge 0.1.10. Build 182 is unchanged. External
 messaging delivery and full scheduled-job feature parity remain unverified.
 
+## Session deletion and background accounting
+
+`0008-preserve-session-deletion-during-auxiliary-usage.patch` prevents a delayed
+title, vision or background-review response from recreating a deleted session.
+Auxiliary accounting checks the parent and records usage in the same immediate
+transaction as the deletion boundary. Existing-session accounting is retained.
+Three event-coordinated regressions reproduced the deleted row returning before
+the fix; all 184 tests across the five targeted native files pass with the fix.
+
 ## Included Fixes
 
 - `0001-fix-api-resolve-locked-custom-provider-identity-from.patch`: resolves a

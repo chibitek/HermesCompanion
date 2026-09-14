@@ -14,6 +14,24 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.87":
+            return [
+                "Upload and delete task attachments with Companion bridge 0.1.11, with progress and resumable retries.",
+                "Add or remove task dependencies while Hermes enforces workflow and cycle rules.",
+                "Attachment errors now explain invalid metadata, changed file sizes, and network failures.",
+                "Includes complete scheduled-job delivery reasons and reliable live-sync shutdown."
+            ]
+        case "1.8.86":
+            return [
+                "Scheduled jobs distinguish execution from delivery failures and show complete error details.",
+                "Queued and unverified delivery remain separate from confirmed results.",
+                "Foreground sync waits for its workspace watcher to stop before returning."
+            ]
+        case "1.8.85":
+            return [
+                "Scheduled jobs refresh after changes from other clients, with periodic fallback.",
+                "Failed refreshes show a job-specific warning and retry action."
+            ]
         case "1.8.84":
             return [
                 "Attaching again to the run already on screen keeps its live response and status updates active.",

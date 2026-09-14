@@ -23,6 +23,35 @@ final class WorkspaceContractTests: XCTestCase {
         XCTAssertTrue(ConnectionConfig(baseURL: "https://hermes.local:8642", apiKey: "secret", label: "Hermes").isValid)
     }
 
+    @MainActor
+    func testPendingUploadIdentitySurvivesClientRecreationAndStaysScoped() {
+        let config = ConnectionConfig(baseURL: "https://upload-test.invalid/" + UUID().uuidString, apiKey: "", label: "Upload verification")
+        let first = HermesAPIClient(config: config)
+        let second = HermesAPIClient(config: config)
+        let data = Data("Upload identity".utf8)
+        let id = first.pendingTaskUploadID(board: "board", taskID: "task", filename: "proof.txt", data: data)
+        XCTAssertEqual(second.pendingTaskUploadID(board: "board", taskID: "task", filename: "proof.txt", data: data), id)
+        let otherTask = second.pendingTaskUploadID(board: "board", taskID: "other", filename: "proof.txt", data: data)
+        XCTAssertNotEqual(otherTask, id)
+        _ = second.pendingTaskUploadID(board: "board", taskID: "other", filename: "proof.txt", data: data, discard: true)
+        _ = second.pendingTaskUploadID(board: "board", taskID: "task", filename: "proof.txt", data: data, discard: true)
+        XCTAssertNotEqual(first.pendingTaskUploadID(board: "board", taskID: "task", filename: "proof.txt", data: data), id)
+        _ = first.pendingTaskUploadID(board: "board", taskID: "task", filename: "proof.txt", data: data, discard: true)
+    }
+
+    func testInvalidDownloadMetadataIdentifiesTheProblemBeforeNetworkAccess() async throws {
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"))
+        let attachment = try JSONDecoder().decode(ServerTaskAttachment.self,
+            from: Data(#"{"id":-1,"task_id":"other","filename":"report.txt","size":-1}"#.utf8))
+        do {
+            _ = try await client.downloadTaskAttachment(board: "board", taskID: "task", attachment: attachment)
+            XCTFail("Invalid metadata must fail before a download starts")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("invalid ID, task owner or file size"))
+            XCTAssertTrue(error.localizedDescription.contains("Refresh this task"))
+        }
+    }
+
     func testAttachmentNamesCannotEscapeDownloadDirectory() throws {
         for (name, expected) in [("../../report.txt", "report.txt"), ("C:\\private\\report.txt", "report.txt"), ("..", "attachment"), ("", "attachment")] {
             let data = try JSONSerialization.data(withJSONObject: ["id": 1, "task_id": "task", "filename": name, "size": 10])

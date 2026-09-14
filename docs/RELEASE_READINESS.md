@@ -1,6 +1,27 @@
 # Development Release Readiness
 
-## Current delivery diagnostics update: 1.8.86 (183)
+## Current preparation: 1.8.87 (184)
+
+Task attachments now support full-size uploads, resumable retries and deletion.
+Task dependencies can be added and removed with native ownership and cycle
+checks. Download errors distinguish metadata, byte-count and transport failures.
+The final full simulator suite passed 179 ordinary tests; all thirteen opt-in
+real gateway checks passed separately. The bridge passed 32 tests.
+
+Issue #57 was reproduced deterministically: delayed auxiliary usage could recreate
+a deleted conversation before saving its generated title. Patch 8 now checks
+existence and writes usage in one transaction. All 184 targeted native tests pass;
+the final live run retained no sessions, jobs or projects. Linked files were
+preserved and the test board was archived. See [KANBAN_LIVE_VERIFICATION.md](KANBAN_LIVE_VERIFICATION.md).
+
+The verified local gateway was gracefully restarted after confirming no active
+runs or delegations. It runs native revision `480383eb3f` with eight compatibility
+patches and bridge 0.1.11. Live reads confirmed healthy status, attachment/link
+writes, the 25 MiB file limit and 4 MiB chunks. Installed bridge files match the
+verified sources. Build 184 packaging is in progress; build 183 remains the
+TestFlight and Apple review candidate until replacement is confirmed.
+
+## Historical delivery diagnostics update: 1.8.86 (183)
 
 Scheduled jobs now separate execution status from delivery failures, queued
 receipts and unverified delivery. Expandable rows retain the complete reason,
@@ -30,7 +51,7 @@ comments, child results, attachment bytes/removal and iOS completion/archive.
 The native half independently verified the phone's saved fields. No chat, job or
 project records remained; the owned Kanban board was archived in the disposable
 home and linked files were retained. See [KANBAN_LIVE_VERIFICATION.md](KANBAN_LIVE_VERIFICATION.md)
-for exact scope and missing attachment/dependency editing operations. This work
+for exact scope; the later build 184 section adds attachment/dependency editing. This work
 does not change the shipped binary, native gateway or Apple review candidate.
 
 ## Historical scheduled-job sync update: 1.8.85 (182)

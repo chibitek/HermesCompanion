@@ -8,6 +8,7 @@ extension EnvironmentValues {
     }
 }
 import QuickLook
+import UniformTypeIdentifiers
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
     case projects = "Projects", bots = "Bots", kanban = "Kanban"
@@ -254,6 +255,9 @@ private struct ServerTaskDetailView: View {
                     if downloadTask != nil { ProgressView("Downloading...") }
                 }
             }
+            ServerTaskWriteControls(client: client, board: board, detail: detail) {
+                mutationRevision += 1
+            }
             if let links = detail.links {
                 if !links.parents.isEmpty {
                     Section("Dependencies") {
@@ -367,6 +371,218 @@ private struct ServerTaskDetailView: View {
             } catch {
                 guard !Task.isCancelled, downloadID == requestID else { return }
                 downloadError = "Attachment download failed: \(error.localizedDescription)"
+            }
+        }
+    }
+}
+
+
+private struct ServerTaskWriteControls: View {
+    let client: HermesAPIClient
+    let board: String
+    let detail: ServerTaskDetail
+    let onChanged: () -> Void
+    @Environment(\.workspaceRevision) private var workspaceRevision
+    @State private var capabilities: WorkspaceCapabilities?
+    @State private var failure: String?
+    @State private var importing = false
+    @State private var filename = ""
+    @State private var fileData: Data?
+    @State private var uploading = false
+    @State private var readingFile = false
+    @State private var completedBytes = 0
+    @State private var changingLink = false
+    @State private var showLinkEditor = false
+    @State private var attachmentToDelete: ServerTaskAttachment?
+    @State private var linkToRemove: TaskDependencySelection?
+
+    var body: some View {
+        Section("Files and Dependencies") {
+            if let failure { Text(failure).foregroundStyle(.red).textSelection(.enabled) }
+            if capabilities?.task_attachment_write == true {
+                Button("Upload Attachment", systemImage: "square.and.arrow.up") { importing = true }
+                    .disabled(readingFile || uploading || changingLink)
+                if readingFile { ProgressView("Reading attachment…") }
+                if uploading {
+                    ProgressView(value: Double(completedBytes), total: Double(max(fileData?.count ?? 0, 1)))
+                    Text("Uploading \(filename): \(ByteCountFormatter.string(fromByteCount: Int64(completedBytes), countStyle: .file))")
+                        .font(.caption)
+                } else if let data = fileData {
+                    Button("Retry Upload") { Task { await upload(data) } }
+                    Button("Discard Pending Upload") {
+                        _ = client.pendingTaskUploadID(board: board, taskID: detail.task.id, filename: filename, data: data, discard: true)
+                        fileData = nil
+                        failure = "The pending upload was forgotten on this phone. Refresh attachments before uploading again if the server may already have saved it."
+                    }
+                }
+                ForEach(detail.attachments ?? []) { attachment in
+                    Button("Delete \(attachment.filename)", systemImage: "trash", role: .destructive) {
+                        attachmentToDelete = attachment
+                    }.disabled(readingFile || uploading || changingLink)
+                }
+            } else {
+                Text("Attachment uploads and deletion require Companion bridge 0.1.11.").font(.caption).foregroundStyle(.secondary)
+            }
+            if capabilities?.task_link_write == true {
+                Button("Add Dependency", systemImage: "link") { showLinkEditor = true }
+                    .disabled(readingFile || uploading || changingLink)
+                ForEach(detail.links?.parents ?? [], id: \.self) { parent in
+                    Button("Remove dependency on \(parent)", role: .destructive) {
+                        linkToRemove = .init(parentID: parent, childID: detail.task.id)
+                    }.disabled(readingFile || uploading || changingLink)
+                }
+                ForEach(detail.links?.children ?? [], id: \.self) { child in
+                    Button("Remove dependent task \(child)", role: .destructive) {
+                        linkToRemove = .init(parentID: detail.task.id, childID: child)
+                    }.disabled(readingFile || uploading || changingLink)
+                }
+            } else {
+                Text("Dependency editing requires Companion bridge 0.1.11.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .task(id: workspaceRevision) {
+            do { capabilities = try await client.workspaceCapabilities() }
+            catch { failure = "Could not check task editing support: \(error.localizedDescription)" }
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
+            guard !readingFile, !uploading else { return }
+            readingFile = true
+            Task { @MainActor in
+                defer { readingFile = false }
+                do {
+                    let file = try result.get()
+                    let accessed = file.startAccessingSecurityScopedResource()
+                    defer { if accessed { file.stopAccessingSecurityScopedResource() } }
+                    guard let maximum = capabilities?.task_attachment_max_bytes else {
+                        failure = "Could not determine this server's attachment limit. Refresh task capabilities before uploading."
+                        return
+                    }
+                    let data = try await Task.detached {
+                        let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                        guard size <= maximum else {
+                            throw APIError.invalidEndpoint("This file contains \(size) bytes; the server accepts at most \(maximum). Choose a smaller file.")
+                        }
+                        return try Data(contentsOf: file)
+                    }.value
+                    filename = file.lastPathComponent
+                    fileData = data
+                    readingFile = false
+                    await upload(data)
+                } catch { failure = "Could not read or upload the selected attachment: \(error.localizedDescription)" }
+            }
+        }
+        .sheet(isPresented: $showLinkEditor) {
+            ServerTaskDependencyEditor(client: client, board: board, taskID: detail.task.id, onChanged: onChanged)
+        }
+        .confirmationDialog("Delete this attachment from Hermes?", isPresented: Binding(
+            get: { attachmentToDelete != nil }, set: { if !$0 { attachmentToDelete = nil } })) {
+                if let attachment = attachmentToDelete {
+                    Button("Delete Attachment", role: .destructive) {
+                        perform {
+                            try await client.deleteTaskAttachment(board: board, taskID: detail.task.id, attachmentID: attachment.id)
+                        }
+                    }
+                }
+            } message: { Text("This permanently removes the attachment from the server. Other clients will see the removal.") }
+        .confirmationDialog("Remove this dependency?", isPresented: Binding(
+            get: { linkToRemove != nil }, set: { if !$0 { linkToRemove = nil } })) {
+                if let link = linkToRemove {
+                    Button("Remove Dependency", role: .destructive) {
+                        perform {
+                            try await client.changeTaskDependency(board: board, taskID: detail.task.id,
+                                parentID: link.parentID, childID: link.childID, linked: false)
+                        }
+                    }
+                }
+            } message: { Text("Both tasks are retained. Removing a dependency can make its child eligible to run.") }
+    }
+
+    @MainActor private func upload(_ data: Data) async {
+        guard !uploading else { return }
+        uploading = true
+        completedBytes = 0
+        failure = nil
+        defer { uploading = false }
+        let identity = client.pendingTaskUploadID(board: board, taskID: detail.task.id, filename: filename, data: data)
+        let type = UTType(filenameExtension: (filename as NSString).pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        do {
+            _ = try await client.uploadTaskAttachment(board: board, taskID: detail.task.id, uploadID: identity,
+                filename: filename, contentType: type, data: data) { completed, _ in completedBytes = completed }
+            _ = client.pendingTaskUploadID(board: board, taskID: detail.task.id, filename: filename, data: data, discard: true)
+            fileData = nil
+            onChanged()
+        } catch {
+            failure = "Upload was not confirmed: \(error.localizedDescription) Retry keeps the same upload. After reopening this task, choose the same file to resume."
+        }
+    }
+
+    private func perform(_ operation: @escaping @MainActor () async throws -> Void) {
+        guard !changingLink else { return }
+        changingLink = true
+        failure = nil
+        Task { @MainActor in
+            defer { changingLink = false }
+            do { try await operation(); onChanged() }
+            catch { failure = "The task change was not confirmed: \(error.localizedDescription) Refresh before retrying." }
+        }
+    }
+}
+
+private struct TaskDependencySelection {
+    let parentID: String
+    let childID: String
+}
+
+private struct ServerTaskDependencyEditor: View {
+    let client: HermesAPIClient
+    let board: String
+    let taskID: String
+    let onChanged: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var tasks: [ServerBoardTask] = []
+    @State private var selected = ""
+    @State private var selectedIsParent = true
+    @State private var saving = false
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let failure { Text(failure).foregroundStyle(.red).textSelection(.enabled) }
+                Picker("Relationship", selection: $selectedIsParent) {
+                    Text("This task depends on").tag(true)
+                    Text("This task must finish before").tag(false)
+                }
+                Picker("Task", selection: $selected) {
+                    Text("Choose a task").tag("")
+                    ForEach(tasks) { task in Text(task.title).tag(task.id) }
+                }
+                Text("Hermes checks the selected board and rejects self-dependencies and cycles.").font(.caption)
+            }
+            .disabled(saving)
+            .navigationTitle("Add Dependency")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        saving = true
+                        Task {
+                            defer { saving = false }
+                            do {
+                                try await client.changeTaskDependency(board: board, taskID: taskID,
+                                    parentID: selectedIsParent ? selected : taskID,
+                                    childID: selectedIsParent ? taskID : selected, linked: true)
+                                onChanged()
+                                dismiss()
+                            } catch { failure = "Dependency was not saved: \(error.localizedDescription)" }
+                        }
+                    }.disabled(selected.isEmpty || saving)
+                }
+            }
+            .interactiveDismissDisabled(saving)
+            .task {
+                do { tasks = try await client.workspaceBoard(slug: board).columns.flatMap(\.tasks).filter { $0.id != taskID } }
+                catch { failure = "Could not load tasks on this board: \(error.localizedDescription)" }
             }
         }
     }

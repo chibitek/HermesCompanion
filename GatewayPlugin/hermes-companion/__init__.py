@@ -285,8 +285,10 @@ def activate_project(query, payload):
 
 def workspace_capabilities(_query):
     from plugins.kanban.dashboard import plugin_api as native
+    from hermes_cli.kanban_db import KANBAN_ATTACHMENT_MAX_BYTES
 
-    return {"version": "0.1.10", "board_manage": True, "project_manage": True, "task_create": True, "task_update": True,
+    return {"version": "0.1.11", "task_attachment_write": True, "task_link_write": True,
+            "task_attachment_max_bytes": KANBAN_ATTACHMENT_MAX_BYTES, "task_attachment_chunk_bytes": 4 * 1024 * 1024, "board_manage": True, "project_manage": True, "task_create": True, "task_update": True,
             "task_comment": True, "task_statuses": [*native._STATUS_HANDLERS, "archived"]}
 
 
@@ -415,7 +417,255 @@ def comment_task(query, payload):
     return {"board": slug, "task_id": task_id, **result}
 
 
+
+def attachment_context(query):
+    slug = require_board(query)
+    task_id = query.get("task_id", "")
+    if not task_id:
+        raise ValueError("Select a task before changing attachments")
+    return slug, task_id, task_detail(query)
+
+
+def delete_task_attachment(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+    from fastapi import HTTPException
+    slug, task_id, detail = attachment_context(query)
+    if set(payload) != {"attachment_id"} or type(payload["attachment_id"]) is not int:
+        raise ValueError("Provide one integer attachment_id")
+    attachment_id = payload["attachment_id"]
+    if not any(a["id"] == attachment_id and a["task_id"] == task_id for a in detail["attachments"]):
+        raise HTTPException(404, "This attachment was removed or is not in the selected task. Refresh its attachment list.")
+    native.remove_attachment(attachment_id, board=slug)
+    return {"board": slug, "task_id": task_id, "attachment_id": attachment_id, "deleted": True}
+
+
+def change_task_link(query, payload, linked):
+    from plugins.kanban.dashboard import plugin_api as native
+    slug = require_board(query)
+    if set(payload) != {"parent_id", "child_id"} or not all(isinstance(v, str) and v for v in payload.values()):
+        raise ValueError("Provide parent_id and child_id for this dependency")
+    if query.get("task_id") not in payload.values():
+        raise ValueError("The selected task must be one end of the dependency")
+    for task_id in payload.values():
+        task_detail({"board": slug, "task_id": task_id})
+    if linked:
+        native.add_link(native.LinkBody(**payload), board=slug)
+    else:
+        native.delete_link(board=slug, **payload)
+    current = task_detail({"board": slug, "task_id": payload["parent_id"]})
+    if (payload["child_id"] in current["links"]["children"]) != linked:
+        raise RuntimeError("Hermes did not confirm the requested dependency state")
+    return {"board": slug, **payload, "linked": linked}
+
+
+def add_task_link(query, payload):
+    return change_task_link(query, payload, True)
+
+
+def remove_task_link(query, payload):
+    return change_task_link(query, payload, False)
+
+
+def upload_state(query, payload):
+    import contextlib, fcntl, uuid
+    from hermes_constants import get_hermes_home
+    attachment_context(query)
+    upload_id = payload.get("upload_id", "")
+    try:
+        valid_id = isinstance(upload_id, str) and str(uuid.UUID(upload_id)) == upload_id
+    except ValueError:
+        valid_id = False
+    if not valid_id:
+        raise ValueError("A stable lowercase UUID upload_id is required")
+    # The hash binds state and locks to one board/task/operation, never a client path.
+    owner = hashlib.sha256(json.dumps([query["board"], query["task_id"], upload_id]).encode()).hexdigest()
+    directory = Path(get_hermes_home()) / ".companion" / "uploads" / owner
+    directory.mkdir(parents=True, exist_ok=True)
+    @contextlib.contextmanager
+    def locked():
+        with (directory / "lock").open("a+b") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield directory
+    return locked()
+
+
+def save_upload_state(directory, state):
+    import os
+    temporary = directory / "state.next"
+    with temporary.open("w") as file:
+        json.dump(state, file)
+        file.flush()
+        os.fsync(file.fileno())
+    temporary.replace(directory / "state.json")
+
+
+def upload_receipt(query, state, offset):
+    return {"board": query["board"], "task_id": query["task_id"],
+            "upload_id": state["upload_id"], "offset": offset,
+            "attachment": state.get("attachment")}
+
+
+
+_upload_cleanup_after = 0.0
+
+
+def expire_upload_staging(root):
+    import fcntl, time
+    global _upload_cleanup_after
+    now = time.time()
+    if now < _upload_cleanup_after:
+        return
+    _upload_cleanup_after = now + 3600
+    for directory in root.iterdir():
+        try:
+            with (directory / "lock").open("a+b") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                files = [p for p in (directory / "state.json", directory / "content") if p.exists()]
+                if files and max(p.stat().st_mtime for p in files) < now - 7 * 86400:
+                    for path in files:
+                        path.unlink(missing_ok=True)
+        except (BlockingIOError, OSError):
+            continue
+
+
+
+def require_not_removed_upload(query, upload_id):
+    from fastapi import HTTPException
+    detail = task_detail(query)
+    marker = "companion-upload:" + upload_id
+    if any(a.get("uploaded_by") == marker for a in detail["attachments"]):
+        return
+    for event in detail.get("events", []):
+        if event.get("kind") != "attached":
+            continue
+        payload = event.get("payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except ValueError:
+                continue
+        if isinstance(payload, dict) and payload.get("by") == marker:
+            raise HTTPException(409, "This completed attachment was removed. Start a new upload only if you intend to restore it.")
+
+
+def begin_task_upload(query, payload):
+    import re
+    from hermes_cli.kanban_db import KANBAN_ATTACHMENT_MAX_BYTES, _safe_attachment_name
+    from fastapi import HTTPException
+    fields = {"upload_id", "filename", "content_type", "size", "sha256"}
+    if set(payload) != fields:
+        raise ValueError("Upload metadata requires upload_id, filename, content_type, size and sha256")
+    if type(payload["size"]) is not int or not 0 <= payload["size"] <= KANBAN_ATTACHMENT_MAX_BYTES:
+        raise HTTPException(413, f"Task attachments must be at most {KANBAN_ATTACHMENT_MAX_BYTES} bytes")
+    if not isinstance(payload["sha256"], str) or not re.fullmatch(r"[a-f0-9]{64}", payload["sha256"]):
+        raise ValueError("Provide the lowercase SHA-256 of the complete file")
+    if not isinstance(payload["content_type"], str) or len(payload["content_type"]) > 200 or any(c in payload["content_type"] for c in "\r\n"):
+        raise ValueError("The attachment content type is invalid")
+    if not isinstance(payload["filename"], str):
+        raise ValueError("The attachment filename must be text")
+    metadata = {**payload, "filename": _safe_attachment_name(payload["filename"])}
+    with upload_state(query, payload) as directory:
+        expire_upload_staging(directory.parent)
+        require_not_removed_upload(query, payload["upload_id"])
+        state_path = directory / "state.json"
+        if state_path.exists():
+            state = json.loads(state_path.read_text())
+            if any(state.get(key) != metadata[key] for key in fields):
+                raise HTTPException(409, "This upload ID belongs to a different file. Keep the original file when retrying.")
+        else:
+            state = metadata
+            save_upload_state(directory, state)
+        offset = state["size"] if state.get("attachment") else ((directory / "content").stat().st_size if (directory / "content").exists() else 0)
+        return upload_receipt(query, state, offset)
+
+
+def append_task_upload(query, payload):
+    import base64, binascii, os
+    from fastapi import HTTPException
+    if set(payload) != {"upload_id", "offset", "data"} or type(payload["offset"]) is not int or not isinstance(payload["data"], str):
+        raise ValueError("Upload chunks require upload_id, integer offset and base64 data")
+    if len(payload["data"]) > 5_592_408:
+        raise HTTPException(413, "Each attachment chunk must be at most 4 MiB")
+    try:
+        data = base64.b64decode(payload["data"], validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("The attachment chunk is not valid base64") from exc
+    if not data or len(data) > 4 * 1024 * 1024 or payload["offset"] < 0:
+        raise ValueError("Send a nonempty chunk of at most 4 MiB at a nonnegative offset")
+    with upload_state(query, payload) as directory:
+        if not (directory / "state.json").exists():
+            raise HTTPException(409, "Start this upload before sending file chunks")
+        state = json.loads((directory / "state.json").read_text())
+        if state.get("attachment"):
+            return upload_receipt(query, state, state["size"])
+        path = directory / "content"
+        current = path.stat().st_size if path.exists() else 0
+        offset = payload["offset"]
+        if offset + len(data) > state["size"] or offset > current:
+            raise HTTPException(409, f"Upload expects offset {current}; refresh the upload before resuming")
+        if offset < current:
+            with path.open("rb") as file:
+                file.seek(offset)
+                if file.read(len(data)) != data:
+                    raise HTTPException(409, "Retried chunk differs from the bytes already saved")
+        else:
+            with path.open("ab") as file:
+                file.write(data)
+                file.flush()
+                os.fsync(file.fileno())
+            current += len(data)
+        return upload_receipt(query, state, current)
+
+
+def finish_task_upload(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+    from fastapi import HTTPException
+    from starlette.datastructures import UploadFile, Headers
+    if set(payload) != {"upload_id"}:
+        raise ValueError("Finish requires only the original upload_id")
+    with upload_state(query, payload) as directory:
+        if not (directory / "state.json").exists():
+            raise HTTPException(409, "Start this upload before completing it")
+        state = json.loads((directory / "state.json").read_text())
+        slug, task_id, detail = attachment_context(query)
+        require_not_removed_upload(query, state["upload_id"])
+        marker = "companion-upload:" + state["upload_id"]
+        existing = [a for a in detail["attachments"] if a.get("uploaded_by") == marker]
+        if len(existing) > 1:
+            raise HTTPException(409, "Hermes found multiple receipts for this upload. Refresh attachments before retrying.")
+        if state.get("attachment") or existing:
+            if not existing:
+                raise HTTPException(409, "This completed attachment was removed. Start a new upload only if you intend to restore it.")
+            attachment = existing[0]
+            native_file = native.download_attachment(attachment["id"], board=slug)
+            if attachment["size"] != state["size"] or hashlib.sha256(Path(native_file.path).read_bytes()).hexdigest() != state["sha256"]:
+                raise HTTPException(409, "The saved upload receipt does not match this file. Refresh attachments before retrying.")
+        else:
+            content = directory / "content"
+            if state["size"] == 0:
+                content.touch(exist_ok=True)
+            if not content.exists() or content.stat().st_size != state["size"]:
+                raise HTTPException(409, "The attachment is incomplete. Resume the upload before finishing.")
+            if hashlib.sha256(content.read_bytes()).hexdigest() != state["sha256"]:
+                raise HTTPException(422, "The uploaded bytes do not match the original file checksum. Select the original file and start a new upload.")
+            async def upload():
+                with content.open("rb") as file:
+                    incoming = UploadFile(file, filename=state["filename"], headers=Headers({"content-type": state["content_type"]}))
+                    return await native.upload_task_attachment(task_id, file=incoming, board=slug, uploaded_by=marker)
+            attachment = asyncio.run(upload())["attachment"]
+        state["attachment"] = {k: attachment[k] for k in ("id", "task_id", "filename", "content_type", "size")}
+        save_upload_state(directory, state)
+        (directory / "content").unlink(missing_ok=True)
+        return upload_receipt(query, state, state["size"])
+
+
 WRITERS = {
+    ("POST", "task-upload-begin"): begin_task_upload,
+    ("POST", "task-upload-chunk"): append_task_upload,
+    ("POST", "task-upload-finish"): finish_task_upload,
+    ("DELETE", "task-attachment"): delete_task_attachment,
+    ("POST", "task-link"): add_task_link,
+    ("DELETE", "task-link"): remove_task_link,
     ("POST", "boards"): create_board,
     ("PATCH", "board"): update_board,
     ("POST", "board-active"): activate_board,
