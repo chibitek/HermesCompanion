@@ -530,8 +530,10 @@ struct SSEEventPayload: Codable, Sendable {
     let runtime: SessionRuntime?
     let sequence: Int?
     let code: String?
+    let pendingSteer: String?
 
     enum CodingKeys: String, CodingKey {
+        case pendingSteer = "pending_steer"
         case sequence, code
         case event
         case sessionId = "session_id"
@@ -556,6 +558,7 @@ struct SSEEventPayload: Codable, Sendable {
         self.event = try c.decodeIfPresent(String.self, forKey: .event) ?? ""
         self.sequence = try c.decodeIfPresent(Int.self, forKey: .sequence)
         self.code = try c.decodeIfPresent(String.self, forKey: .code)
+        self.pendingSteer = try c.decodeIfPresent(String.self, forKey: .pendingSteer)
         self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
         self.runId = try c.decodeIfPresent(String.self, forKey: .runId)
         self.message_id = try c.decodeIfPresent(String.self, forKey: .message_id)
@@ -575,10 +578,11 @@ struct SSEEventPayload: Codable, Sendable {
     init(event: String, sessionId: String?, runId: String?, message_id: String?,
          delta: String?, content: String?, toolName: String?, preview: String?,
          args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
-         message: String?, runtime: SessionRuntime? = nil, sequence: Int? = nil, code: String? = nil) {
+         message: String?, runtime: SessionRuntime? = nil, sequence: Int? = nil, code: String? = nil, pendingSteer: String? = nil) {
         self.event = event
         self.sequence = sequence
         self.code = code
+        self.pendingSteer = pendingSteer
         self.sessionId = sessionId
         self.runId = runId
         self.message_id = message_id

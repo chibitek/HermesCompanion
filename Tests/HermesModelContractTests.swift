@@ -1090,6 +1090,203 @@ final class HermesModelContractTests: XCTestCase {
     }
 
     @MainActor
+    private func steeringStore() async throws -> AppStore {
+        let store = AppStore(client: connectionClient(ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test")))
+        store.capabilities = try JSONDecoder().decode(CapabilitiesResponse.self,
+            from: Data(Self.connectionCapabilities.replacingOccurrences(of: "\"features\":{}", with: "\"features\":{\"run_steer\":true}").utf8))
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.isStreaming = true
+        _ = await store.handleSSEEvent(try chatSteeringEvent("run.started"))
+        return store
+    }
+
+    private func chatSteeringEvent(_ name: String, pending: String? = nil, session: String = "current") throws -> SSEEventPayload {
+        var object = ["event": name, "session_id": session, "run_id": "run_current"]
+        object["pending_steer"] = pending
+        return try JSONDecoder().decode(SSEEventPayload.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    @MainActor
+    func testChatSteeringWaitsForBothAcceptanceAndTerminalReceipt() async throws {
+        for completionFirst in [false, true] {
+            let store = try await steeringStore()
+            XCTAssertTrue(store.canSteerCurrentChat)
+            let requested = expectation(description: "Guidance request")
+            var held: SessionHistoryURLProtocol?
+            SessionHistoryURLProtocol.handler = { request in
+                XCTAssertEqual(request.request.httpMethod, "POST")
+                XCTAssertEqual(request.request.url?.path, "/v1/runs/run_current/steer")
+                Task { @MainActor in held = request; requested.fulfill() }
+            }
+            defer { SessionHistoryURLProtocol.handler = nil }
+            XCTAssertTrue(store.queueMessage("Use the revised requirement"))
+            await fulfillment(of: [requested], timeout: 3)
+            let id = try XCTUnwrap(store.queuedMessages.first?.id)
+            XCTAssertEqual(store.queuedMessages.first?.guidanceRunID, "run_current")
+            XCTAssertEqual(store.queuedMessages.first?.state, .sending)
+            XCTAssertNil(store.recoverQueuedMessage(id))
+            if completionFirst {
+                _ = await store.handleSSEEvent(try chatSteeringEvent("run.completed"))
+                XCTAssertEqual(store.queuedMessages.count, 1)
+            }
+            try XCTUnwrap(held).succeed(body: #"{"object":"hermes.run.steer","run_id":"run_current","accepted":true}"#)
+            await store.chatGuidanceTask?.value
+            if !completionFirst {
+                XCTAssertEqual(store.queuedMessages.count, 1)
+                _ = await store.handleSSEEvent(try chatSteeringEvent("run.completed"))
+            }
+            XCTAssertTrue(store.queuedMessages.isEmpty)
+            XCTAssertFalse(store.canSteerCurrentChat)
+        }
+    }
+
+    @MainActor
+    func testPendingSteeringBeforeAcceptanceKeepsOriginalDraftForReview() async throws {
+        let store = try await steeringStore()
+        let requested = expectation(description: "Guidance request")
+        var held: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in Task { @MainActor in held = request; requested.fulfill() } }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.queueMessage("Late guidance", displayText: "Original draft")
+        await fulfillment(of: [requested], timeout: 3)
+        _ = await store.handleSSEEvent(try chatSteeringEvent("run.completed", pending: "Late guidance"))
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+        try XCTUnwrap(held).succeed(body: #"{"run_id":"run_current","accepted":true}"#)
+        await store.chatGuidanceTask?.value
+        XCTAssertEqual(store.queuedMessages.first?.display, "Original draft")
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+        XCTAssertEqual(store.recoverQueuedMessage(try XCTUnwrap(store.queuedMessages.first?.id)), "Original draft")
+    }
+
+    @MainActor
+    func testRejectedSteeringPreservesDraftWithoutFailingTheChat() async throws {
+        for body in [#"{"run_id":"run_current","accepted":false}"#, #"{"run_id":"run_other","accepted":true}"#] {
+            let store = try await steeringStore()
+            defer { SessionHistoryURLProtocol.handler = nil }
+            SessionHistoryURLProtocol.handler = { $0.succeed(body: body) }
+            store.queueMessage("Keep my guidance")
+            await store.chatGuidanceTask?.value
+            XCTAssertEqual(store.queuedMessages.first?.payload, "Keep my guidance")
+            XCTAssertTrue(store.queuedMessages.first?.issue?.contains("not confirmed") == true)
+            XCTAssertTrue(store.isStreaming)
+            XCTAssertNil(store.error)
+        }
+    }
+
+    @MainActor
+    func testChatSteeringIsSerializedAndPendingGuidanceRemainsRecoverable() async throws {
+        let store = try await steeringStore()
+        let first = expectation(description: "First guidance")
+        let second = expectation(description: "Second guidance")
+        var requests: [SessionHistoryURLProtocol] = []
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                requests.append(request)
+                if requests.count == 1 { first.fulfill() } else { second.fulfill() }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.queueMessage("First guidance")
+        store.queueMessage("Second guidance")
+        await fulfillment(of: [first], timeout: 3)
+        XCTAssertEqual(requests.count, 1)
+        requests[0].succeed(body: #"{"run_id":"run_current","accepted":true}"#)
+        await fulfillment(of: [second], timeout: 3)
+        XCTAssertEqual(store.queuedMessages.first?.guidanceAccepted, true)
+        requests[1].succeed(body: #"{"run_id":"run_current","accepted":true}"#)
+        await store.chatGuidanceTask?.value
+        _ = await store.handleSSEEvent(try chatSteeringEvent("run.completed", pending: "Second guidance"))
+        XCTAssertEqual(store.queuedMessages.map(\.payload), ["First guidance", "Second guidance"])
+        XCTAssertTrue(store.queuedMessages.allSatisfy { $0.state == .needsReview })
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    @MainActor
+    func testRemotePendingGuidanceIsPreservedAlongsideLocalSteeringDrafts() async throws {
+        let store = try await steeringStore()
+        SessionHistoryURLProtocol.handler = { $0.succeed(body: #"{"run_id":"run_current","accepted":true}"#) }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.queueMessage("Local guidance")
+        await store.chatGuidanceTask?.value
+        let terminal = try chatSteeringEvent("run.completed", pending: "Guidance from another client")
+        _ = await store.handleSSEEvent(terminal)
+        _ = await store.handleSSEEvent(terminal)
+        XCTAssertEqual(store.queuedMessages.map(\.payload), ["Local guidance", "Guidance from another client"])
+        XCTAssertTrue(store.queuedMessages.allSatisfy { $0.state == .needsReview })
+    }
+
+    @MainActor
+    func testLateSteeringAcceptanceCannotMutateAnotherConversation() async throws {
+        let store = try await steeringStore()
+        let requested = expectation(description: "Guidance request")
+        var held: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { request in Task { @MainActor in held = request; requested.fulfill() } }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.queueMessage("Original conversation guidance")
+        await fulfillment(of: [requested], timeout: 3)
+        let delivery = store.chatGuidanceTask
+        store.stopStreaming(discardQueuedMessages: false)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"other"}"#.utf8))
+        store.isStreaming = true
+        let activity = store.responseActivity
+        try XCTUnwrap(held).succeed(body: #"{"run_id":"run_current","accepted":true}"#)
+        await delivery?.value
+        XCTAssertEqual(store.activeSession?.id, "other")
+        XCTAssertEqual(store.responseActivity, activity)
+        XCTAssertEqual(store.queuedMessages.first?.sessionID, "current")
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+        XCTAssertNil(store.activeChatRunID)
+        XCTAssertNil(store.error)
+    }
+
+    @MainActor
+    func testUncertainSteeringTransportRetainsDraftAndDoesNotCancelChat() async throws {
+        let store = try await steeringStore()
+        SessionHistoryURLProtocol.handler = { request in
+            request.client?.urlProtocol(request, didFailWithError: URLError(.timedOut))
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.queueMessage("Keep after timeout")
+        await store.chatGuidanceTask?.value
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+        XCTAssertEqual(store.queuedMessages.first?.payload, "Keep after timeout")
+        XCTAssertTrue(store.queuedMessages.first?.issue?.contains("not confirmed") == true)
+        XCTAssertTrue(store.isStreaming)
+        XCTAssertNil(store.error)
+    }
+
+    @MainActor
+    func testSteeringCannotBypassOlderQueuedWorkOrUseForeignSessionRun() async throws {
+        let store = try await steeringStore()
+        store.stopStreaming(discardQueuedMessages: false)
+        store.isStreaming = true
+        _ = await store.handleSSEEvent(try chatSteeringEvent("run.started", session: "foreign"))
+        XCTAssertFalse(store.canSteerCurrentChat)
+        store.queueMessage("Earlier follow-up")
+        _ = await store.handleSSEEvent(try chatSteeringEvent("run.started"))
+        XCTAssertFalse(store.canSteerCurrentChat)
+        store.queueMessage("Later follow-up")
+        XCTAssertEqual(store.queuedMessages.map(\.state), [.queued, .queued])
+        XCTAssertTrue(store.queuedMessages.allSatisfy { $0.guidanceRunID == nil })
+    }
+
+    @MainActor
+    func testUndeliveredChatSteeringIsRecoveredOnceWithoutAutomaticReplay() async throws {
+        let store = AppStore()
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.isStreaming = true
+        let started = try JSONDecoder().decode(SSEEventPayload.self, from: Data(#"{"event":"run.started","session_id":"current","run_id":"run_current"}"#.utf8))
+        let completed = try JSONDecoder().decode(SSEEventPayload.self, from: Data(#"{"event":"run.completed","session_id":"current","run_id":"run_current","pending_steer":"Keep this late guidance"}"#.utf8))
+        _ = await store.handleSSEEvent(started)
+        _ = await store.handleSSEEvent(completed)
+        _ = await store.handleSSEEvent(completed)
+        XCTAssertEqual(store.queuedMessages.count, 1)
+        XCTAssertEqual(store.queuedMessages.first?.payload, "Keep this late guidance")
+        XCTAssertEqual(store.queuedMessages.first?.sessionID, "current")
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+    }
+
+    @MainActor
     func testUnconfirmedDeletionPreservesConversationAndQueuedDrafts() async throws {
         let cases: [(String, String)] = [
             (#"{"object":"hermes.session.deleted","id":"current","deleted":false}"#, "did not confirm deletion"),

@@ -109,7 +109,7 @@ struct SSEParser {
         }
         let fields: Set<String> = ["event", "session_id", "run_id", "message_id", "delta", "content",
             "tool_name", "preview", "args", "completed", "partial", "interrupted", "message", "runtime",
-            "sequence", "code", "id", "role", "provider", "model", "route_source", "model_lock", "requested"]
+            "sequence", "code", "pending_steer", "id", "role", "provider", "model", "route_source", "model_lock", "requested"]
         let field = path.map { fields.contains($0.stringValue) ? $0.stringValue : "field" }.joined(separator: ".")
         return "Field '\(field.isEmpty ? "payload" : field)' \(reason)."
     }

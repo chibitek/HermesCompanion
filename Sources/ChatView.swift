@@ -304,6 +304,7 @@ struct ChatView: View {
             isStreaming: store.isStreaming,
             onSend: sendMessage,
             onQueue: queueMessage,
+            canSteerCurrentChat: store.canSteerCurrentChat,
             onStop: { store.stopStreaming() },
             onCamera: { showPhotoPicker = true },
             onFilePick: { showFilePicker = true },
@@ -366,7 +367,7 @@ struct ChatView: View {
                                  ?? message.sessionID.map { "Conversation \($0)" } ?? "Choose a conversation")
                                 .font(.caption.weight(.semibold))
                             Text(message.display).textSelection(.enabled)
-                            Text(message.state == .sending ? "Sending to Hermes" :
+                            Text(message.state == .sending ? (message.guidanceAccepted == true ? "Guidance accepted by Hermes" : "Sending to Hermes") :
                                     (message.state == .queued ? "Waiting for this conversation's response to finish" : "Review before sending"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

@@ -126,6 +126,7 @@ final class AppStore: ObservableObject {
     private(set) var apiClient: HermesAPIClient? {
         didSet {
             guard oldValue !== apiClient else { return }
+            resetChatGuidanceRun()
             pauseQueuedMessages(reason: "The server connection changed. Check the conversation before sending this follow-up.")
             hasExplicitlyConnected = false
             streamTask?.cancel()
@@ -177,6 +178,22 @@ final class AppStore: ObservableObject {
     private var sessionRefreshID = UUID()
     private var streamTask: Task<Void, Never>?
     private var chatTurnID = UUID()
+    @Published private(set) var activeChatRunID: String?
+    private(set) var chatGuidanceTask: Task<Void, Never>?
+    private var chatGuidanceCompletion: (runID: String, pending: String?)?
+
+    var canSteerCurrentChat: Bool {
+        isStreaming && activeChatRunID != nil && capabilities?.features.runSteer == true
+            && !queuedMessages.contains { $0.sessionID == activeSession?.id && $0.guidanceRunID == nil }
+            && !queuedMessages.contains { $0.sessionID == activeSession?.id && $0.state == .needsReview }
+    }
+
+    private func resetChatGuidanceRun() {
+        activeChatRunID = nil
+        chatGuidanceCompletion = nil
+        chatGuidanceTask = nil
+    }
+
     private var historyRefreshID = UUID()
     private var isSyncing = false
     private var lastSessionListSyncAt: Date?
@@ -1287,10 +1304,88 @@ final class AppStore: ObservableObject {
             error = AppError(message: "This server's saved follow-ups could not be read. Your new draft has been kept in the composer. Reconnect before queuing more guidance.")
             return false
         }
-        queuedMessages.append(QueuedMessage(payload: payload, display: displayText ?? payload,
+        var message = QueuedMessage(payload: payload, display: displayText ?? payload,
             sessionID: activeSession?.id, pendingTurnID: activeSession == nil && isStreaming ? chatTurnID : nil,
-            state: isStreaming ? .queued : .needsReview))
+            state: isStreaming ? .queued : .needsReview)
+        if canSteerCurrentChat, let runID = activeChatRunID, let sessionID = activeSession?.id,
+           let client = apiClient {
+            message.state = .sending
+            message.guidanceRunID = runID
+            message.issue = "Sending guidance to the active Hermes run."
+            queuedMessages.append(message)
+            let id = message.id
+            let turn = chatTurnID
+            let scope = queueStorageKey
+            let previous = chatGuidanceTask
+            // Preserve submission order without blocking the composer or stream reader.
+            chatGuidanceTask = Task { [weak self] in
+                await previous?.value
+                await self?.deliverChatGuidance(id: id, runID: runID, sessionID: sessionID,
+                    turn: turn, scope: scope, client: client)
+            }
+        } else {
+            queuedMessages.append(message)
+        }
         return true
+    }
+
+    private func deliverChatGuidance(id: UUID, runID: String, sessionID: String,
+                                     turn: UUID, scope: String, client: HermesAPIClient) async {
+        guard apiClient === client, chatTurnID == turn, queueStorageKey == scope,
+              activeSession?.id == sessionID,
+              let message = queuedMessages.first(where: { $0.id == id && $0.state == .sending }) else { return }
+        guard isStreaming, activeChatRunID == runID else {
+            if let index = queuedMessages.firstIndex(where: { $0.id == id }) {
+                queuedMessages[index].state = .needsReview
+                queuedMessages[index].issue = "The run finished before this guidance could be sent. Review it in Follow-ups."
+            }
+            return
+        }
+        do {
+            try await client.steerRun(id: runID, text: message.payload)
+            guard apiClient === client, chatTurnID == turn, queueStorageKey == scope,
+                  activeSession?.id == sessionID,
+                  let index = queuedMessages.firstIndex(where: { $0.id == id && $0.state == .sending }) else { return }
+            queuedMessages[index].guidanceAccepted = true
+            queuedMessages[index].issue = "Hermes accepted this guidance. Waiting for the run to confirm whether it was consumed."
+            if let completion = chatGuidanceCompletion, completion.runID == runID {
+                settleChatGuidance(runID: runID, pending: completion.pending)
+                if !isStreaming, let session = activeSession {
+                    Task { await self.dispatchQueuedMessage(after: turn, client: client, session: session) }
+                }
+            }
+        } catch {
+            guard apiClient === client, chatTurnID == turn, queueStorageKey == scope,
+                  activeSession?.id == sessionID,
+                  let index = queuedMessages.firstIndex(where: { $0.id == id && $0.state == .sending }) else { return }
+            queuedMessages[index].state = .needsReview
+            queuedMessages[index].issue = "Guidance acceptance was not confirmed: \(error.localizedDescription). Check chat history before sending it again."
+            // A failed control request does not fail or cancel the current chat response.
+        }
+    }
+
+    private func settleChatGuidance(runID: String, pending: String?) {
+        if let pending, !pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let indices = queuedMessages.indices.filter { queuedMessages[$0].guidanceRunID == runID }
+            for index in indices {
+                queuedMessages[index].state = .needsReview
+                queuedMessages[index].issue = "Hermes reported undelivered guidance for this run. Review chat history before resending; some guidance may already have been consumed."
+            }
+            if !indices.contains(where: { queuedMessages[$0].payload == pending }), let sessionID = activeSession?.id {
+                var recovered = QueuedMessage(payload: pending, display: pending, sessionID: sessionID)
+                recovered.guidanceRunID = runID
+                recovered.state = .needsReview
+                recovered.issue = "Hermes finished before consuming this guidance. Review the conversation before sending it again."
+                queuedMessages.append(recovered)
+            }
+        } else if error != nil {
+            for index in queuedMessages.indices where queuedMessages[index].guidanceRunID == runID {
+                queuedMessages[index].state = .needsReview
+                queuedMessages[index].issue = "Hermes returned an incomplete response. Review this guidance and chat history before sending it again."
+            }
+        } else {
+            queuedMessages.removeAll { $0.guidanceRunID == runID && $0.guidanceAccepted == true && $0.state == .sending }
+        }
     }
 
     func removeQueuedMessage(_ id: UUID) {
@@ -1374,6 +1469,7 @@ final class AppStore: ObservableObject {
         }
         let turnID = UUID()
         chatTurnID = turnID
+        resetChatGuidanceRun()
         streamTask?.cancel()
         error = nil
         responseActivity = "Preparing chat on Hermes"
@@ -1513,6 +1609,14 @@ final class AppStore: ObservableObject {
             self.streamingText = ""
             self.streamingThinking = ""
             self.isStreaming = false
+            self.activeChatRunID = nil
+            if self.chatGuidanceCompletion == nil {
+                for index in self.queuedMessages.indices where self.queuedMessages[index].guidanceRunID != nil
+                    && self.queuedMessages[index].sessionID == session.id && self.queuedMessages[index].state == .sending {
+                    self.queuedMessages[index].state = .needsReview
+                    self.queuedMessages[index].issue = "The stream ended without confirming guidance delivery. Review chat history before resending."
+                }
+            }
             self.responseActivity = Task.isCancelled ? "Response canceled" : (self.error == nil ? "Response complete" : "Response needs attention")
             self.lastSessionListSyncAt = nil
             self.endBackgroundTask()
@@ -1693,6 +1797,7 @@ final class AppStore: ObservableObject {
                 sessionID: sessionID, pendingTurnID: oldTurn)
         }
         chatTurnID = UUID()
+        resetChatGuidanceRun()
         streamTask?.cancel()
         streamTask = nil
         isStreaming = false
@@ -1706,6 +1811,11 @@ final class AppStore: ObservableObject {
     func handleSSEEvent(_ event: SSEEventPayload) async -> ChatDisplayMessage? {
         switch event.event {
         case "run.started", "message.started":
+            if event.event == "run.started", isStreaming, event.sessionId == activeSession?.id,
+               let runID = event.runId, !runID.isEmpty, activeChatRunID == nil,
+               chatGuidanceCompletion == nil {
+                activeChatRunID = runID
+            }
             responseActivity = "Hermes accepted the message"
 
         case "assistant.delta":
@@ -1794,6 +1904,11 @@ final class AppStore: ObservableObject {
             streamingThinking = ""
 
         case "run.completed":
+            if let runID = event.runId, runID == activeChatRunID, chatGuidanceCompletion == nil {
+                chatGuidanceCompletion = (runID, event.pendingSteer)
+                activeChatRunID = nil
+                settleChatGuidance(runID: runID, pending: event.pendingSteer)
+            }
             responseActivity = "Hermes confirmed completion"
             if let runtime = event.runtime {
                 activeRuntime = runtime
@@ -1954,6 +2069,8 @@ struct QueuedMessage: Codable, Equatable, Identifiable {
     var pendingTurnID: UUID?
     var state: State
     var issue: String?
+    var guidanceRunID: String?
+    var guidanceAccepted: Bool?
 
     init(payload: String, display: String, sessionID: String? = nil, pendingTurnID: UUID? = nil, state: State = .needsReview) {
         self.id = UUID()
@@ -1964,7 +2081,7 @@ struct QueuedMessage: Codable, Equatable, Identifiable {
         self.state = state
     }
 
-    private enum CodingKeys: String, CodingKey { case id, payload, display, sessionID, pendingTurnID, state, issue }
+    private enum CodingKeys: String, CodingKey { case id, payload, display, sessionID, pendingTurnID, state, issue, guidanceRunID, guidanceAccepted }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -1975,6 +2092,8 @@ struct QueuedMessage: Codable, Equatable, Identifiable {
         pendingTurnID = try values.decodeIfPresent(UUID.self, forKey: .pendingTurnID)
         state = try values.decodeIfPresent(State.self, forKey: .state) ?? .needsReview
         issue = try values.decodeIfPresent(String.self, forKey: .issue)
+        guidanceRunID = try values.decodeIfPresent(String.self, forKey: .guidanceRunID)
+        guidanceAccepted = try values.decodeIfPresent(Bool.self, forKey: .guidanceAccepted)
     }
 }
 

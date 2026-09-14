@@ -16,6 +16,81 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayActiveChatSteeringPreservesConsumedOrPendingGuidance() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Active steering verification requires the disposable workspace runner.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Active steering verification")
+        let client = HermesAPIClient(config: config)
+        let otherClient = HermesAPIClient(config: config)
+        let options = try await client.getModelOptions()
+        let session = try await client.createSession(title: "Active steering verification", model: options.model, provider: options.provider)
+        let store = AppStore(client: client)
+        store.capabilities = try await client.getCapabilities()
+        store.activeSession = session
+        let guidance = "Additional guidance: include HERMES_ACTIVE_STEER_CHECK in your next response. Do not use tools or take actions."
+        let externalGuidance = "Additional guidance from a second client: include HERMES_SECOND_STEER_CHECK in your next response. Do not use tools or take actions."
+        let startedAt = Date()
+        var firstActivitySeconds: Double?
+        var acceptanceSeconds: Double?
+        var externalSteerTask: Task<Void, Error>?
+        var requested = false
+        var accepted = false
+        var runID: String?
+        let streamObservation = store.$streamingText.sink { text in
+            guard !requested, !text.isEmpty, store.canSteerCurrentChat else { return }
+            requested = true
+            runID = store.activeChatRunID
+            firstActivitySeconds = Date().timeIntervalSince(startedAt)
+            XCTAssertTrue(store.queueMessage(guidance))
+            if let id = runID {
+                externalSteerTask = Task { try await otherClient.steerRun(id: id, text: externalGuidance) }
+            }
+        }
+        let queueObservation = store.$queuedMessages.sink { rows in
+            if !accepted, rows.contains(where: { $0.guidanceAccepted == true }) {
+                accepted = true
+                acceptanceSeconds = Date().timeIntervalSince(startedAt)
+            }
+        }
+        defer { streamObservation.cancel(); queueObservation.cancel() }
+        do {
+            _ = try await withTimeout(seconds: 120) {
+                await store.sendMessage("For a connection verification, write six short paragraphs about the history of typography, about 300 words total. Do not use tools or take actions.")
+            }
+            await store.chatGuidanceTask?.value
+            try await XCTUnwrap(externalSteerTask).value
+            XCTAssertTrue(requested, "No steerable response activity was observed")
+            XCTAssertNil(store.error)
+            let id = try XCTUnwrap(runID)
+            let status = try await otherClient.runStatus(id: id)
+            XCTAssertEqual(status.status, "completed")
+            XCTAssertTrue(accepted || status.pending_steer?.contains("HERMES_ACTIVE_STEER_CHECK") == true,
+                          "The real gateway did not confirm steering acceptance")
+            let history = try await otherClient.getMessages(sessionId: session.id)
+            for marker in ["HERMES_ACTIVE_STEER_CHECK", "HERMES_SECOND_STEER_CHECK"] {
+                if status.pending_steer?.contains(marker) == true {
+                    XCTAssertTrue(store.queuedMessages.contains { $0.payload.contains(marker) && $0.state == .needsReview },
+                                  "The server's pending guidance must be recoverable even when sent by another client")
+                } else {
+                    XCTAssertTrue(history.contains { $0.isUser && $0.content?.contains(marker) == true },
+                                  "Accepted guidance must appear in canonical history or pending recovery")
+                }
+            }
+            if status.pending_steer?.isEmpty != false { XCTAssertTrue(store.queuedMessages.isEmpty) }
+            print("STEERING_TIMING first_activity_seconds=\(firstActivitySeconds ?? -1) acceptance_seconds=\(acceptanceSeconds ?? -1) total_seconds=\(Date().timeIntervalSince(startedAt))")
+            XCTAssertFalse(store.isStreaming)
+        } catch {
+            store.stopStreaming(discardQueuedMessages: false)
+            try await client.deleteSession(sessionId: session.id)
+            throw error
+        }
+        try await client.deleteSession(sessionId: session.id)
+    }
+
+    @MainActor
     func testRealGatewayStructuredAcknowledgementMatchesCompletedMessage() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",

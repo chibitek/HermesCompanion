@@ -7,6 +7,7 @@ struct GlassInputBar: View {
     let isStreaming: Bool
     let onSend: () -> Void
     let onQueue: () -> Void
+    var canSteerCurrentChat: Bool = false
     let onStop: () -> Void
     let onCamera: () -> Void
     let onFilePick: () -> Void
@@ -560,7 +561,7 @@ struct GlassInputBar: View {
     }
 
     private var trailingActionLabel: String {
-        if isStreaming { return canSend ? "Queue guidance" : "Write guidance" }
+        if isStreaming { return canSend ? (canSteerCurrentChat ? "Steer active response" : "Queue guidance after response") : "Write guidance" }
         return canSend ? "Send message" : "Write message"
     }
 

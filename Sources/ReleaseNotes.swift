@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.82":
+            return [
+                "Send guidance to an active response when your Hermes server supports steering.",
+                "Follow-ups distinguish server acceptance from completed delivery and retain uncertain sends for review.",
+                "Undelivered guidance from other clients stays recoverable without automatic resending."
+            ]
         case "1.8.81":
             return [
                 "Deleting a conversation now waits for confirmation from Hermes before removing it or its queued drafts.",
