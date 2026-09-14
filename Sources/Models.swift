@@ -133,6 +133,7 @@ struct CapabilitiesResponse: Codable {
     struct Features: Codable {
         let browserExtensionControl: Bool?
         let modelOptions: Bool?
+        let sessionChatReasoning: Bool?
         let sessionModelLock: Bool?
         let chatCompletions: Bool
         let chatCompletionsStreaming: Bool
@@ -182,6 +183,7 @@ struct CapabilitiesResponse: Codable {
                 browserExtensionControl = browser?.enabled
             }
             modelOptions = try values.decodeIfPresent(Bool.self, forKey: .modelOptions)
+            sessionChatReasoning = try values.decodeIfPresent(Bool.self, forKey: .sessionChatReasoning)
             sessionModelLock = try values.decodeIfPresent(Bool.self, forKey: .sessionModelLock)
             artifactTransport = try values.decodeIfPresent(Bool.self, forKey: .artifactTransport)
                 ?? browser.map { $0.enabled && $0.artifactTransport != nil }
@@ -217,6 +219,7 @@ struct CapabilitiesResponse: Codable {
             case runSteer = "run_steer"
         case runApprovalResponse = "run_approval_response"
         case modelOptions = "model_options"
+        case sessionChatReasoning = "session_chat_reasoning"
         case sessionModelLock = "session_model_lock"
             case toolProgressEvents = "tool_progress_events"
             case approvalEvents = "approval_events"
@@ -384,12 +387,29 @@ struct MessagePagination: Codable {
 
 // MARK: - Chat Request
 
+enum ChatReasoningPreference: String, CaseIterable {
+    case conversation = "", serverDefault = "default", off = "none"
+    case minimal, low, medium, high, xhigh, max, ultra
+
+    var label: String {
+        switch self {
+        case .conversation: "Conversation default"
+        case .serverDefault: "Server default"
+        case .off: "Off"
+        default: rawValue.capitalized
+        }
+    }
+    var requestValue: String? { self == .conversation ? nil : rawValue }
+}
+
 struct SessionChatRequest: Codable {
     let message: String
     let systemMessage: String?
     let model: String?
+    var reasoningEffort: String? = nil
 
     enum CodingKeys: String, CodingKey {
+        case reasoningEffort = "reasoning_effort"
         case message
         case systemMessage = "system_message"
         case model
@@ -404,6 +424,16 @@ struct SessionRuntime: Codable, Hashable, Sendable {
     let routeSource: String?
     let requested: RequestedRuntime?
     let modelLock: String?
+    var reasoning: ReasoningConfiguration? = nil
+
+    struct ReasoningConfiguration: Codable, Hashable, Sendable {
+        let enabled: Bool?
+        let effort: String?
+        var label: String {
+            if enabled == false { return "Off" }
+            return effort?.capitalized ?? "Enabled"
+        }
+    }
 
     struct RequestedRuntime: Codable, Hashable, Sendable {
         let provider: String?
@@ -415,6 +445,7 @@ struct SessionRuntime: Codable, Hashable, Sendable {
         case routeSource = "route_source"
         case requested
         case modelLock = "model_lock"
+        case reasoning
     }
 
     var effectiveProvider: String? {

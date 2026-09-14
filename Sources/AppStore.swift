@@ -79,10 +79,12 @@ final class AppStore: ObservableObject {
         didSet { savePreference(favoriteModels.joined(separator: "\n"), key: Self.favModelsKey) }
     }
 
-    /// Persisted reasoning effort: "", "low", "medium", "high".
-    /// Note: the gateway chat endpoint doesn't honor a per-message reasoning_effort
-    /// override today — this is a local preference only, surfaced in the UI and
-    /// ready for the server to honor when support lands.
+    /// A per-server preference applied only to the next turn, on capable gateways.
+    var chatReasoningAvailable: Bool { capabilities?.features.sessionChatReasoning == true }
+    var requestedChatReasoning: String? {
+        guard chatReasoningAvailable else { return nil }
+        return ChatReasoningPreference(rawValue: preferredThinking)?.requestValue
+    }
     @Published var preferredThinking: String = "" {
         didSet { savePreference(preferredThinking, key: Self.thinkingKey) }
     }
@@ -1686,6 +1688,7 @@ final class AppStore: ObservableObject {
         let stream = try await client.streamChat(
             sessionId: session.id, message: text,
             model: sessionModelLockAvailable ? nil : sessionModelOverride,
+            reasoningEffort: requestedChatReasoning,
             onKeepalive: { [weak self] in
                 watchdog.recordActivity()
                 Task { @MainActor in
@@ -1728,6 +1731,7 @@ final class AppStore: ObservableObject {
         let response = try await client.sendChat(
             sessionId: session.id, message: text,
             model: sessionModelLockAvailable ? nil : sessionModelOverride,
+            reasoningEffort: requestedChatReasoning,
             images: images, attachments: attachments
         )
         try Task.checkCancellation()

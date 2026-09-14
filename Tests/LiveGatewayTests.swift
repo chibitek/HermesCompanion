@@ -16,6 +16,43 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayReasoningOverrideReachesAgentWithoutPersisting() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Reasoning verification requires the disposable workspace runner.")
+        }
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: url, apiKey: key, label: "Reasoning verification"))
+        let capabilities = try await client.getCapabilities()
+        XCTAssertEqual(capabilities.features.sessionChatReasoning, true)
+        let options = try await client.getModelOptions()
+        let session = try await client.createSession(title: "Reasoning verification", model: options.model, provider: options.provider)
+        do {
+            let baseline = try await client.sendChat(sessionId: session.id,
+                message: "Connection check. Reply only READY. Do not use tools or take actions.")
+            let stream = try await client.streamChat(sessionId: session.id,
+                message: "Connection check. Reply only READY. Do not use tools or take actions.", reasoningEffort: "none")
+            var streamedRuntime: SessionRuntime?
+            for try await event in stream {
+                if event.event == "error" { XCTFail(event.message ?? "Reasoning stream failed") }
+                if event.event == "assistant.completed" { streamedRuntime = event.runtime }
+            }
+            XCTAssertEqual(streamedRuntime?.reasoning?.enabled, false)
+            let low = try await client.sendChat(sessionId: session.id,
+                message: "Connection check. Reply only READY. Do not use tools or take actions.", reasoningEffort: "low")
+            XCTAssertEqual(low.runtime?.reasoning?.effort, "low")
+            let restored = try await client.sendChat(sessionId: session.id,
+                message: "Connection check. Reply only READY. Do not use tools or take actions.")
+            XCTAssertEqual(restored.runtime?.reasoning, baseline.runtime?.reasoning,
+                           "Per-turn reasoning must not change another client's conversation default")
+        } catch {
+            try await client.deleteSession(sessionId: session.id)
+            throw error
+        }
+        try await client.deleteSession(sessionId: session.id)
+    }
+
+    @MainActor
     func testRealGatewayActiveChatSteeringPreservesConsumedOrPendingGuidance() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",

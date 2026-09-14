@@ -666,6 +666,7 @@ final class HermesAPIClient: Sendable {
         message: String,
         systemMessage: String? = nil,
         model: String? = nil,
+        reasoningEffort: String? = nil,
         images: [Data] = [],
         attachments: [AttachmentData] = []
     ) async throws -> SessionChatResponse {
@@ -678,7 +679,7 @@ final class HermesAPIClient: Sendable {
         let body: Data
         if !hasImages && !hasFileAttachments && !hasImageAttachments {
             // Plain text message
-            let chatBody = SessionChatRequest(message: message, systemMessage: systemMessage, model: model)
+            let chatBody = SessionChatRequest(message: message, systemMessage: systemMessage, model: model, reasoningEffort: reasoningEffort)
             body = try JSONEncoder().encode(chatBody)
         } else {
             // Multimodal: build content parts array
@@ -716,6 +717,7 @@ final class HermesAPIClient: Sendable {
                 }
             }
             var bodyDict: [String: Any] = ["message": contentParts]
+            if let reasoningEffort { bodyDict["reasoning_effort"] = reasoningEffort }
             if let sys = systemMessage { bodyDict["system_message"] = sys }
             if let mdl = model { bodyDict["model"] = mdl }
             body = try JSONSerialization.data(withJSONObject: bodyDict)
@@ -731,10 +733,11 @@ final class HermesAPIClient: Sendable {
 
     /// POST /api/sessions/{id}/chat/stream — returns AsyncSequence of SSE events.
     func streamChat(sessionId: String, message: String, systemMessage: String? = nil, model: String? = nil,
+                    reasoningEffort: String? = nil,
                     onKeepalive: (@Sendable () -> Void)? = nil) async throws -> AsyncThrowingStream<SSEEventPayload, Error> {
         var req = try request(method: "POST", path: "/api/sessions/\(sessionId)/chat/stream")
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        req.httpBody = try JSONEncoder().encode(SessionChatRequest(message: message, systemMessage: systemMessage, model: model))
+        req.httpBody = try JSONEncoder().encode(SessionChatRequest(message: message, systemMessage: systemMessage, model: model, reasoningEffort: reasoningEffort))
 
         return try await eventStream(request: req, onKeepalive: onKeepalive)
     }

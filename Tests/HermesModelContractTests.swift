@@ -2,6 +2,52 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    @MainActor
+    func testChatSendsSelectedReasoningToCapableGateway() async throws {
+        let client = connectionClient(ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Reasoning"))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.capabilities = try JSONDecoder().decode(CapabilitiesResponse.self, from: Data(
+            Self.connectionCapabilities.replacingOccurrences(of: #""features":{}"#, with: #""features":{"session_chat_reasoning":true}"#).utf8))
+        store.preferredThinking = "low"
+        var sent = false
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path.hasSuffix("/chat") {
+                sent = true
+                let body = try! JSONSerialization.jsonObject(with: request.bodyData()) as! [String: Any]
+                XCTAssertEqual(body["reasoning_effort"] as? String, "low")
+                XCTAssertNil(body["model_options"], "A reasoning choice must not overwrite conversation model options")
+                request.succeed(body: #"{"object":"hermes.session.chat.completion","session_id":"current","message":{"role":"assistant","content":"Confirmed"}}"#)
+            } else { request.succeed(body: #"{"object":"list","data":[]}"#) }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        _ = await store.sendMessage("Check reasoning", images: [Data([1])], skipPostReload: true)
+        XCTAssertTrue(sent)
+    }
+
+    @MainActor
+    func testReasoningDefaultsAndCapabilityGateKeepLegacyChatBehavior() throws {
+        let store = AppStore(client: connectionClient(ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Reasoning")))
+        store.preferredThinking = "high"
+        XCTAssertNil(store.requestedChatReasoning)
+        store.capabilities = try JSONDecoder().decode(CapabilitiesResponse.self, from: Data(
+            Self.connectionCapabilities.replacingOccurrences(of: #""features":{}"#, with: #""features":{"session_chat_reasoning":true}"#).utf8))
+        for choice in ChatReasoningPreference.allCases {
+            store.preferredThinking = choice.rawValue
+            XCTAssertEqual(store.requestedChatReasoning, choice.requestValue)
+        }
+        store.preferredThinking = ""
+        let body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(
+            SessionChatRequest(message: "hello", systemMessage: nil, model: nil, reasoningEffort: store.requestedChatReasoning))) as! [String: Any]
+        XCTAssertNil(body["reasoning_effort"])
+        store.preferredThinking = "none"
+        XCTAssertEqual(store.requestedChatReasoning, "none")
+        store.preferredThinking = "default"
+        XCTAssertEqual(store.requestedChatReasoning, "default")
+        store.preferredThinking = "obsolete-value"
+        XCTAssertNil(store.requestedChatReasoning)
+    }
+
     func testBoardWritesValidateIdentityAndForwardNativeRefusal() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]

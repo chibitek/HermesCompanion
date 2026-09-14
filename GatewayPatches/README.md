@@ -17,6 +17,16 @@ Patch 5 adds bounded macOS API bind recovery and is validated separately below.
 Installation remains operator-controlled; this repository does not update other
 Hermes servers automatically.
 
+## Reasoning patch
+
+`0006-session-chat-reasoning.patch` adds advertised per-turn session reasoning
+controls and sanitized runtime confirmation without changing saved conversation
+options. It applies after the five existing patches. The focused native suite
+passed 165 tests. All eight isolated real-gateway checks passed with zero retained
+sessions. The verified local gateway was gracefully restarted on revision
+`266a90387d144836aa1ce4633362f1db4c0b7d61`; health and the advertised capability
+returned HTTP 200. See [CHAT_REASONING.md](../docs/CHAT_REASONING.md).
+
 ## Included Fixes
 
 - `0001-fix-api-resolve-locked-custom-provider-identity-from.patch`: resolves a

@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.83":
+            return [
+                "Reasoning choices now apply to chat responses on supported Hermes gateways.",
+                "Choose conversation defaults, server defaults, Off or an effort level without changing settings saved by other clients.",
+                "Settings can show the reasoning configuration used for the last response."
+            ]
         case "1.8.82":
             return [
                 "Send guidance to an active response when your Hermes server supports steering.",
