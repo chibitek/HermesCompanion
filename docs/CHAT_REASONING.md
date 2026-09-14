@@ -38,10 +38,22 @@ runtime metadata. The full iOS suite passed 170 ordinary tests with eight opt-in
 All eight real-gateway checks then passed against the isolated local model with
 zero sessions or metadata remaining. The new live check verifies the agent's Off
 and Low runtime configurations and restoration of the conversation default on a
-later request from a separate client path.
+later request from a second independent client instance.
 
 Patch 6 passed in an isolated native development worktree. The production source
 was fast-forwarded after live health reported zero active work. A graceful restart
 completed; the control socket reports the deployed revision and HTTP health and
-capability checks passed. Companion 1.8.83 (180) is being packaged. The installed
-iPhone app and Apple build 179 do not yet include the iOS reasoning repair. Authentication and credential storage are unchanged.
+capability checks passed. A production probe confirmed the actual agent received
+Off, and its owned verification conversation was deleted with a matching receipt.
+
+Companion 1.8.83 (180) was archived with matching app/widget versions. Its signed
+export passed verification, and physical-device inventory confirms installation.
+Launch and visual acceptance of this build remain unverified. Apple processed the
+upload and build 180 is Testing in the existing internal group. Invitation
+acceptance on the phone remains unverified. Authentication and credential storage
+are unchanged.
+
+The older build 179 review submission was withdrawn. Apple confirmed build 180
+submitted on September 14 at 2:29 AM Eastern and Waiting for Review, with manual
+release selected. This delivery does not establish physical audio acceptance or
+complete gateway feature parity.

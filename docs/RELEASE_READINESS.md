@@ -1,6 +1,38 @@
 # Development Release Readiness
 
-## Active steering update: 1.8.82 (179)
+## Current reasoning update: 1.8.83 (180)
+
+Build 180 makes reasoning controls operational for capable gateways without
+changing another client's saved conversation options. Conversation default,
+Server default and Off are distinct; the UI shows the last response's applied
+configuration and explains unavailable controls on older gateways. See
+[CHAT_REASONING.md](CHAT_REASONING.md).
+
+Validation passed 170 ordinary iOS tests and 165 native gateway tests. All eight
+isolated real-gateway checks passed separately, including a second independent
+client verifying reasoning defaults, with zero retained sessions or metadata.
+The running Hermes 0.21.2 gateway reports revision
+`266a90387d144836aa1ce4633362f1db4c0b7d61`, containing all six compatibility
+patches. Bridge 0.1.10 is unchanged. A graceful restart completed after checking
+for active work; health, advertised capability and actual reasoning behavior were
+verified, and the owned production verification session was deleted.
+
+The archive has matching app/widget versions and the signed export passed
+verification. Physical-device inventory confirms 1.8.83 (180) installed. Launch
+and visual acceptance of this build remain unverified. Apple processed the
+upload; build 180 is Testing in the existing internal group. The tester remains
+Invited, so acceptance and installation through TestFlight remain unverified.
+The screenshot's Incompatible entry is still unidentified.
+
+The pending build 179 submission was withdrawn. After a transient submission
+error, Apple confirmed one submitted item, **1.8.83 (180)**, on September 14 at
+2:29 AM Eastern. It is Waiting for Review with manual release selected. Reviewer
+gateway access, screenshot refresh, physical audio acceptance (#53), variable
+model latency (#55), and the intermittent retained-session observation (#57)
+remain open. No subscription or additional paid platform experience is included.
+The records below are historical.
+
+## Historical active steering update: 1.8.82 (179)
 
 Build 179 adds native active-chat steering and recoverable undelivered guidance
 from other clients. The full suite passed 168 ordinary tests; all seven isolated

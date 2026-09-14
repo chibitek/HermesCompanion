@@ -41,7 +41,8 @@ final class LiveGatewayTests: XCTestCase {
             let low = try await client.sendChat(sessionId: session.id,
                 message: "Connection check. Reply only READY. Do not use tools or take actions.", reasoningEffort: "low")
             XCTAssertEqual(low.runtime?.reasoning?.effort, "low")
-            let restored = try await client.sendChat(sessionId: session.id,
+            let secondClient = HermesAPIClient(config: ConnectionConfig(baseURL: url, apiKey: key, label: "Independent reasoning reader"))
+            let restored = try await secondClient.sendChat(sessionId: session.id,
                 message: "Connection check. Reply only READY. Do not use tools or take actions.")
             XCTAssertEqual(restored.runtime?.reasoning, baseline.runtime?.reasoning,
                            "Per-turn reasoning must not change another client's conversation default")

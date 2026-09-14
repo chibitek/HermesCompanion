@@ -2,22 +2,25 @@
 
 ## Current candidate
 
-**1.8.82 (179)** adds active chat steering and recovery of undelivered guidance
-from other clients to the earlier deletion, queue, stream and audio repairs.
-Device inventory confirms installation; launching was blocked by the locked phone.
+**1.8.83 (180)** makes reasoning preferences operational without changing other
+clients' saved conversation options. It includes the earlier steering, deletion,
+queue, stream and audio repairs. Device inventory confirms installation; launch
+and visual acceptance of this build remain unverified.
 
-- Version: **1.8.82 (179)**.
+- Version: **1.8.83 (180)**.
 - Bundle identifier: `com.chibitek.hermescompanion`.
-- TestFlight: **Testing** in the internal group alongside builds 176 through 178.
-  The existing tester remains **Invited** after the September 14 resend, with no
-  registered device. Invitation acceptance and TestFlight installation remain
+- TestFlight: **Testing** in the existing internal group alongside builds 176
+  through 179. The tester remains **Invited** after the September 14 resend, with
+  no registered device. Invitation acceptance and TestFlight installation remain
   unverified; the screenshot's Incompatible entry is still unidentified.
-- App Review: the pending build 178 submission was withdrawn. Apple confirmed
-  **1 Item Submitted** on September 14, 2026 at 1:58 AM Eastern, containing
-  **1.8.82 (179)**. The candidate is **Waiting for Review**, with manual release.
-- Validation: 168 ordinary tests and seven separate real-gateway checks passed;
-  the isolated workspace had zero sessions or metadata remaining. Physical audio
-  acceptance and variable model latency remain open.
+- App Review: the pending build 179 submission was withdrawn. After a transient
+  submission error, Apple confirmed **1 Item Submitted** on September 14, 2026
+  at 2:29 AM Eastern, containing **1.8.83 (180)**. The candidate is **Waiting for
+  Review**, with manual release selected.
+- Validation: 170 ordinary iOS tests, 165 native gateway tests and eight separate
+  real-gateway checks passed. The isolated workspace had zero sessions or metadata
+  remaining. The deployed gateway's capability and actual reasoning behavior were
+  verified. Physical audio acceptance and variable model latency remain open.
 - Reviewer gateway access has not been supplied. Review notes disclose the
   self-hosted gateway requirement and verification limits. Isolated reviewer
   access and screenshot refresh/verification remain follow-up work.
