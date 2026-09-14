@@ -5,6 +5,46 @@ import XCTest
 /// through TEST_RUNNER_HERMES_LIVE_KEY, never a tracked configuration file.
 final class LiveGatewayTests: XCTestCase {
     @MainActor
+    func testRealGatewayQueuedFollowUpIsConfirmedOnceInOriginalConversation() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Queue verification requires the disposable workspace runner.")
+        }
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: url, apiKey: key, label: "Queue verification"))
+        let options = try await client.getModelOptions()
+        let session = try await client.createSession(title: "Queued follow-up verification", model: options.model, provider: options.provider)
+        let store = AppStore(client: client)
+        do {
+            await store.selectSession(session)
+            let firstText = "Queue verification only. Reply with exactly HERMES_QUEUE_FIRST. Do not use tools or take any actions."
+            let followUp = "Follow-up verification only. Reply with exactly HERMES_QUEUE_SECOND. Do not use tools or take any actions."
+            let sending = Task { await store.sendMessage(firstText) }
+            defer { sending.cancel(); store.stopStreaming() }
+            try await waitForLiveSync { store.isStreaming }
+            XCTAssertTrue(store.queueMessage(followUp))
+            XCTAssertEqual(store.queuedMessages.first?.sessionID, session.id)
+            let answer = try await withTimeout(seconds: 90) { await sending.value }
+            XCTAssertNotNil(answer)
+            let deadline = ContinuousClock.now + .seconds(90)
+            while !store.queuedMessages.isEmpty, store.error == nil, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            XCTAssertNil(store.error, store.error?.message ?? "")
+            XCTAssertTrue(store.queuedMessages.isEmpty, "A successful queue must receive confirmation before removing its entry")
+            XCTAssertEqual(store.activeSession?.id, session.id)
+            let history = try await client.getMessages(sessionId: session.id)
+            XCTAssertEqual(history.filter(\.isUser).compactMap(\.content), [firstText, followUp])
+            XCTAssertEqual(history.filter(\.isAssistant).count, 2)
+        } catch {
+            store.stopStreaming()
+            try await client.deleteSession(sessionId: session.id)
+            throw error
+        }
+        try await client.deleteSession(sessionId: session.id)
+    }
+
+    @MainActor
     func testRealGatewayStreamMatchesCanonicalAnswerWithoutJoiningWords() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",

@@ -1335,6 +1335,7 @@ final class HermesModelContractTests: XCTestCase {
         defer { SessionHistoryURLProtocol.handler = nil }
         let send = Task { await store.sendMessage("Pending creation") }
         await fulfillment(of: [creationStarted], timeout: 3)
+        store.queueMessage("Guidance for pending creation")
         await store.selectSession(selected)
         try XCTUnwrap(creation).succeed(body: #"{"object":"hermes.session","session":{"id":"late-created","model":"old-model"}}"#)
         let response = await send.value
@@ -1344,6 +1345,27 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertNil(store.error)
         XCTAssertTrue(store.messages.isEmpty)
         XCTAssertFalse(store.isStreaming)
+        XCTAssertEqual(store.queuedMessages.map(\.display), ["Guidance for pending creation"])
+        XCTAssertNil(store.queuedMessages.first?.sessionID)
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+    }
+
+    @MainActor
+    func testSwitchingConversationPreservesQueuedFollowUps() async throws {
+        let config = ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test")
+        let store = AppStore(client: connectionClient(config))
+        let first = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"first"}"#.utf8))
+        let second = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"second"}"#.utf8))
+        SessionHistoryURLProtocol.handler = Self.answerConnectionRequest
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.activeSession = first
+        store.isStreaming = true
+        store.queueMessage("Keep this follow-up in the first conversation")
+        await store.selectSession(second)
+        XCTAssertEqual(store.activeSession?.id, "second")
+        XCTAssertEqual(store.queuedMessages.map(\.display), ["Keep this follow-up in the first conversation"])
+        store.stopStreaming()
+        XCTAssertEqual(store.queuedMessages.count, 1, "Stopping the second conversation must not discard the first conversation's follow-up")
     }
 
     @MainActor
@@ -1359,6 +1381,241 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertEqual(store.streamingText, "")
         XCTAssertEqual(store.streamingThinking, "")
         XCTAssertTrue(store.queuedMessages.isEmpty)
+    }
+
+    @MainActor
+    func testQueuePersistenceKeepsServerAndSessionOwnershipAndRequiresReview() throws {
+        let suite = "HermesQueueTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = ConnectionConfig(baseURL: "https://first.invalid", apiKey: "", label: "First")
+        let second = ConnectionConfig(baseURL: "https://second.invalid", apiKey: "", label: "Second")
+        let store = AppStore(client: connectionClient(first), queueDefaults: defaults)
+        store.connectionConfig = first
+        store.loadQueuedMessages(for: first)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"same-id"}"#.utf8))
+        store.isStreaming = true
+        store.queueMessage("First server's follow-up")
+        let id = try XCTUnwrap(store.queuedMessages.first?.id)
+        // A config change alone must not redirect writes from the loaded queue.
+        store.connectionConfig = second
+        store.queueMessage("Also belongs to the loaded first server queue")
+        XCTAssertNil(defaults.data(forKey: "message_queue.\(second.normalizedBaseURL)"))
+        store.loadQueuedMessages(for: second)
+        XCTAssertTrue(store.queuedMessages.isEmpty)
+        store.queueMessage("Second server's follow-up")
+        store.loadQueuedMessages(for: first)
+        XCTAssertEqual(store.queuedMessages.count, 2)
+        XCTAssertEqual(store.queuedMessages.first?.id, id)
+        XCTAssertTrue(store.queuedMessages.allSatisfy { $0.sessionID == "same-id" && $0.state == .needsReview })
+        let relaunched = AppStore(client: connectionClient(first), queueDefaults: defaults)
+        relaunched.loadQueuedMessages(for: first)
+        XCTAssertEqual(relaunched.queuedMessages, store.queuedMessages)
+        relaunched.loadQueuedMessages(for: second)
+        XCTAssertEqual(relaunched.queuedMessages.map(\.display), ["Second server's follow-up"])
+    }
+
+    @MainActor
+    func testLegacyQueueMigratesOnceWithoutInventingConversationOwnership() throws {
+        let suite = "HermesQueueLegacyTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(Data(#"[{"payload":"original command","display":"Original draft"}]"#.utf8), forKey: "message_queue")
+        let first = ConnectionConfig(baseURL: "https://first.invalid", apiKey: "", label: "First")
+        let second = ConnectionConfig(baseURL: "https://second.invalid", apiKey: "", label: "Second")
+        let store = AppStore(client: connectionClient(first), queueDefaults: defaults)
+        store.loadQueuedMessages(for: first)
+        XCTAssertEqual(store.queuedMessages.count, 1)
+        XCTAssertNil(store.queuedMessages.first?.sessionID)
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+        XCTAssertNil(defaults.data(forKey: "message_queue"))
+        store.loadQueuedMessages(for: second)
+        XCTAssertTrue(store.queuedMessages.isEmpty)
+        store.loadQueuedMessages(for: first)
+        XCTAssertEqual(store.queuedMessages.first?.payload, "original command")
+    }
+
+    @MainActor
+    func testRestoredInFlightQueueCannotBeAutomaticallyRetried() throws {
+        let suite = "HermesQueueInFlightTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let original = QueuedMessage(payload: "May already be on the server", display: "May already be on the server",
+            sessionID: "current", state: .sending)
+        defaults.set(try JSONEncoder().encode([original]), forKey: "message_queue")
+        let config = ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test")
+        let store = AppStore(client: connectionClient(config), queueDefaults: defaults)
+        XCTAssertEqual(store.queuedMessages.first?.id, original.id)
+        XCTAssertEqual(store.queuedMessages.first?.state, .needsReview)
+        XCTAssertTrue(store.queuedMessages.first?.issue?.contains("avoid duplicate work") == true)
+    }
+
+    @MainActor
+    func testQueueDoesNotSkipFollowUpRequiringReview() async throws {
+        let config = ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test")
+        let store = AppStore(client: connectionClient(config))
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.queueMessage("Review this first")
+        store.isStreaming = true
+        store.queueMessage("Do not send out of order")
+        store.isStreaming = false
+        var posts = 0
+        let unexpectedSend = expectation(description: "No queued POST may skip the review item")
+        unexpectedSend.isInverted = true
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.httpMethod == "POST" {
+                posts += 1
+                if posts > 1 { unexpectedSend.fulfill() }
+                request.succeed(body: "data: {\"event\":\"assistant.completed\",\"content\":\"Response\"}\n\ndata: {\"event\":\"run.completed\"}\n\n", headers: ["Content-Type": "text/event-stream"])
+            } else {
+                request.succeed(body: #"{"object":"list","data":[{"id":"current"}]}"#)
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil; store.stopStreaming() }
+        _ = await store.sendMessage("Explicit new message")
+        await fulfillment(of: [unexpectedSend], timeout: 0.25)
+        XCTAssertEqual(store.queuedMessages.map(\.state), [.needsReview, .queued])
+    }
+
+    @MainActor
+    func testUnreadableQueueIsPreservedWithoutLeakingPriorServerDrafts() throws {
+        let suite = "HermesQueueCorruptTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let config = ConnectionConfig(baseURL: "https://damaged.invalid", apiKey: "", label: "Damaged")
+        let key = "message_queue.\(config.normalizedBaseURL)"
+        let damaged = Data("incomplete json".utf8)
+        defaults.set(damaged, forKey: key)
+        let store = AppStore(client: connectionClient(config), queueDefaults: defaults)
+        store.queueMessage("A draft from another scope")
+        store.loadQueuedMessages(for: config)
+        XCTAssertTrue(store.queuedMessages.isEmpty)
+        XCTAssertEqual(defaults.data(forKey: key), damaged)
+        XCTAssertFalse(store.queueMessage("Keep this in the composer"))
+        XCTAssertTrue(store.error?.message.contains("kept in the composer") == true)
+        store.stopStreaming()
+        XCTAssertEqual(defaults.data(forKey: key), damaged)
+    }
+
+    @MainActor
+    func testRecoveryRequiresOriginalConversationAndPreservesDisplayedText() async throws {
+        let config = ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test")
+        let store = AppStore(client: connectionClient(config))
+        let first = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"first"}"#.utf8))
+        let second = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"second"}"#.utf8))
+        SessionHistoryURLProtocol.handler = Self.answerConnectionRequest
+        defer { SessionHistoryURLProtocol.handler = nil }
+        store.activeSession = first
+        store.isStreaming = true
+        store.queueMessage("Expanded skill command", displayText: "/skill Original draft")
+        let id = try XCTUnwrap(store.queuedMessages.first?.id)
+        await store.selectSession(second)
+        XCTAssertNil(store.recoverQueuedMessage(id))
+        XCTAssertEqual(store.queuedMessages.count, 1)
+        await store.selectSession(first)
+        XCTAssertEqual(store.recoverQueuedMessage(id), "/skill Original draft")
+        XCTAssertTrue(store.queuedMessages.isEmpty)
+        XCTAssertTrue(store.messages.isEmpty, "Recovery fills the composer only; it must not send")
+    }
+
+    @MainActor
+    func testQueuedSendRetainedDuringRequestAndAfterFailureWithoutDrainingRemainder() async throws {
+        let config = ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test")
+        let store = AppStore(client: connectionClient(config))
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.isStreaming = true
+        store.queueMessage("Follow-up one")
+        store.queueMessage("Follow-up two")
+        store.isStreaming = false
+        var posts = 0
+        var pending: SessionHistoryURLProtocol?
+        let dispatched = expectation(description: "Queued request reached transport")
+        let retained = expectation(description: "Failed queue requires review")
+        var observedFailure = false
+        let observation = store.$queuedMessages.sink { queue in
+            if !observedFailure, queue.count == 2, queue.allSatisfy({ $0.state == .needsReview }) {
+                observedFailure = true
+                retained.fulfill()
+            }
+        }
+        defer { observation.cancel(); SessionHistoryURLProtocol.handler = nil; store.stopStreaming() }
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                if request.request.httpMethod == "POST" {
+                    posts += 1
+                    if posts == 1 {
+                        request.succeed(body: "data: {\"event\":\"assistant.completed\",\"content\":\"Initial response\"}\n\ndata: {\"event\":\"run.completed\"}\n\n", headers: ["Content-Type": "text/event-stream"])
+                    } else {
+                        pending = request
+                        dispatched.fulfill()
+                    }
+                } else {
+                    request.succeed(body: #"{"object":"list","data":[{"id":"current"}]}"#)
+                }
+            }
+        }
+        let initial = await store.sendMessage("Initial question")
+        XCTAssertEqual(initial?.content, "Initial response", "Draining must not invalidate the caller's completed result")
+        await fulfillment(of: [dispatched], timeout: 3)
+        XCTAssertEqual(store.queuedMessages.map(\.state), [.sending, .queued])
+        let inFlightID = try XCTUnwrap(store.queuedMessages.first?.id)
+        XCTAssertNil(store.recoverQueuedMessage(inFlightID))
+        store.removeQueuedMessage(inFlightID)
+        XCTAssertEqual(store.queuedMessages.count, 2)
+        let failedRequest = try XCTUnwrap(pending)
+        failedRequest.client?.urlProtocol(failedRequest, didFailWithError: URLError(.timedOut))
+        await fulfillment(of: [retained], timeout: 3)
+        XCTAssertEqual(posts, 2)
+        XCTAssertEqual(store.queuedMessages.map(\.display), ["Follow-up one", "Follow-up two"])
+        XCTAssertTrue(store.queuedMessages.first?.issue?.contains("Check chat history") == true)
+    }
+
+    @MainActor
+    func testPendingCreationBindsQueuedGuidanceAndDrainsOnlyAfterConfirmedResponses() async throws {
+        let config = ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test")
+        let store = AppStore(client: connectionClient(config))
+        let creating = expectation(description: "Session creation pending")
+        let followUpStarted = expectation(description: "Guidance dispatched to created session")
+        let drained = expectation(description: "Confirmed follow-up removed")
+        var creation: SessionHistoryURLProtocol?
+        var followUp: SessionHistoryURLProtocol?
+        var chats = 0
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                if request.request.httpMethod == "POST", request.request.url!.path.hasSuffix("/sessions") {
+                    creation = request
+                    creating.fulfill()
+                } else if request.request.httpMethod == "POST" {
+                    XCTAssertTrue(request.request.url!.path.contains("created"))
+                    chats += 1
+                    if chats == 1 {
+                        request.succeed(body: "data: {\"event\":\"assistant.completed\",\"content\":\"Initial response\"}\n\ndata: {\"event\":\"run.completed\"}\n\n", headers: ["Content-Type": "text/event-stream"])
+                    } else {
+                        followUp = request
+                        followUpStarted.fulfill()
+                    }
+                } else {
+                    request.succeed(body: #"{"object":"list","data":[{"id":"created"}]}"#)
+                }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil; store.stopStreaming() }
+        let initial = Task { await store.sendMessage("First question") }
+        await fulfillment(of: [creating], timeout: 3)
+        store.queueMessage("Guidance during session creation")
+        XCTAssertNil(store.queuedMessages.first?.sessionID)
+        let observation = store.$queuedMessages.sink { if $0.isEmpty { drained.fulfill() } }
+        defer { observation.cancel() }
+        try XCTUnwrap(creation).succeed(body: #"{"object":"hermes.session","session":{"id":"created"}}"#)
+        let answer = await initial.value
+        XCTAssertEqual(answer?.content, "Initial response")
+        await fulfillment(of: [followUpStarted], timeout: 3)
+        XCTAssertEqual(store.queuedMessages.first?.sessionID, "created")
+        XCTAssertEqual(store.queuedMessages.first?.state, .sending)
+        try XCTUnwrap(followUp).succeed(body: "data: {\"event\":\"assistant.completed\",\"content\":\"Guidance received\"}\n\ndata: {\"event\":\"run.completed\"}\n\n", headers: ["Content-Type": "text/event-stream"])
+        await fulfillment(of: [drained], timeout: 3)
+        XCTAssertEqual(chats, 2)
+        XCTAssertEqual(store.messages.filter(\.isAssistant).map(\.content), ["Initial response", "Guidance received"])
     }
 
     @MainActor

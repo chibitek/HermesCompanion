@@ -92,6 +92,9 @@ final class AppStore: ObservableObject {
     private static let thinkingKey = "preferred_thinking"
     private static let favModelsKey = "favorite_models"
     private static let queueKey = "message_queue"
+    private let queueDefaults: UserDefaults?
+    private var queueStorageKey = AppStore.queueKey
+    private var queueIsWritable = true
 
     var effectiveCurrentProvider: String {
         nonEmpty(sessionProviderOverride)
@@ -123,6 +126,7 @@ final class AppStore: ObservableObject {
     private(set) var apiClient: HermesAPIClient? {
         didSet {
             guard oldValue !== apiClient else { return }
+            pauseQueuedMessages(reason: "The server connection changed. Check the conversation before sending this follow-up.")
             hasExplicitlyConnected = false
             streamTask?.cancel()
             liveChangesAvailable = false
@@ -187,13 +191,16 @@ final class AppStore: ObservableObject {
     private var connectionRecoveryEnabled = false
     private var connectionErrorID: UUID?
 
-    init(client: HermesAPIClient, clientFactory: ((ConnectionConfig) -> HermesAPIClient)? = nil) {
+    init(client: HermesAPIClient, clientFactory: ((ConnectionConfig) -> HermesAPIClient)? = nil, queueDefaults: UserDefaults? = nil) {
+        self.queueDefaults = queueDefaults
         apiClient = client
         connectionRecoveryEnabled = true
         if let clientFactory { makeClient = clientFactory }
+        loadQueuedMessages(for: nil)
     }
 
     init() {
+        queueDefaults = .standard
         // Load all saved connections for the multi-connection picker
         self.savedConnections = KeychainManager.shared.loadAll()
 
@@ -604,16 +611,47 @@ final class AppStore: ObservableObject {
         preferredThinking = savedPreference(Self.thinkingKey, for: config)
         let savedFavs = savedPreference(Self.favModelsKey, for: config)
         favoriteModels = savedFavs.split(separator: "\n").map(String.init)
-        // Restore any messages queued while the app was force-quit (H2).
-        let defaults = UserDefaults.standard
-        let scoped = defaults.data(forKey: preferenceKey(Self.queueKey, for: config))
-            ?? defaults.data(forKey: Self.queueKey)
-        queuedMessages = scoped.flatMap { try? JSONDecoder().decode([QueuedMessage].self, from: $0) } ?? []
+        loadQueuedMessages(for: config)
+    }
+
+    func loadQueuedMessages(for config: ConnectionConfig?) {
+        // Hold the storage owner independently of connectionConfig during transitions.
+        queueStorageKey = preferenceKey(Self.queueKey, for: config)
+        queueIsWritable = false
+        do {
+            let data = queueDefaults?.data(forKey: queueStorageKey)
+            var restored = try data.map { try JSONDecoder().decode([QueuedMessage].self, from: $0) } ?? []
+            let legacy = queueStorageKey == Self.queueKey ? nil : queueDefaults?.data(forKey: Self.queueKey)
+            if let legacy {
+                restored += try JSONDecoder().decode([QueuedMessage].self, from: legacy).map { message in
+                    var message = message
+                    message.sessionID = nil
+                    message.pendingTurnID = nil
+                    return message
+                }
+            }
+            queuedMessages = restored.map { message in
+                var message = message
+                message.state = .needsReview
+                message.issue = message.sessionID == nil
+                    ? "This saved follow-up has no confirmed conversation. Choose its destination before sending."
+                    : "Restored after a connection change or restart. Check chat history before sending to avoid duplicate work."
+                return message
+            }
+            queueIsWritable = true
+            saveQueue()
+            // Migrate unscoped legacy drafts once, never once per saved server.
+            if legacy != nil { queueDefaults?.removeObject(forKey: Self.queueKey) }
+        } catch {
+            queuedMessages = []
+            self.error = AppError(message: "Saved follow-ups could not be restored: \(error.localizedDescription). Their stored data has been kept. Reconnect to retry.")
+        }
     }
 
     private func saveQueue() {
+        guard queueIsWritable else { return }
         let data = try? JSONEncoder().encode(queuedMessages)
-        UserDefaults.standard.set(data, forKey: preferenceKey(Self.queueKey, for: connectionConfig))
+        queueDefaults?.set(data, forKey: queueStorageKey)
     }
 
     private func savedPreference(_ key: String, for config: ConnectionConfig?) -> String {
@@ -680,7 +718,7 @@ final class AppStore: ObservableObject {
                   sessionSelectionID == selectionID, activeSession?.id == current.id,
                   !isStreaming, !Task.isCancelled else { return }
             sessionSelectionID = UUID()
-            stopStreaming()
+            stopStreaming(discardQueuedMessages: false)
             activeSession = nil
             activeRuntime = nil
             sessionModelOverride = nil
@@ -718,7 +756,7 @@ final class AppStore: ObservableObject {
             self.error = AppError(message: "Connect to a Hermes server in Settings before creating a conversation.")
             return
         }
-        stopStreaming()
+        stopStreaming(discardQueuedMessages: false)
         let creationID = UUID()
         sessionSelectionID = creationID
         do {
@@ -736,7 +774,7 @@ final class AppStore: ObservableObject {
     }
 
     func selectSession(_ session: HermesSession) async {
-        stopStreaming()
+        stopStreaming(discardQueuedMessages: false)
         let selectionID = UUID()
         sessionSelectionID = selectionID
         let client: HermesAPIClient
@@ -927,6 +965,7 @@ final class AppStore: ObservableObject {
             guard apiClient === client else { return }
             sessionRefreshID = UUID()
             self.sessions.removeAll { $0.id == session.id }
+            queuedMessages.removeAll { $0.sessionID == session.id }
             if activeSession?.id == session.id {
                 sessionSelectionID = UUID()
                 stopStreaming()
@@ -1008,7 +1047,7 @@ final class AppStore: ObservableObject {
         }
         if updated.isArchived == true && activeSession?.id == updated.id {
             sessionSelectionID = UUID()
-            stopStreaming()
+            stopStreaming(discardQueuedMessages: false)
             activeSession = nil
             activeRuntime = nil
             sessionModelOverride = nil
@@ -1240,14 +1279,87 @@ final class AppStore: ObservableObject {
 
     // MARK: - Chat (streaming)
 
-    func queueMessage(_ text: String, displayText: String? = nil) {
+    @discardableResult
+    func queueMessage(_ text: String, displayText: String? = nil) -> Bool {
         let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !payload.isEmpty else { return }
-        queuedMessages.append(QueuedMessage(payload: payload, display: displayText ?? payload))
+        guard !payload.isEmpty else { return false }
+        guard queueIsWritable else {
+            error = AppError(message: "This server's saved follow-ups could not be read. Your new draft has been kept in the composer. Reconnect before queuing more guidance.")
+            return false
+        }
+        queuedMessages.append(QueuedMessage(payload: payload, display: displayText ?? payload,
+            sessionID: activeSession?.id, pendingTurnID: activeSession == nil && isStreaming ? chatTurnID : nil,
+            state: isStreaming ? .queued : .needsReview))
+        return true
+    }
+
+    func removeQueuedMessage(_ id: UUID) {
+        queuedMessages.removeAll { $0.id == id && $0.state != .sending }
+    }
+
+    /// Recovery only fills the composer. It never retries an uncertain request.
+    func recoverQueuedMessage(_ id: UUID) -> String? {
+        guard let message = queuedMessages.first(where: { $0.id == id }), message.state != .sending,
+              message.sessionID == nil || message.sessionID == activeSession?.id else { return nil }
+        removeQueuedMessage(id)
+        return message.display
+    }
+
+    func openQueuedConversation(_ id: UUID) async {
+        guard let message = queuedMessages.first(where: { $0.id == id }),
+              let sessionID = message.sessionID, let client = apiClient else { return }
+        stopStreaming(discardQueuedMessages: false)
+        let selection = UUID()
+        sessionSelectionID = selection
+        let turn = chatTurnID
+        do {
+            let detail = try await client.getSession(sessionId: sessionID)
+            guard apiClient === client, sessionSelectionID == selection, chatTurnID == turn,
+                  queuedMessages.contains(where: { $0.id == id }) else { return }
+            guard detail.id == sessionID else {
+                throw APIError.invalidEndpoint("Hermes returned a different conversation than the one requested.")
+            }
+            let session = HermesSession(id: detail.id, title: detail.title, source: detail.source,
+                model: detail.model, provider: detail.provider, startedAt: detail.startedAt,
+                lastActive: detail.lastActive, messageCount: detail.messageCount, cwd: detail.cwd,
+                gitRepoRoot: detail.gitRepoRoot, billingProvider: detail.billingProvider,
+                isPinned: detail.isPinned, isArchived: detail.isArchived, isHidden: detail.isHidden)
+            await selectSession(session)
+        } catch {
+            guard apiClient === client, sessionSelectionID == selection, chatTurnID == turn else { return }
+            self.error = AppError(message: "Could not open the follow-up's original conversation: \(error.localizedDescription). The saved text is still available in Follow-ups.")
+        }
+    }
+
+    private func pauseQueuedMessages(reason: String, sessionID: String? = nil, pendingTurnID: UUID? = nil) {
+        queuedMessages = queuedMessages.map { message in
+            guard sessionID == nil && pendingTurnID == nil || message.sessionID == sessionID && sessionID != nil
+                    || message.pendingTurnID == pendingTurnID && pendingTurnID != nil else { return message }
+            var message = message
+            message.state = .needsReview
+            message.issue = reason
+            return message
+        }
+    }
+
+    private func dispatchQueuedMessage(after turnID: UUID, client: HermesAPIClient, session: HermesSession) async {
+        guard chatTurnID == turnID, apiClient === client, activeSession?.id == session.id,
+              !isStreaming, error == nil, !Task.isCancelled,
+              let index = queuedMessages.firstIndex(where: { $0.sessionID == session.id }),
+              queuedMessages[index].state == .queued else { return }
+        // Retain the entry until completion, after checking ownership without a yield.
+        let next = queuedMessages[index]
+        queuedMessages[index].state = .sending
+        let scope = queueStorageKey
+        await sendMessage(next.payload, displayText: next.display, queuedMessageID: next.id)
+        if queueStorageKey == scope, let index = queuedMessages.firstIndex(where: { $0.id == next.id && $0.state == .sending }) {
+            queuedMessages[index].state = .needsReview
+            queuedMessages[index].issue = "This follow-up was interrupted. Check chat history before sending it again to avoid duplicate work."
+        }
     }
 
     @discardableResult
-    func sendMessage(_ text: String, displayText: String? = nil, images: [Data] = [], attachments: [AttachmentData] = [], skipPostReload: Bool = false) async -> ChatDisplayMessage? {
+    func sendMessage(_ text: String, displayText: String? = nil, images: [Data] = [], attachments: [AttachmentData] = [], skipPostReload: Bool = false, queuedMessageID: UUID? = nil) async -> ChatDisplayMessage? {
         let client: HermesAPIClient
         do {
             client = try self.client()
@@ -1256,6 +1368,10 @@ final class AppStore: ObservableObject {
             return nil
         }
 
+        if isStreaming {
+            pauseQueuedMessages(reason: "A new message superseded the previous response. Check chat history before sending its saved follow-ups.",
+                sessionID: activeSession?.id, pendingTurnID: chatTurnID)
+        }
         let turnID = UUID()
         chatTurnID = turnID
         streamTask?.cancel()
@@ -1265,8 +1381,18 @@ final class AppStore: ObservableObject {
         isStreaming = true
         let session = await ensureSession(client: client)
         guard let session, apiClient === client, chatTurnID == turnID else {
-            if chatTurnID == turnID { isStreaming = false }
+            if chatTurnID == turnID {
+                isStreaming = false
+                pauseQueuedMessages(reason: "Hermes could not open the conversation. Review this saved follow-up before sending.", pendingTurnID: turnID)
+            }
             return nil
+        }
+        queuedMessages = queuedMessages.map { message in
+            guard message.pendingTurnID == turnID, message.state == .queued else { return message }
+            var message = message
+            message.sessionID = session.id
+            message.pendingTurnID = nil
+            return message
         }
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
@@ -1303,6 +1429,7 @@ final class AppStore: ObservableObject {
             self.endBackgroundTask()
             self.responseActivity = "Response stream stalled"
             self.error = AppError(message: "Hermes stopped sending chat events and keepalives for 60 seconds after activity, or did not respond within 180 seconds. The turn may be incomplete. Check the server and refresh this chat before resending to avoid duplicate work.")
+            self.pauseQueuedMessages(reason: "The preceding response stalled. Check chat history before sending this follow-up.", sessionID: session.id)
         }
 
         streamTask?.cancel()
@@ -1390,12 +1517,16 @@ final class AppStore: ObservableObject {
             self.lastSessionListSyncAt = nil
             self.endBackgroundTask()
 
-            if !Task.isCancelled, self.error == nil, !self.queuedMessages.isEmpty {
-                let next = self.queuedMessages.removeFirst()
-                Task {
-                    guard self.chatTurnID == turnID, self.apiClient === client,
-                          self.activeSession?.id == session.id else { return }
-                    await self.sendMessage(next.payload, displayText: next.display)
+            if Task.isCancelled || self.error != nil {
+                self.pauseQueuedMessages(reason: "The preceding response was interrupted or failed. Check chat history before sending this follow-up.", sessionID: session.id)
+            }
+            if let queuedMessageID,
+               let index = self.queuedMessages.firstIndex(where: { $0.id == queuedMessageID }) {
+                if !Task.isCancelled, self.error == nil {
+                    self.queuedMessages.remove(at: index)
+                } else {
+                    self.queuedMessages[index].state = .needsReview
+                    self.queuedMessages[index].issue = "Hermes did not confirm this follow-up completed. Check chat history before resending. \(self.error?.message ?? "The response was canceled.")"
                 }
             }
 
@@ -1412,6 +1543,7 @@ final class AppStore: ObservableObject {
         }
         guard chatTurnID == turnID, apiClient === client, activeSession?.id == session.id,
               !task.isCancelled, error == nil else { return nil }
+        Task { await self.dispatchQueuedMessage(after: turnID, client: client, session: session) }
         return assistantMessage
     }
 
@@ -1549,14 +1681,23 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func stopStreaming() {
+    func stopStreaming(discardQueuedMessages: Bool = true) {
+        let oldTurn = chatTurnID
+        let sessionID = activeSession?.id
+        if discardQueuedMessages {
+            queuedMessages.removeAll { message in
+                sessionID != nil && message.sessionID == sessionID || message.pendingTurnID == oldTurn
+            }
+        } else {
+            pauseQueuedMessages(reason: "Conversation changed before this follow-up was confirmed. Open its chat and review it before sending.",
+                sessionID: sessionID, pendingTurnID: oldTurn)
+        }
         chatTurnID = UUID()
         streamTask?.cancel()
         streamTask = nil
         isStreaming = false
         streamingText = ""
         streamingThinking = ""
-        queuedMessages.removeAll()
         endBackgroundTask()
     }
 
@@ -1804,9 +1945,37 @@ final class AppStore: ObservableObject {
 
 /// A queued chat turn: the API payload plus the text the user actually saw.
 /// Persisted per-connection so a force-quit doesn't silently drop accepted input.
-struct QueuedMessage: Codable, Equatable {
+struct QueuedMessage: Codable, Equatable, Identifiable {
+    enum State: String, Codable { case queued, sending, needsReview }
+    let id: UUID
     let payload: String
     let display: String
+    var sessionID: String?
+    var pendingTurnID: UUID?
+    var state: State
+    var issue: String?
+
+    init(payload: String, display: String, sessionID: String? = nil, pendingTurnID: UUID? = nil, state: State = .needsReview) {
+        self.id = UUID()
+        self.payload = payload
+        self.display = display
+        self.sessionID = sessionID
+        self.pendingTurnID = pendingTurnID
+        self.state = state
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, payload, display, sessionID, pendingTurnID, state, issue }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        payload = try values.decode(String.self, forKey: .payload)
+        display = try values.decode(String.self, forKey: .display)
+        sessionID = try values.decodeIfPresent(String.self, forKey: .sessionID)
+        pendingTurnID = try values.decodeIfPresent(UUID.self, forKey: .pendingTurnID)
+        state = try values.decodeIfPresent(State.self, forKey: .state) ?? .needsReview
+        issue = try values.decodeIfPresent(String.self, forKey: .issue)
+    }
 }
 
 struct ChatDisplayMessage: Identifiable, Equatable {

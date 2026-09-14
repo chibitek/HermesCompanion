@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var showPlatformHub = false
     @State private var showRunControls = false
     @State private var showVideo = false
+    @State private var showQueuedMessages = false
     @State private var attachments: [AttachmentData] = []
     @State private var showPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
@@ -82,6 +83,17 @@ struct ChatView: View {
 
                     serverStatus
 
+                    if !store.queuedMessages.isEmpty {
+                        Button {
+                            showQueuedMessages = true
+                        } label: {
+                            Label("Follow-ups (\(store.queuedMessages.count))", systemImage: "text.bubble")
+                                .font(.caption)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 4)
+                        }
+                    }
                     inputBar
                 }
 
@@ -134,6 +146,10 @@ struct ChatView: View {
             }
             .sheet(isPresented: $showVideo) {
                 VideoView()
+                    .withActiveTheme(appearance)
+            }
+            .sheet(isPresented: $showQueuedMessages) {
+                queuedMessagesSheet
                     .withActiveTheme(appearance)
             }
             .sheet(isPresented: $showSessionPicker) {
@@ -340,6 +356,57 @@ struct ChatView: View {
         )
     }
 
+    private var queuedMessagesSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(store.queuedMessages) { message in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(message.sessionID.flatMap { id in store.sessions.first { $0.id == id }?.title }
+                                 ?? message.sessionID.map { "Conversation \($0)" } ?? "Choose a conversation")
+                                .font(.caption.weight(.semibold))
+                            Text(message.display).textSelection(.enabled)
+                            Text(message.state == .sending ? "Sending to Hermes" :
+                                    (message.state == .queued ? "Waiting for this conversation's response to finish" : "Review before sending"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let issue = message.issue {
+                                Text(issue).font(.caption).foregroundStyle(.secondary)
+                            }
+                            if message.state != .sending {
+                                if let sessionID = message.sessionID, sessionID != store.activeSession?.id {
+                                    Button("Open original conversation") {
+                                        Task { await store.openQueuedConversation(message.id) }
+                                    }
+                                    .buttonStyle(.borderless)
+                                } else {
+                                    Button("Move to composer") {
+                                        guard inputText.isEmpty, attachments.isEmpty,
+                                              let recovered = store.recoverQueuedMessage(message.id) else { return }
+                                        wakePhraseListener.suspendForTextInput()
+                                        inputText = recovered
+                                        showQueuedMessages = false
+                                    }
+                                    .disabled(!inputText.isEmpty || !attachments.isEmpty)
+                                    .buttonStyle(.borderless)
+                                }
+                                Button("Delete follow-up", role: .destructive) {
+                                    store.removeQueuedMessage(message.id)
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } footer: {
+                    Text("Moving a follow-up to the composer does not send it. Check the selected conversation and its latest messages first. Finish or clear your current draft before recovering another.")
+                }
+            }
+            .navigationTitle("Follow-ups")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showQueuedMessages = false } } }
+        }
+    }
+
     private var messageList: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -509,8 +576,7 @@ struct ChatView: View {
         let visibleText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !visibleText.isEmpty else { return }
         let payload = SkillCommandLogic.messagePayload(for: visibleText)
-        inputText = ""
-        store.queueMessage(payload, displayText: visibleText)
+        if store.queueMessage(payload, displayText: visibleText) { inputText = "" }
     }
 
     @MainActor

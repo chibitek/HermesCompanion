@@ -16,7 +16,7 @@ patches. Installed bridge **0.1.10** files match the current public source.
 Authenticated native and bridge capabilities returned HTTP 200 on September 14.
 No restart was needed to reapply code already running.
 
-The latest ordinary iOS suite passed 142 tests, with four opt-in tests skipped.
+Build 176's ordinary iOS suite passed 142 tests, with four opt-in tests skipped.
 The repeated live-gateway suite passed all four tests, including exact streamed
 text, conversation updates, run replay, and board invalidation. Intermittent
 model latency remains open in issue #55, and physical music/microphone/Bluetooth
@@ -33,6 +33,16 @@ included in this candidate's advertised scope.
 See [CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) and
 [APP_STORE_SUBMISSION.md](../APP_STORE_SUBMISSION.md). Historical build and
 deployment snapshots below describe earlier checks, not current installed state.
+
+## Source repair after build 176
+
+Queued follow-ups now retain server and conversation ownership through navigation,
+restart, and uncertain sends. A visible recovery list permits review and removal;
+dispatch waits for confirmation and never skips an earlier item requiring review.
+The source simulator suite passed 151 tests, with five live checks skipped; all
+five checks passed separately against an isolated real gateway and local model.
+This change is not in the submitted or phone-installed build 176.
+See [QUEUE_RELIABILITY.md](QUEUE_RELIABILITY.md) for scope and verification.
 
 ## Text-Only Audio Isolation Follow-Up
 
