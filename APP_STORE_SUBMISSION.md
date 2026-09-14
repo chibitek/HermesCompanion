@@ -2,39 +2,37 @@
 
 ## Current candidate
 
-**1.8.85 (182)** fixes scheduled jobs remaining stale after remote writes.
-Workspace changes and periodic synchronization refresh the list; older responses
-cannot overwrite newer snapshots, and failures show a specific warning and retry
-action. Earlier run-monitoring, reasoning, steering, deletion, queue, stream and
-audio repairs remain included.
+**1.8.86 (183)** adds complete scheduled-job delivery diagnostics and joins the
+workspace watcher when foreground sync stops. Execution completion is separate
+from delivery failure, queued receipts and unverified targets. Expandable reasons
+remain readable and copyable; recovery clears stale warnings. Earlier connection,
+steering, stream, deletion, reasoning and audio repairs remain included.
 
-- Version: **1.8.85 (182)**.
-- Bundle identifier: `com.chibitek.hermescompanion`.
-- Device: matching app/widget versions and signed export verified. Inventory
-  confirms installation; launch was blocked by the locked phone. Physical
+- Device: matching app/widget versions and a signed export verified. Inventory
+  confirms 1.8.86 (183) installed. The locked phone blocked launch, so physical
   visual/audio acceptance remains incomplete.
-- TestFlight: **Testing** in the existing internal group alongside builds 176
-  through 181. Invitation acceptance and TestFlight installation remain
-  unverified. The screenshot's Incompatible entry is still unidentified.
-- App Review: the pending build 181 submission was withdrawn. Apple confirmed
-  **1 Item Submitted** on September 14, 2026 at 3:16 AM Eastern, containing
-  **1.8.85 (182)**. It is **Waiting for Review**, with manual release selected.
-- Validation: the final full rerun passed 174 ordinary iOS tests. All ten separate
-  real-gateway checks passed with zero retained jobs, sessions, projects or active
-  project; linked files were retained. The job regression failed before repair
-  and passed afterward. The gateway remains unchanged.
-- Scheduler execution/delivery and capability coherence (#65), intermittent
-  admission-test investigation (#66), physical audio (#53), variable model
-  latency (#55), retained-session investigation (#57) and full feature parity
-  remain incomplete. Review notes disclose these verification limits.
-- Reviewer gateway access has not been supplied. Isolated reviewer access and
-  screenshot refresh/verification remain follow-up work.
+- TestFlight: **Testing** in the existing internal group, containing builds
+  176 through 183. The tester remains Invited; acceptance and TestFlight
+  installation are unverified. The screenshot's Incompatible entry remains
+  unidentified.
+- App Review: build 182 was withdrawn and replaced. Apple confirmed one submitted
+  item, **1.8.86 (183)**, on September 14, 2026 at **3:56 AM Eastern**.
+  It is **Waiting for Review**, with manual release preserved.
+- Validation: **177 ordinary simulator tests** and **twelve separate real-gateway
+  checks** passed against final source. No jobs, sessions, projects or active
+  selection remained; linked files were unchanged and saved scheduler output was
+  verified. The native gateway previously passed 167 focused tests.
+- Issues #65, #66 and #67 are resolved in the public branch. Physical audio (#53),
+  variable model latency (#55), retained-session investigation (#57), external
+  messaging delivery, full native job configuration and complete feature parity
+  remain unfinished. Review notes disclose these limits.
+- Reviewer gateway access and screenshot refresh remain incomplete.
 - No subscriptions are implemented. Planned paid experiences are specified in
   [SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).
 
-These are observed release states, not permanent guarantees. Recheck App Store
-Connect before announcing a later release. Keep tester contact details, Apple
-account identifiers, review credentials, and private server URLs out of Git.
+These are observed release states. Recheck App Store Connect before announcing a
+later release. Keep tester contacts, Apple account identifiers, review credentials,
+private captures and private server URLs out of Git.
 
 ## Promotional text
 

@@ -1,6 +1,6 @@
 # Development Release Readiness
 
-## Prepared delivery diagnostics update: 1.8.86 (183)
+## Current delivery diagnostics update: 1.8.86 (183)
 
 Scheduled jobs now separate execution status from delivery failures, queued
 receipts and unverified delivery. Expandable rows retain the complete reason,
@@ -15,7 +15,11 @@ with twelve opt-in real-gateway checks skipped for their separate run. All twelv
 then passed against the final source with zero retained jobs, sessions, projects
 or active selection, unchanged linked files and verified saved scheduler output.
 
-Build 182 remains the delivered Apple candidate until build 183 is processed.
+Build 183 has matching app/widget versions, a verified signed export and a
+confirmed device installation. Launch was blocked by the locked phone. TestFlight
+shows Testing in the existing internal group. Build 182 was withdrawn; Apple
+confirmed one submitted item, 1.8.86 (183), on September 14 at 3:56 AM Eastern,
+Waiting for Review with manual release preserved. The tester remains Invited.
 Physical visual/audio acceptance, external messaging delivery, full native job
 configuration, reviewer access and complete feature parity remain unfinished.
 
