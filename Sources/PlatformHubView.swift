@@ -63,6 +63,16 @@ struct PlatformHubView: View {
                         }
                     }
 
+                    if let client = store.apiClient, let config = store.connectionConfig {
+                        Section("Live Run Controls") {
+                            NavigationLink {
+                                DurableRunView(client: client, scope: config.normalizedBaseURL, capabilities: store.capabilities?.features,
+                                    session: store.activeSession, model: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionModelOverride,
+                                    provider: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionProviderOverride)
+                                    .id(ObjectIdentifier(client))
+                            } label: { Label("Run Controls", systemImage: "play.rectangle") }
+                        }
+                    }
                     overviewSection
                     capabilitiesSection
                     endpointsSection
@@ -83,7 +93,7 @@ struct PlatformHubView: View {
                     artifactsSection
                 }
                 .sheet(isPresented: $showArtifactPicker) {
-                    FilePickerView { data, fileName, mimeType in
+                    FilePickerView(onError: { store.platformError = $0 }) { data, fileName, mimeType in
                         isUploadingArtifact = true
                         Task {
                             await store.uploadArtifact(

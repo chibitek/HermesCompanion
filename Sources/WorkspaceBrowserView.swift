@@ -1,4 +1,12 @@
 import SwiftUI
+
+private struct WorkspaceRevisionKey: EnvironmentKey { static let defaultValue = 0 }
+extension EnvironmentValues {
+    var workspaceRevision: Int {
+        get { self[WorkspaceRevisionKey.self] }
+        set { self[WorkspaceRevisionKey.self] = newValue }
+    }
+}
 import QuickLook
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
@@ -56,6 +64,11 @@ struct WorkspaceBrowserView: View {
                     }
                 }
             }
+            .toolbar {
+                NavigationLink {
+                    ProjectManagementView(client: client)
+                } label: { Label("Manage Projects", systemImage: "folder.badge.gearshape") }
+            }
         case .bots:
             WorkspaceReadView(load: { try await client.workspaceBots() }) { snapshot in
                 if snapshot.profiles.isEmpty {
@@ -76,6 +89,13 @@ struct WorkspaceBrowserView: View {
                                     Section("Conversation") {
                                         Text(session.title ?? "Untitled")
                                         if let preview = session.preview, !preview.isEmpty { Text(preview) }
+                                    }
+                                }
+                                if let config = store.connectionConfig {
+                                    NavigationLink {
+                                        BotChatAccessView(rootClient: client, rootConfig: config, bot: bot)
+                                    } label: {
+                                        Label("Chat with Bot", systemImage: "bubble.left.and.text.bubble.right")
                                     }
                                 }
                                 NavigationLink {
@@ -100,20 +120,7 @@ struct WorkspaceBrowserView: View {
                 }
                 ForEach(snapshot.boards) { board in
                     NavigationLink {
-                        WorkspaceReadView(load: { try await client.workspaceBoard(slug: board.slug) }) { detail in
-                            ForEach(detail.columns) { column in
-                                Section("\(column.name.capitalized) (\(column.tasks.count))") {
-                                    ForEach(column.tasks) { task in
-                                        NavigationLink {
-                                            ServerTaskDetailView(client: client, board: board.slug, taskID: task.id)
-                                        } label: {
-                                            WorkspaceRow(title: task.title, detail: task.assignee, trailing: nil, icon: "checklist")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .navigationTitle(board.title)
+                        ServerBoardView(client: client, board: board)
                     } label: {
                         WorkspaceRow(title: board.title, detail: board.project_name,
                                      trailing: board.total.map(String.init), icon: section.icon)
@@ -175,6 +182,40 @@ struct WorkspaceBrowserView: View {
     }
 }
 
+private struct ServerBoardView: View {
+    let client: HermesAPIClient
+    let board: ServerBoard
+    @State private var showCreate = false
+    @State private var revision = 0
+    @State private var notice: String?
+
+    var body: some View {
+        WorkspaceReadView(load: { try await client.workspaceBoard(slug: board.slug) }) { detail in
+            if let notice { Text(notice).foregroundStyle(.secondary) }
+            ForEach(detail.columns) { column in
+                Section("\(column.name.capitalized) (\(column.tasks.count))") {
+                    ForEach(column.tasks) { task in
+                        NavigationLink {
+                            ServerTaskDetailView(client: client, board: board.slug, taskID: task.id)
+                        } label: {
+                            WorkspaceRow(title: task.title, detail: task.assignee, trailing: nil, icon: "checklist")
+                        }
+                    }
+                }
+            }
+        }
+        .id(revision)
+        .navigationTitle(board.title)
+        .toolbar { Button("New Task", systemImage: "plus") { showCreate = true } }
+        .sheet(isPresented: $showCreate) {
+            ServerTaskEditorView(client: client, board: board.slug) { receipt in
+                notice = receipt.warning
+                revision += 1
+            }
+        }
+    }
+}
+
 private struct ServerTaskDetailView: View {
     let client: HermesAPIClient
     let board: String
@@ -184,14 +225,20 @@ private struct ServerTaskDetailView: View {
     @State private var downloadError: String?
     @State private var downloadTask: Task<Void, Never>?
     @State private var downloadID = UUID()
+    @State private var editingTask: ServerBoardTask?
+    @State private var showComment = false
+    @State private var mutationRevision = 0
+    @State private var mutationNotice: String?
 
     var body: some View {
         WorkspaceReadView(load: { try await client.workspaceTask(board: board, id: taskID) }) { detail in
+            if let mutationNotice { Text(mutationNotice).foregroundStyle(.secondary) }
             if let downloadError {
                 Label(downloadError, systemImage: "exclamationmark.triangle")
             }
             Section {
                 Text(detail.task.title).font(.headline)
+                Button("Edit Task") { editingTask = detail.task }
                 LabeledContent("Status", value: detail.task.status)
                 if let assignee = detail.task.assignee { LabeledContent("Assignee", value: assignee) }
             }
@@ -253,6 +300,7 @@ private struct ServerTaskDetailView: View {
                 }
             }
             Section("Comments (\(detail.comments.count))") {
+                Button("Add Comment") { showComment = true }
                 ForEach(detail.comments) { comment in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(comment.author).font(.headline)
@@ -279,6 +327,18 @@ private struct ServerTaskDetailView: View {
                         }
                     }
                 }
+            }
+        }
+        .id(mutationRevision)
+        .sheet(item: $editingTask) { task in
+            ServerTaskEditorView(client: client, board: board, existing: task) { receipt in
+                mutationNotice = receipt.warning
+                mutationRevision += 1
+            }
+        }
+        .sheet(isPresented: $showComment) {
+            ServerTaskCommentView(client: client, board: board, taskID: taskID) {
+                mutationRevision += 1
             }
         }
         .textSelection(.enabled)
@@ -350,6 +410,7 @@ struct WorkspaceReadView<Value, Content: View>: View {
     let load: () async throws -> Value
     var refreshAutomatically = true
     @ViewBuilder let content: (Value) -> Content
+    @Environment(\.workspaceRevision) private var workspaceRevision
     @Environment(\.scenePhase) private var scenePhase
     @State private var value: Value?
     @State private var error: String?
@@ -367,7 +428,7 @@ struct WorkspaceReadView<Value, Content: View>: View {
             else if error == nil { ProgressView("Syncing with Hermes...") }
         }
         .refreshable { await refresh() }
-        .task(id: scenePhase) {
+        .task(id: "\(scenePhase)-\(refreshAutomatically ? workspaceRevision : 0)") {
             guard scenePhase == .active else { return }
             repeat {
                 await refresh()
@@ -391,8 +452,8 @@ struct WorkspaceReadView<Value, Content: View>: View {
             guard !Task.isCancelled, requestID == id else { return }
             // Do not leave removed server resources actionable beneath a sync error.
             value = nil
-            if case APIError.notFound = error {
-                self.error = "This workspace endpoint is unavailable on the server."
+            if let failure = error as? APIError, failure.isNotFound {
+                self.error = "This workspace endpoint is unavailable on the server: \(error.localizedDescription)"
             } else {
                 self.error = "Workspace sync failed: \(error.localizedDescription)"
             }

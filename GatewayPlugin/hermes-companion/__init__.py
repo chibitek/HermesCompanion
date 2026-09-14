@@ -1,4 +1,4 @@
-"""Read-only Companion routes, using Hermes's existing domain handlers.
+"""Companion workspace routes, using Hermes's existing domain handlers.
 
 Installed on the root API listener only. Named-profile routes are deliberately
 not registered: a profile-scoped key must never acquire an all-profile roster.
@@ -6,17 +6,29 @@ not registered: a profile-scoped key must never acquire an all-profile roster.
 
 import asyncio
 import inspect
+import hashlib
+import json
+from pathlib import Path
 import logging
 
 log = logging.getLogger(__name__)
+
+
+class WorkspaceRPCError(Exception):
+    def __init__(self, method, code, message):
+        self.method, self.code, self.message = method, code, message
+        super().__init__(f"{method} ({code}): {message}")
 
 
 def rpc(method, params):
     from tui_gateway.server import handle_request
 
     response = handle_request({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    if isinstance(response, dict) and isinstance(response.get("error"), dict):
+        error = response["error"]
+        raise WorkspaceRPCError(method, error.get("code"), str(error.get("message") or "No error reason returned"))
     if not isinstance(response, dict) or "result" not in response:
-        raise RuntimeError("Hermes workspace handler failed")
+        raise RuntimeError(f"Hermes workspace RPC {method} returned no result")
     return response["result"]
 
 
@@ -64,9 +76,9 @@ def projects(_query):
         try:
             tree = rpc("projects.tree", {"profile": name, "session_limit": project_session_limit(name)})
             groups.append({"profile": name, "projects": tree["projects"]})
-        except Exception:
+        except Exception as exc:
             log.exception("Companion project tree unavailable for a profile")
-            errors.append({"profile": name, "message": "Project tree unavailable"})
+            errors.append({"profile": name, "message": f"Project tree could not be loaded ({type(exc).__name__}). Check this profile's database and the gateway log."})
     return {"groups": groups, "errors": errors}
 
 
@@ -159,7 +171,211 @@ def task_attachment(query):
     })
 
 
+def require_profile(query):
+    name = query.get("profile", "")
+    names = {p["name"] for p in rpc("profiles.list", {"include_sessions": False})["profiles"]}
+    if name not in names:
+        raise ValueError("Select an existing profile before managing projects")
+    return name
+
+
+def project_records(query):
+    name = require_profile(query)
+    return {"profile": name, **rpc("projects.list", {"profile": name})}
+
+
+def project_record(query):
+    name = require_profile(query)
+    project_id = query.get("project_id", "")
+    if not project_id:
+        raise ValueError("A project_id is required")
+    result = rpc("projects.get", {"profile": name, "id": project_id})
+    if (result.get("project") or {}).get("id") != project_id:
+        raise ValueError("Project identity no longer matches; refresh the project list")
+    return {"profile": name, **result}
+
+
+def project_mutation(query, payload, operation):
+    name = require_profile(query)
+    fields = {
+        "create": {"name", "description", "slug", "folders", "primary_path", "icon", "color", "board_slug"},
+        "update": {"name", "description", "icon", "color", "board_slug"},
+        "add_folder": {"path", "label", "is_primary"},
+        "remove_folder": {"path"}, "set_primary": {"path"},
+        "archive": {"restore"}, "set_active": set(), "delete": set(),
+    }[operation]
+    if set(payload) - fields:
+        raise ValueError("Unsupported project fields: " + ", ".join(sorted(set(payload) - fields)))
+    for key, value in payload.items():
+        if key == "folders":
+            if not isinstance(value, list) or any(not isinstance(p, str) or not p.strip() for p in value):
+                raise ValueError("folders must be a list of nonempty server paths")
+        elif key in {"restore", "is_primary"}:
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be true or false")
+        elif not isinstance(value, str):
+            raise ValueError(f"{key} must be text")
+    if operation == "create" or "name" in payload:
+        if not payload.get("name", "").strip():
+            raise ValueError("A nonempty project name is required")
+    if operation == "update" and not payload:
+        raise ValueError("Choose a project field to change")
+    if operation in {"add_folder", "remove_folder", "set_primary"} and not payload.get("path", "").strip():
+        raise ValueError("A nonempty server folder path is required")
+    # Native normalization treats a blank/relative path as gateway cwd. Require
+    # explicit server paths so a phone edit cannot accidentally claim that cwd.
+    for path in [*payload.get("folders", []), *([payload["path"]] if "path" in payload else []),
+                 *([payload["primary_path"]] if payload.get("primary_path") else [])]:
+        if not path.startswith(("/", "~/")):
+            raise ValueError("Use an absolute server folder path or ~/ path")
+    project_id = query.get("project_id", "")
+    if operation != "create":
+        if not project_id and operation != "set_active":
+            raise ValueError("A project_id is required")
+        if project_id:
+            current = project_record(query)["project"]
+            if operation == "delete" and rpc("projects.list", {"profile": name}).get("active_id") == project_id:
+                raise ValueError("This project is active. Clear the active project in this profile before deleting its record")
+            if operation in {"remove_folder", "set_primary"}:
+                from hermes_cli.projects_db import _normalize_path
+                if _normalize_path(payload["path"]) not in {f["path"] for f in current["folders"]}:
+                    raise ValueError("Folder is no longer linked to this project; refresh before changing it")
+    params = {"profile": name, **payload}
+    if operation != "create":
+        params["id"] = project_id
+    result = rpc("projects." + operation, params)
+    if operation in {"archive", "set_active", "delete"}:
+        return {"profile": name, **rpc("projects.list", {"profile": name})}
+    if not result.get("project") or (operation != "create" and result["project"].get("id") != project_id):
+        raise RuntimeError("Hermes did not confirm the requested project")
+    return {"profile": name, **result}
+
+
+def create_project(query, payload):
+    return project_mutation(query, payload, "create")
+
+
+def update_project(query, payload):
+    return project_mutation(query, payload, "update")
+
+
+def add_project_folder(query, payload):
+    return project_mutation(query, payload, "add_folder")
+
+
+def remove_project_folder(query, payload):
+    return project_mutation(query, payload, "remove_folder")
+
+
+def primary_project_folder(query, payload):
+    return project_mutation(query, payload, "set_primary")
+
+
+def archive_project(query, payload):
+    return project_mutation(query, payload, "archive")
+
+
+def delete_project(query, payload):
+    return project_mutation(query, payload, "delete")
+
+
+def activate_project(query, payload):
+    return project_mutation(query, payload, "set_active")
+
+
+def workspace_capabilities(_query):
+    from plugins.kanban.dashboard import plugin_api as native
+
+    return {"version": "0.1.9", "project_manage": True, "task_create": True, "task_update": True,
+            "task_comment": True, "task_statuses": [*native._STATUS_HANDLERS, "archived"]}
+
+
+def require_board(query):
+    slug = query.get("board", "")
+    if not slug or slug not in {b["slug"] for b in boards({})["boards"]}:
+        raise ValueError("Select an existing board before changing a task")
+    return slug
+
+
+def validated_payload(model, payload):
+    unknown = set(payload) - set(model.model_fields)
+    if unknown:
+        raise ValueError("Unsupported task fields: " + ", ".join(sorted(unknown)))
+    return model.model_validate(payload)
+
+
+def create_task(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+
+    slug = require_board(query)
+    if not isinstance(payload.get("title"), str) or not payload["title"].strip():
+        raise ValueError("A task title is required")
+    if not payload.get("idempotency_key"):
+        raise ValueError("A stable idempotency_key is required to create a task safely")
+    result = native.create_task(validated_payload(native.CreateTaskBody, payload), board=slug)
+    if not result.get("task"):
+        raise RuntimeError("Hermes did not return the created task")
+    return {"board": slug, **result}
+
+
+def update_task(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+
+    slug = require_board(query)
+    task_id = query.get("task_id", "")
+    if not task_id:
+        raise ValueError("A task_id is required")
+    if not payload:
+        raise ValueError("Choose at least one task field to change")
+    if "title" in payload and (not isinstance(payload["title"], str) or not payload["title"].strip()):
+        raise ValueError("The task title cannot be empty")
+    status = payload.get("status")
+    for field, statuses in {"result": {"done"}, "summary": {"done", "review"},
+                            "block_reason": {"blocked", "scheduled"}}.items():
+        if field in payload and status not in statuses:
+            raise ValueError(f"{field} requires a transition to {' or '.join(sorted(statuses))}")
+    # The native handler verifies membership and applies its workflow/worker
+    # transition rules. Only fields explicitly sent by the editor are changed.
+    result = native.update_task(task_id, validated_payload(native.UpdateTaskBody, payload), board=slug)
+    if not result.get("task") or result["task"]["id"] != task_id:
+        raise RuntimeError("Hermes did not confirm the requested task update")
+    return {"board": slug, **result}
+
+
+def comment_task(query, payload):
+    from plugins.kanban.dashboard import plugin_api as native
+
+    slug = require_board(query)
+    task_id = query.get("task_id", "")
+    if not task_id:
+        raise ValueError("A task_id is required")
+    if set(payload) != {"body"} or not isinstance(payload["body"], str):
+        raise ValueError("Provide the comment body as text")
+    # The author identifies the UI that submitted the comment; the client cannot
+    # impersonate another profile or overwrite author attribution.
+    result = native.add_comment(task_id, native.CommentBody(body=payload["body"], author="companion"), board=slug)
+    return {"board": slug, "task_id": task_id, **result}
+
+
+WRITERS = {
+    ("POST", "projects-create"): create_project,
+    ("PATCH", "project-record"): update_project,
+    ("DELETE", "project-record"): delete_project,
+    ("POST", "project-folder"): add_project_folder,
+    ("DELETE", "project-folder"): remove_project_folder,
+    ("POST", "project-primary"): primary_project_folder,
+    ("POST", "project-archive"): archive_project,
+    ("POST", "project-active"): activate_project,
+    ("POST", "tasks"): create_task,
+    ("PATCH", "task"): update_task,
+    ("POST", "task-comment"): comment_task,
+}
+
+
 READERS = {
+    "project-records": project_records,
+    "project-record": project_record,
+    "capabilities": workspace_capabilities,
     "projects": projects,
     "project": project_detail,
     "project-history": project_history,
@@ -170,6 +386,88 @@ READERS = {
     "task": task_detail,
     "task-attachment": task_attachment,
 }
+
+
+def change_fingerprint():
+    """Cheap invalidation token from server-owned paths, never file contents.
+
+    SQLite WAL changes cover writes from other Hermes processes. This is an
+    invalidation hint; normal domain reads remain the source of truth.
+    """
+    from hermes_cli.profiles import get_profile_dir, list_profile_names
+    from hermes_cli import kanban_db
+
+    paths = []
+    for profile in list_profile_names():
+        home = get_profile_dir(profile)
+        for name in ("state.db", "projects.db", "config.yaml", "cron/jobs.json"):
+            path = home / name
+            paths.append(path)
+            if name.endswith(".db"):
+                paths.append(Path(str(path) + "-wal"))
+    for board in kanban_db.list_boards(include_archived=True):
+        path = kanban_db.kanban_db_path(board=board["slug"])
+        paths.extend((path, Path(str(path) + "-wal"), kanban_db.board_metadata_path(board["slug"])))
+    return fingerprint_paths(paths)
+
+
+def fingerprint_paths(paths):
+    records = []
+    for path in sorted(set(paths)):
+        try:
+            stat = path.stat()
+            records.append((str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns))
+        except FileNotFoundError:
+            records.append((str(path), None))
+    return hashlib.sha256(json.dumps(records).encode()).hexdigest()
+
+
+async def stream_changes(request, adapter):
+    from aiohttp import web
+
+    denied = adapter._check_auth(request)
+    if denied is not None:
+        return denied
+    try:
+        previous = await asyncio.to_thread(change_fingerprint)
+    except Exception as exc:
+        log.exception("Companion change monitor initialization failed")
+        return web.json_response({"error": {
+            "code": "companion_change_monitor_unavailable",
+            "message": f"Cannot monitor Hermes workspace changes ({type(exc).__name__}). Check the gateway log and bridge compatibility."
+        }}, status=503)
+    response = web.StreamResponse(headers={
+        "Content-Type": "text/event-stream", "Cache-Control": "no-store",
+        "X-Accel-Buffering": "no",
+    })
+    await response.prepare(request)
+
+    async def changed(revision):
+        payload = json.dumps({"delta": revision})
+        await response.write(f"event: workspace.changed\ndata: {payload}\n\n".encode())
+
+    try:
+        await changed(previous)
+        ticks = 0
+        while True:
+            await asyncio.sleep(1)
+            current = await asyncio.to_thread(change_fingerprint)
+            if current != previous:
+                previous = current
+                await changed(current)
+            ticks += 1
+            if ticks % 5 == 0:
+                await response.write(b": keepalive\n\n")
+    except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+        pass
+    except Exception as exc:
+        log.exception("Companion change monitor stopped")
+        payload = json.dumps({"message": f"Workspace change monitoring stopped ({type(exc).__name__}). Check the gateway log; Companion will reconnect."})
+        try:
+            await response.write(f"event: error\ndata: {payload}\n\n".encode())
+        except (ConnectionError, OSError):
+            pass
+    return response
 
 
 def wire(app, adapter):
@@ -188,12 +486,58 @@ def wire(app, adapter):
                 if isinstance(result, web.StreamResponse):
                     return result
                 return web.json_response(result, headers={"Cache-Control": "no-store"})
+            except WorkspaceRPCError as exc:
+                status = 404 if exc.code == 5062 else 400 if exc.code == 5063 else 503
+                return web.json_response({"error": {"code": str(exc.code), "message": str(exc)}}, status=status)
             except ValueError as exc:
                 return web.json_response({"error": str(exc)}, status=400)
-            except Exception:
-                log.exception("Companion workspace read failed")
-                return web.json_response({"error": "Hermes workspace data is unavailable"}, status=503)
+            except Exception as exc:
+                log.exception("Companion workspace read failed: %s", reader.__name__)
+                return web.json_response({"error": {
+                    "code": "companion_" + reader.__name__ + "_failed",
+                    "message": f"Hermes could not load {reader.__name__.replace('_', ' ')} ({type(exc).__name__}). Check the gateway log and Companion bridge version."
+                }}, status=503)
         return read
+
+    def write_handler(writer):
+        async def write(request):
+            denied = adapter._check_auth(request)
+            if denied is not None:
+                return denied
+            from fastapi import HTTPException
+            from pydantic import ValidationError
+            try:
+                payload = await request.json()
+                if not isinstance(payload, dict):
+                    raise ValueError("The workspace request must be a JSON object")
+                query = dict(request.query)
+                allowed_query = {"profile", "project_id"} if "project" in writer.__name__ else {"board", "task_id"}
+                if set(query) - allowed_query:
+                    raise ValueError("Only " + ", ".join(sorted(allowed_query)) + " query fields are accepted")
+                result = await asyncio.to_thread(writer, query, payload)
+                return web.json_response(result, headers={"Cache-Control": "no-store"})
+            except ValidationError as exc:
+                details = "; ".join(".".join(map(str, item["loc"])) + ": " + item["msg"] for item in exc.errors())
+                return web.json_response({"error": {"code": "invalid_task_fields", "message": details}}, status=422)
+            except HTTPException as exc:
+                return web.json_response({"error": {"code": "task_operation_rejected", "message": str(exc.detail)}}, status=exc.status_code)
+            except WorkspaceRPCError as exc:
+                status = 404 if exc.code == 5062 else 400 if exc.code == 5063 else 503
+                return web.json_response({"error": {"code": str(exc.code), "message": str(exc)}}, status=status)
+            except ValueError as exc:
+                return web.json_response({"error": str(exc)}, status=400)
+            except Exception as exc:
+                log.exception("Companion workspace mutation failed: %s", writer.__name__)
+                return web.json_response({"error": {
+                    "code": "companion_" + writer.__name__ + "_failed",
+                    "message": f"Hermes could not confirm {writer.__name__.replace('_', ' ')} ({type(exc).__name__}). Refresh this resource before retrying; part of the change may already have been applied."
+                }}, status=503)
+        return write
+
+    for (method, path), writer in WRITERS.items():
+        app.router.add_route(method, "/api/companion/" + path, write_handler(writer))
+
+    app.router.add_get("/api/companion/changes", lambda request: stream_changes(request, adapter))
 
     for path, reader in READERS.items():
         app.router.add_get("/api/companion/" + path, handler(reader))

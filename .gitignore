@@ -28,6 +28,9 @@ HermesCompanion.xcodeproj
 build/
 DerivedData/
 .env
+.env.*
+**/.env
+**/.env.*
 
 # TLS certificates and keys — never commit
 certs/
@@ -36,3 +39,15 @@ certs/
 *.p12
 *.mobileprovision
 .bug-hunter/
+
+# Private signing and local verification artifacts
+*.p8
+*.pfx
+*.cer
+*.xcarchive/
+*.xcresult/
+*.log
+*.db
+*.sqlite*
+private/
+.local/

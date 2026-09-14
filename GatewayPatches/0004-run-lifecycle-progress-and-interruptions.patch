@@ -1,0 +1,174 @@
+diff --git a/gateway/platforms/api_server_runs.py b/gateway/platforms/api_server_runs.py
+index 66138804aa..b9fda04b5d 100644
+--- a/gateway/platforms/api_server_runs.py
++++ b/gateway/platforms/api_server_runs.py
+@@ -137,6 +137,9 @@ def _set_run_status(self, run_id: str, status: str, **fields: Any) -> Dict[str,
+     current.update(fields)
+     if status != "waiting_for_approval":
+         current.pop("approval", None)
++    if status in TERMINAL_STATUSES:
++        for key in ("progress_kind", "progress_message", "progress_at"):
++            current.pop(key, None)
+     self._run_statuses[run_id] = current
+     should_persist = (
+         status != previous_status
+@@ -156,7 +159,8 @@ def _make_run_event_callback(self, run_id: str, loop: "asyncio.AbstractEventLoop
+ 
+     def _push(event: Dict[str, Any]) -> None:
+         self._set_run_status(
+-            run_id, self._run_statuses.get(run_id, {}).get("status", "running"), last_event=event.get("event"))
++            run_id, self._run_statuses.get(run_id, {}).get("status", "running"), last_event=event.get("event"),
++            progress_kind=None, progress_message=None, progress_at=None)
+         q = self._run_streams.get(run_id)
+         if q is not None:
+             with suppress(Exception):
+@@ -609,11 +613,40 @@ async def _execute_run(self, run: _RunLaunch, *, _api_server) -> None:
+     _redact_api_error_text = _api_server._redact_api_error_text
+     run_id, loop = run.run_id, asyncio.get_running_loop()
+ 
++    def _publish_progress(kind: str, message: str) -> None:
++        current = self._run_statuses.get(run_id, {})
++        if run_id not in self._active_run_agents or current.get("status") in TERMINAL_STATUSES:
++            return
++        event = _run_event(run_id, "run.progress", kind=kind, message=message)
++        self._set_run_status(run_id, current.get("status", "running"), last_event="run.progress",
++                             progress_kind=kind, progress_message=message, progress_at=event["timestamp"])
++        run.put_event(event)
++
++    def _status_cb(kind: str, message: Optional[str] = None) -> None:
++        if not isinstance(message, str) or not message.strip():
++            return
++        # The native lease wait and lifecycle callbacks may originate on an executor thread.
++        # Redact before retaining or forwarding free text; bound each public progress frame.
++        safe = _api_server.redact_sensitive_text(message, force=True)[:4096]
++        safe_kind = kind if kind in {"lifecycle", "warn", "compacted"} else "lifecycle"
++        with suppress(RuntimeError):
++            loop.call_soon_threadsafe(_publish_progress, safe_kind, safe)
++
++    def _publish_text(delta: str) -> None:
++        current = self._run_statuses.get(run_id, {})
++        if run_id not in self._active_run_agents or current.get("status") in TERMINAL_STATUSES:
++            return
++        # Do not retain an old lease-wait notice after the model starts responding.
++        if current.get("last_event") != "message.delta":
++            self._set_run_status(run_id, current.get("status", "running"), last_event="message.delta",
++                                 progress_kind=None, progress_message=None, progress_at=None)
++        run.put_event(_run_event(run_id, "message.delta", delta=delta))
++
+     def _text_cb(delta: Optional[str]) -> None:
+         if delta is None or run_id not in self._run_streams:
+             return
+         with suppress(Exception):
+-            loop.call_soon_threadsafe(run.put_event, _run_event(run_id, "message.delta", delta=delta))
++            loop.call_soon_threadsafe(_publish_text, delta)
+ 
+     def _finish(status: str, extra: Optional[dict] = None, **fields: Any) -> None:
+         """Terminal status, then best-effort ``run.<status>`` event; key order is wire shape."""
+@@ -631,6 +664,7 @@ async def _execute_run(self, run: _RunLaunch, *, _api_server) -> None:
+             agent = self._create_agent(
+                 stream_delta_callback=_text_cb, tool_progress_callback=self._make_run_event_callback(run_id, loop),
+                 **run.agent_kwargs)
++        agent.status_callback = _status_cb
+         self._active_run_agents[run_id] = agent
+         approval_notify = _make_approval_notify(self, run, _api_server=_api_server)
+         result, usage = await loop.run_in_executor(
+@@ -639,6 +673,9 @@ async def _execute_run(self, run: _RunLaunch, *, _api_server) -> None:
+             result = {}
+         if run_id in self._stopping_run_ids and result.get("interrupted") is True:
+             _finish("cancelled")
++        elif result.get("interrupted") is True:
++            extra = {"pending_steer": result["pending_steer"]} if result.get("pending_steer") else {}
++            _finish("interrupted", extra, output=result.get("final_response", ""), usage=usage)
+         elif result.get("failed"):
+             # Non-retryable client errors (401/400) return failed=True rather than raising.
+             _finish("failed", error=_redact_api_error_text(result.get("error") or "agent run failed"))
+diff --git a/tests/gateway/test_api_server_run_progress.py b/tests/gateway/test_api_server_run_progress.py
+new file mode 100644
+index 0000000000..16fdfe2af8
+--- /dev/null
++++ b/tests/gateway/test_api_server_run_progress.py
+@@ -0,0 +1,84 @@
++"""Durable HTTP runs expose lifecycle waits and never call interruptions completed."""
++import asyncio
++import threading
++from unittest.mock import MagicMock
++
++import pytest
++from aiohttp import web
++from aiohttp.test_utils import TestClient, TestServer
++from gateway.config import PlatformConfig
++from gateway.platforms.api_server import APIServerAdapter
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("interrupted", [False, True])
++async def test_lifecycle_wait_is_pollable_and_interruption_is_terminal(monkeypatch, interrupted):
++    adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "test-key"}))
++    release, ready = threading.Event(), threading.Event()
++    agent = MagicMock()
++    agent.status_callback = None
++    agent.session_prompt_tokens = agent.session_completion_tokens = agent.session_total_tokens = 0
++
++    def run_conversation(**kwargs):
++        if agent.status_callback is not None:
++            agent.status_callback("lifecycle", "Waiting for another Hermes process. Authorization: Bearer super-secret-test-token")
++        ready.set()
++        assert release.wait(10)
++        return {"final_response": "Stopped before processing" if interrupted else "Finished",
++                "interrupted": interrupted, "completed": not interrupted}
++
++    agent.run_conversation.side_effect = run_conversation
++    callbacks = {}
++
++    def create_agent(**kwargs):
++        callbacks.update(kwargs)
++        return agent
++
++    monkeypatch.setattr(adapter, "_create_agent", create_agent)
++    app = web.Application()
++    app.router.add_post("/v1/runs", adapter._handle_runs)
++    app.router.add_get("/v1/runs/{run_id}", adapter._handle_get_run)
++    app.router.add_get("/v1/runs/{run_id}/events", adapter._handle_run_events)
++    async with TestClient(TestServer(app), headers={"Authorization": "Bearer test-key"}) as client:
++        admission = await client.post("/v1/runs", json={"input": "test lifecycle"})
++        assert admission.status == 202
++        run_id = (await admission.json())["run_id"]
++        try:
++            assert await asyncio.to_thread(ready.wait, 3)
++            snapshot = await (await client.get(f"/v1/runs/{run_id}")).json()
++            assert snapshot["progress_kind"] == "lifecycle"
++            assert "Waiting for another Hermes process" in snapshot["progress_message"]
++            assert "super-secret-test-token" not in snapshot["progress_message"]
++            assert snapshot["progress_at"] > 0
++            stream = await client.get(f"/v1/runs/{run_id}/events")
++            frame = (await asyncio.wait_for(stream.content.readuntil(b"\n\n"), 3)).decode()
++            assert '"run.progress"' in frame
++            assert "Waiting for another Hermes process" in frame
++            assert "super-secret-test-token" not in frame
++            if not interrupted:
++                callbacks["stream_delta_callback"]("Response started")
++                delta = (await asyncio.wait_for(stream.content.readuntil(b"\n\n"), 3)).decode()
++                assert '"message.delta"' in delta
++                responding = await (await client.get(f"/v1/runs/{run_id}")).json()
++                assert responding.get("progress_message") is None
++                assert responding["last_event"] == "message.delta"
++            release.set()
++            ending = await asyncio.wait_for(stream.text(), 3)
++            expected = "interrupted" if interrupted else "completed"
++            assert f'"run.{expected}"' in ending
++            snapshot = await (await client.get(f"/v1/runs/{run_id}")).json()
++            assert snapshot["status"] == expected
++            assert snapshot.get("progress_message") is None
++            assert snapshot["output"] == ("Stopped before processing" if interrupted else "Finished")
++            # A delayed producer must not resurrect a finished run or reintroduce its wait.
++            agent.status_callback("lifecycle", "Late callback")
++            await asyncio.sleep(0)
++            late = await (await client.get(f"/v1/runs/{run_id}")).json()
++            assert late["status"] == expected
++            assert late.get("progress_message") is None
++        finally:
++            release.set()
++            task = adapter._active_run_tasks.get(run_id)
++            if task is not None:
++                await asyncio.wait_for(asyncio.shield(task), 3)
++            adapter._run_idempotency_store.close()

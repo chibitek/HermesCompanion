@@ -12,6 +12,7 @@ struct ChatView: View {
     @State private var showSessionPicker = false
     @State private var showSettings = false
     @State private var showPlatformHub = false
+    @State private var showRunControls = false
     @State private var showVideo = false
     @State private var attachments: [AttachmentData] = []
     @State private var showPhotoPicker = false
@@ -22,6 +23,44 @@ struct ChatView: View {
     @State private var showVoicePage = false
     @StateObject private var wakePhraseListener = WakePhraseListener()
     @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = false
+
+    private var serverStatus: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let age = store.lastServerResponseAt.map { context.date.timeIntervalSince($0) }
+            let responsive = age.map { $0 < 15 } ?? false
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Circle().fill(responsive ? Color.green : Color.orange).frame(width: 7, height: 7)
+                    Text(store.isStreaming ? store.responseActivity : (responsive ? "Hermes reachable" : "Checking Hermes"))
+                    Spacer()
+                    if let age {
+                        Text("Server \(max(0, Int(age)))s ago")
+                    }
+                    if let latency = store.serverLatencyMs { Text("\(latency) ms") }
+                }
+                if store.isStreaming {
+                    if let signal = store.lastChatActivityAt {
+                        Text("Stream activity \(max(0, Int(context.date.timeIntervalSince(signal))))s ago")
+                    } else {
+                        Text("Waiting for the gateway to acknowledge this message")
+                    }
+                }
+                if let issue = store.liveChangesError, store.syncError == nil {
+                    Text(issue).foregroundStyle(.orange)
+                }
+                if let issue = store.syncError {
+                    Text(issue).foregroundStyle(.orange).textSelection(.enabled)
+                } else if !store.isStreaming, let synced = store.lastSyncedAt {
+                    Text("Chat synced \(max(0, Int(context.date.timeIntervalSince(synced))))s ago")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(appearance.activeTheme.textSecondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -36,6 +75,8 @@ struct ChatView: View {
                     if store.isStreaming || !store.toolEvents.isEmpty {
                         toolEventsPanel
                     }
+
+                    serverStatus
 
                     inputBar
                 }
@@ -61,6 +102,9 @@ struct ChatView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button("Run Controls", systemImage: "play.rectangle") { showRunControls = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showVideo = true
                     } label: {
@@ -73,6 +117,15 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: "gearshape")
                     }
+                }
+            }
+            .sheet(isPresented: $showRunControls) {
+                if let client = store.apiClient, let config = store.connectionConfig {
+                    NavigationStack {
+                        DurableRunView(client: client, scope: config.normalizedBaseURL, capabilities: store.capabilities?.features,
+                            session: store.activeSession, model: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionModelOverride,
+                            provider: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionProviderOverride)
+                    }.id(ObjectIdentifier(client))
                 }
             }
             .sheet(isPresented: $showVideo) {
@@ -185,7 +238,7 @@ struct ChatView: View {
                             attachments.append(AttachmentData(data: jpegData, fileName: fileName, mimeType: "image/jpeg"))
                         }
                     } catch {
-                        // Ignore individual failures, continue processing others
+                        store.error = AppError(message: "Could not load a selected photo: \(error.localizedDescription). Open it in Photos to finish downloading it, then attach it again.")
                     }
                 }
                 photoPickerItems = []
@@ -193,7 +246,7 @@ struct ChatView: View {
         }
         // File picker sheet
         .sheet(isPresented: $showFilePicker) {
-            FilePickerView { data, fileName, mimeType in
+            FilePickerView(onError: { store.error = AppError(message: $0) }) { data, fileName, mimeType in
                 attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: mimeType))
             }
         }
@@ -298,7 +351,9 @@ struct ChatView: View {
                             accentColor: appearance.accent,
                             compact: appearance.compactModeBool,
                             showTimestamp: appearance.showTimestampsBool,
-                            images: msg.images
+                            timestamp: msg.timestamp,
+                            images: msg.images,
+                            toolNames: msg.toolNames
                         )
                             .id(msg.id)
                     }
@@ -420,6 +475,12 @@ struct ChatView: View {
         let images = attachments.filter { $0.isImage }.map { $0.data }
         let fileAttachments = attachments
         guard !visibleText.isEmpty || !images.isEmpty || !fileAttachments.isEmpty else { return }
+        for attachment in fileAttachments where !attachment.isImage {
+            guard MimeTypeResolver.isTextType(attachment.mimeType), String(data: attachment.data, encoding: .utf8) != nil else {
+                store.error = AppError(message: "Cannot send \(attachment.fileName) (\(attachment.mimeType)): this gateway's chat accepts images and UTF-8 text. Export this document as text or images. Your draft and attachments have been kept.")
+                return
+            }
+        }
         let payload = SkillCommandLogic.messagePayload(for: visibleText)
         inputText = ""
         attachments = []

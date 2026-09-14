@@ -12,6 +12,15 @@ final class AppStore: ObservableObject {
     @Published var sessions: [HermesSession] = []
     @Published var activeSession: HermesSession?
     @Published var messages: [ChatDisplayMessage] = []
+    @Published private(set) var workspaceRevision = 0
+    @Published private(set) var liveChangesAvailable = false
+    @Published private(set) var liveChangesError: String?
+    @Published private(set) var lastServerResponseAt: Date?
+    @Published private(set) var lastSyncedAt: Date?
+    @Published private(set) var syncError: String?
+    @Published private(set) var serverLatencyMs: Int?
+    @Published private(set) var responseActivity = ""
+    @Published private(set) var lastChatActivityAt: Date?
     @Published var isStreaming = false
     @Published var streamingText = ""
     /// Live reasoning text (assistant.delta events tagged tool_name=_thinking).
@@ -21,6 +30,8 @@ final class AppStore: ObservableObject {
        didSet { if toolEvents.count > 50 { toolEvents.removeFirst(toolEvents.count - 50) } }
     }
     @Published var skills: [Skill] = []
+    @Published private(set) var skillsError: String?
+    @Published private(set) var toolsetsError: String?
     @Published var toolsets: [ToolsetInfo] = []
     @Published var availableModels: [String] = []
     @Published var modelInfos: [String: ModelInfo] = [:]
@@ -113,12 +124,26 @@ final class AppStore: ObservableObject {
         didSet {
             guard oldValue !== apiClient else { return }
             streamTask?.cancel()
+            liveChangesAvailable = false
+            liveChangesError = nil
+            lastServerResponseAt = nil
+            lastSyncedAt = nil
+            syncError = nil
+            serverLatencyMs = nil
+            responseActivity = ""
+            lastSessionListSyncAt = nil
+            lastSyncedHistory = []
+            lastFullHistorySyncAt = nil
+            forceHistoryRefresh = false
+            lastChatActivityAt = nil
             sessionSelectionID = UUID()
             capabilities = nil
             sessions = []
             activeSession = nil
             messages = []
             skills = []
+            skillsError = nil
+            toolsetsError = nil
             toolsets = []
             toolEvents = []
             streamingText = ""
@@ -147,6 +172,12 @@ final class AppStore: ObservableObject {
     private var sessionRefreshID = UUID()
     private var streamTask: Task<Void, Never>?
     private var chatTurnID = UUID()
+    private var historyRefreshID = UUID()
+    private var isSyncing = false
+    private var lastSessionListSyncAt: Date?
+    private var lastSyncedHistory: [SessionMessage] = []
+    private var lastFullHistorySyncAt: Date?
+    private var forceHistoryRefresh = false
     private let activeSessionPersistence = ActiveSessionPersistence()
 
     // MARK: - Init
@@ -289,7 +320,7 @@ final class AppStore: ObservableObject {
                 self.isLoadingConnection = false
                 return
             }
-            self.error = AppError(message: "Connection failed. Select a server to retry.")
+            self.error = AppError(message: "Could not connect to \(config.label): \(error.localizedDescription). Check the gateway URL and network, then retry.")
             self.isLoadingConnection = false
         }
     }
@@ -300,7 +331,6 @@ final class AppStore: ObservableObject {
         // An explicit (re)connect supersedes any pending background retry.
         reconnectWorkItem?.cancel()
         reconnectWorkItem = nil
-        reconnectRetryCount = 0
         do {
             let health = try await client.checkHealth()
             guard health.status == "ok", health.isHermesAPI else {
@@ -419,7 +449,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before loading models.")
             return
         }
         do {
@@ -600,7 +630,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before loading conversation history.")
             return
         }
         let refreshID = UUID()
@@ -638,7 +668,7 @@ final class AppStore: ObservableObject {
         let selectionID = sessionSelectionID
         do {
             _ = try await client.getSession(sessionId: current.id)
-        } catch APIError.notFound {
+        } catch let failure as APIError where failure.isNotFound {
             guard apiClient === client, sessionRefreshID == refreshID,
                   sessionSelectionID == selectionID, activeSession?.id == current.id,
                   !isStreaming, !Task.isCancelled else { return }
@@ -678,14 +708,16 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before creating a conversation.")
             return
         }
         stopStreaming()
         let creationID = UUID()
         sessionSelectionID = creationID
         do {
-            let session = try await client.createSession(title: title)
+            let session = try await client.createSession(title: title,
+                model: sessionModelLockAvailable ? nonEmpty(sessionModelOverride ?? gatewayDefaultModel) : nil,
+                provider: sessionModelLockAvailable ? nonEmpty(sessionProviderOverride ?? gatewayDefaultProvider) : nil)
             guard apiClient === client, sessionSelectionID == creationID else { return }
             sessionRefreshID = UUID()
             self.sessions.insert(session, at: 0)
@@ -704,7 +736,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before opening this conversation.")
             return
         }
         self.activeSession = session
@@ -712,6 +744,7 @@ final class AppStore: ObservableObject {
             activeSessionPersistence.save(sessionID: session.id, for: baseURL)
         }
         self.messages = []
+        lastSyncedHistory = []
         self.toolEvents = []
         self.streamingText = ""
             self.streamingThinking = ""
@@ -721,6 +754,8 @@ final class AppStore: ObservableObject {
         do {
             let history = try await client.getMessages(sessionId: session.id)
             guard apiClient === client, sessionSelectionID == selectionID else { return }
+            self.lastSyncedHistory = history
+            self.lastFullHistorySyncAt = Date()
             self.messages = history
                 .filter { $0.isUser || $0.isAssistant }
                 .map { ChatDisplayMessage(from: $0) }
@@ -728,6 +763,7 @@ final class AppStore: ObservableObject {
             guard apiClient === client, sessionSelectionID == selectionID else { return }
             self.error = AppError(message: "Failed to load messages: \(error.localizedDescription)")
         }
+        guard apiClient === client, sessionSelectionID == selectionID else { return }
         // Session model is the server's durable row value. Use it to show a
         // sane current model even when Hermes is older and has no runtime lock.
         if let model = session.model, !model.isEmpty {
@@ -743,26 +779,114 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Silently reload the active session's messages without tearing down UI
-    /// state. Used by the foreground-reconnect path so replies that arrived
-    /// from other platforms (Telegram, Discord, macOS) show up on return.
-    /// Unlike `selectSession`, this does NOT blank `messages` first (no
-    /// flicker) and does NOT touch `toolEvents` / `streamingText`, which
-    /// belong to any in-flight local stream. Fails silently — this is a
-    /// background refresh, not a user-initiated action.
-    private func refreshActiveSessionMessages(_ session: HermesSession) async {
-        guard let client = apiClient, !isStreaming else { return }
-        do {
-            let history = try await client.getMessages(sessionId: session.id)
-            // Re-check: the user may have switched sessions or started a
-            // stream while the request was in flight.
-            guard apiClient === client, activeSession?.id == session.id, !isStreaming else { return }
-            self.messages = history
-                .filter { $0.isUser || $0.isAssistant }
-                .map { ChatDisplayMessage(from: $0) }
-        } catch {
-            // Silent — background refresh should not surface errors.
+    /// Runs only while the app is foregrounded. Serial reads prevent overlapping
+    /// polls; transcript, selection and turn IDs reject stale in-flight snapshots.
+    func runLiveSync() async {
+        guard let client = apiClient else { return }
+        let changes = Task { await watchWorkspaceChanges(client: client) }
+        defer { changes.cancel() }
+        while !Task.isCancelled {
+            guard apiClient === client else { return }
+            await syncNow()
+            do { try await Task.sleep(for: .seconds(syncError == nil ? 2 : 5)) }
+            catch { return }
         }
+    }
+
+    private func watchWorkspaceChanges(client: HermesAPIClient) async {
+        while !Task.isCancelled, apiClient === client {
+            do {
+                let events = try await client.workspaceChanges()
+                guard apiClient === client, !Task.isCancelled else { return }
+                liveChangesAvailable = true
+                liveChangesError = nil
+                for try await event in events {
+                    guard apiClient === client, !Task.isCancelled else { return }
+                    if event.event == "error" {
+                        throw APIError.invalidEndpoint(event.message ?? "The workspace change feed failed without a reason. Check the gateway log.")
+                    }
+                    guard event.event == "workspace.changed" else { continue }
+                    workspaceRevision += 1
+                    forceHistoryRefresh = true
+                    lastSessionListSyncAt = nil
+                    await syncNow()
+                }
+                try Task.checkCancellation()
+                throw APIError.invalidEndpoint("The workspace change feed disconnected.")
+            } catch {
+                guard apiClient === client, !Task.isCancelled else { return }
+                liveChangesAvailable = false
+                if let failure = error as? APIError, failure.isNotFound {
+                    liveChangesError = "Using periodic sync. Install Companion bridge 0.1.7 on this server for live workspace updates."
+                    return
+                }
+                liveChangesError = "Live updates interrupted: \(error.localizedDescription) Periodic sync remains active."
+                do { try await Task.sleep(for: .seconds(5)) }
+                catch { return }
+            }
+        }
+    }
+
+    func syncNow() async {
+        guard !isSyncing, let client = apiClient else { return }
+        isSyncing = true
+        defer { isSyncing = false }
+        do {
+            let start = Date()
+            let health = try await client.checkHealth()
+            guard apiClient === client, !Task.isCancelled else { return }
+            guard health.status == "ok", health.isHermesAPI else {
+                throw APIError.invalidEndpoint(Self.invalidHealthMessage(health))
+            }
+            serverLatencyMs = Int(Date().timeIntervalSince(start) * 1_000)
+            lastServerResponseAt = Date()
+            // The catalog is much larger than a health response. Refresh it on
+            // its own cadence; selected chat changes are fetched every cycle.
+            if !isStreaming, lastSessionListSyncAt == nil || Date().timeIntervalSince(lastSessionListSyncAt!) >= 10 {
+                let refreshID = UUID()
+                sessionRefreshID = refreshID
+                let snapshot = try await client.listSessions()
+                guard apiClient === client, sessionRefreshID == refreshID, !Task.isCancelled else { return }
+                applySessionSnapshot(snapshot)
+                await reconcileMissingActiveSession(client: client, refreshID: refreshID)
+                guard apiClient === client, sessionRefreshID == refreshID, !Task.isCancelled else { return }
+                lastSessionListSyncAt = Date()
+            }
+            if let active = activeSession, !isStreaming {
+                try await refreshActiveSessionMessages(active, client: client)
+            }
+            guard apiClient === client, !Task.isCancelled else { return }
+            syncError = nil
+            if !isStreaming { lastSyncedAt = Date() }
+        } catch {
+            guard apiClient === client, !Task.isCancelled else { return }
+            syncError = "Sync paused: \(error.localizedDescription) Retrying automatically."
+        }
+    }
+
+    func refreshActiveSessionMessages(_ session: HermesSession, client: HermesAPIClient) async throws {
+        guard apiClient === client, !isStreaming else { return }
+        let selection = sessionSelectionID
+        let turn = chatTurnID
+        let refresh = UUID()
+        historyRefreshID = refresh
+        let recent = try await client.getLatestMessages(sessionId: session.id)
+        guard apiClient === client, sessionSelectionID == selection, chatTurnID == turn,
+              historyRefreshID == refresh, !isStreaming, !Task.isCancelled else { return }
+        let needsFullRefresh = forceHistoryRefresh || lastFullHistorySyncAt == nil
+            || Date().timeIntervalSince(lastFullHistorySyncAt!) >= 60
+        guard needsFullRefresh || recent != Array(lastSyncedHistory.suffix(50))
+            || messages.isEmpty && !recent.isEmpty else { return }
+        let history = try await client.getMessages(sessionId: session.id)
+        guard apiClient === client, activeSession?.id == session.id,
+              sessionSelectionID == selection, chatTurnID == turn,
+              historyRefreshID == refresh, !isStreaming, !Task.isCancelled else { return }
+        if needsFullRefresh || history != lastSyncedHistory {
+            messages = history.filter { $0.isUser || $0.isAssistant }.map { ChatDisplayMessage(from: $0) }
+            lastSyncedHistory = history
+        }
+        lastFullHistorySyncAt = Date()
+        forceHistoryRefresh = false
     }
 
     func deleteSession(_ session: HermesSession) async {
@@ -770,7 +894,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before deleting this conversation.")
             return
         }
         do {
@@ -802,7 +926,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before renaming this conversation.")
             return
         }
         do {
@@ -831,7 +955,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before changing this conversation.")
             return
         }
         do {
@@ -877,7 +1001,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before forking this conversation.")
             return
         }
         let selectionID = sessionSelectionID
@@ -904,10 +1028,12 @@ final class AppStore: ObservableObject {
         guard let client = try? self.client() else { return }
         do {
             let skills = try await client.listSkills()
-            guard apiClient === client else { return }
+            guard apiClient === client, !Task.isCancelled else { return }
             self.skills = skills
+            skillsError = nil
         } catch {
-            // Non-fatal
+            guard apiClient === client, !Task.isCancelled else { return }
+            skillsError = "Could not load skills: \(error.localizedDescription)"
         }
     }
 
@@ -915,10 +1041,12 @@ final class AppStore: ObservableObject {
         guard let client = try? self.client() else { return }
         do {
             let toolsets = try await client.getToolsets()
-            guard apiClient === client else { return }
+            guard apiClient === client, !Task.isCancelled else { return }
             self.toolsets = toolsets
+            toolsetsError = nil
         } catch {
-            // Non-fatal
+            guard apiClient === client, !Task.isCancelled else { return }
+            toolsetsError = "Could not load toolsets: \(error.localizedDescription)"
         }
     }
 
@@ -927,7 +1055,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            platformError = "Not connected"
+            platformError = "Connect to a Hermes server in Settings before loading platform status."
             return
         }
         isLoadingPlatform = true
@@ -958,7 +1086,8 @@ final class AppStore: ObservableObject {
             guard apiClient === client, platformRefreshID == refreshID else { return }
             platformJobs = value
         } catch {
-            FileLogger.shared.log("AppStore: platform jobs failed — \(error.localizedDescription)")
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            platformError = [platformError, "Jobs: \(error.localizedDescription)"].compactMap { $0 }.joined(separator: "\n")
         }
         do {
             let value = try await capabilities
@@ -978,21 +1107,28 @@ final class AppStore: ObservableObject {
                 }
             }
         } catch {
-            FileLogger.shared.log("AppStore: platform session sync failed — \(error.localizedDescription)")
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            platformError = [platformError, "Sessions: \(error.localizedDescription)"].compactMap { $0 }.joined(separator: "\n")
         }
         do {
             let value = try await toolsets
             guard apiClient === client, platformRefreshID == refreshID else { return }
             self.toolsets = value
+            toolsetsError = nil
         } catch {
-            // Non-fatal.
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            toolsetsError = "Toolsets: \(error.localizedDescription)"
+            platformError = [platformError, toolsetsError].compactMap { $0 }.joined(separator: "\n")
         }
         do {
             let value = try await skills
             guard apiClient === client, platformRefreshID == refreshID else { return }
             self.skills = value
+            skillsError = nil
         } catch {
-            // Non-fatal.
+            guard apiClient === client, platformRefreshID == refreshID else { return }
+            skillsError = "Skills: \(error.localizedDescription)"
+            platformError = [platformError, skillsError].compactMap { $0 }.joined(separator: "\n")
         }
     }
 
@@ -1001,7 +1137,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            platformError = "Not connected"
+            platformError = "Connect to a Hermes server in Settings before controlling this job."
             return
         }
         do {
@@ -1024,7 +1160,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            platformError = "Not connected"
+            platformError = "Connect to a Hermes server in Settings before saving this job."
             return false
         }
         platformError = nil
@@ -1061,7 +1197,7 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            platformError = "Not connected"
+            platformError = "Connect to a Hermes server in Settings before uploading this file."
             return
         }
         do {
@@ -1091,15 +1227,22 @@ final class AppStore: ObservableObject {
         do {
             client = try self.client()
         } catch {
-            self.error = AppError(message: "Not connected")
+            self.error = AppError(message: "Connect to a Hermes server in Settings before sending this message.")
             return nil
         }
 
         let turnID = UUID()
         chatTurnID = turnID
         streamTask?.cancel()
+        error = nil
+        responseActivity = "Preparing chat on Hermes"
+        lastChatActivityAt = nil
+        isStreaming = true
         let session = await ensureSession(client: client)
-        guard let session, apiClient === client, chatTurnID == turnID else { return nil }
+        guard let session, apiClient === client, chatTurnID == turnID else {
+            if chatTurnID == turnID { isStreaming = false }
+            return nil
+        }
         let existingAssistantCount = messages.filter(\.isAssistant).count
 
         let userMsg = ChatDisplayMessage(
@@ -1111,6 +1254,9 @@ final class AppStore: ObservableObject {
         )
         messages.append(userMsg)
 
+        error = nil
+        responseActivity = "Sending to Hermes"
+        lastChatActivityAt = nil
         isStreaming = true
         streamingText = ""
         streamingThinking = ""
@@ -1130,7 +1276,8 @@ final class AppStore: ObservableObject {
             self.streamingText = ""
             self.streamingThinking = ""
             self.endBackgroundTask()
-            self.error = AppError(message: "The response stream stopped sending updates. Please try again.")
+            self.responseActivity = "Response stream stalled"
+            self.error = AppError(message: "Hermes stopped sending chat events and keepalives for 60 seconds after activity, or did not respond within 180 seconds. The turn may be incomplete. Check the server and refresh this chat before resending to avoid duplicate work.")
         }
 
         streamTask?.cancel()
@@ -1152,7 +1299,6 @@ final class AppStore: ObservableObject {
                     assistantMessage = streamedMsg
                     if streamedCompletion { receivedCompletion = true }
                     if !self.streamingText.isEmpty {
-                        receivedCompletion = true
                         let leftover = Self.stripRawArtifacts(self.streamingText)
                         if !leftover.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let message = ChatDisplayMessage(
@@ -1208,12 +1354,18 @@ final class AppStore: ObservableObject {
             }
             guard self.chatTurnID == turnID, self.apiClient === client,
                   self.activeSession?.id == session.id else { return }
+            if self.error != nil, !self.streamingText.isEmpty {
+                self.messages.append(ChatDisplayMessage(id: UUID().uuidString, role: "assistant",
+                    content: Self.stripRawArtifacts(self.streamingText), timestamp: Date()))
+            }
             self.streamingText = ""
             self.streamingThinking = ""
             self.isStreaming = false
+            self.responseActivity = Task.isCancelled ? "Response canceled" : (self.error == nil ? "Response complete" : "Response needs attention")
+            self.lastSessionListSyncAt = nil
             self.endBackgroundTask()
 
-            if !self.queuedMessages.isEmpty {
+            if !Task.isCancelled, self.error == nil, !self.queuedMessages.isEmpty {
                 let next = self.queuedMessages.removeFirst()
                 Task {
                     guard self.chatTurnID == turnID, self.apiClient === client,
@@ -1222,15 +1374,19 @@ final class AppStore: ObservableObject {
                 }
             }
 
-            if assistantMessage != nil, !Task.isCancelled,
+            if self.error == nil, assistantMessage != nil, !Task.isCancelled,
                UIApplication.shared.applicationState != .active {
                 sendBackgroundNotification()
             }
         }
         streamTask = task
-        await task.value
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         guard chatTurnID == turnID, apiClient === client, activeSession?.id == session.id,
-              !task.isCancelled else { return nil }
+              !task.isCancelled, error == nil else { return nil }
         return assistantMessage
     }
 
@@ -1241,11 +1397,16 @@ final class AppStore: ObservableObject {
         let turnID = chatTurnID
         if let active = activeSession { return active }
         do {
-            let newSession = try await client.createSession(title: nil)
+            let newSession = try await client.createSession(title: nil,
+                model: sessionModelLockAvailable ? nonEmpty(sessionModelOverride ?? gatewayDefaultModel) : nil,
+                provider: sessionModelLockAvailable ? nonEmpty(sessionProviderOverride ?? gatewayDefaultProvider) : nil)
             guard apiClient === client, sessionSelectionID == selectionID, chatTurnID == turnID else { return nil }
             sessionRefreshID = UUID()
             self.sessions.insert(newSession, at: 0)
             self.activeSession = newSession
+            if let baseURL = connectionConfig?.normalizedBaseURL {
+                activeSessionPersistence.save(sessionID: newSession.id, for: baseURL)
+            }
             return newSession
         } catch {
             guard apiClient === client, sessionSelectionID == selectionID, chatTurnID == turnID else { return nil }
@@ -1260,21 +1421,41 @@ final class AppStore: ObservableObject {
     ) async throws -> (ChatDisplayMessage?, Bool) {
         var assistantMessage: ChatDisplayMessage?
         var receivedCompletion = false
+        let turn = chatTurnID
         let stream = try await client.streamChat(
             sessionId: session.id, message: text,
             model: sessionModelLockAvailable ? nil : sessionModelOverride,
-            onKeepalive: { watchdog.recordActivity() }
+            onKeepalive: { [weak self] in
+                watchdog.recordActivity()
+                Task { @MainActor in
+                    guard let self, self.apiClient === client, self.activeSession?.id == session.id,
+                          self.isStreaming, self.chatTurnID == turn else { return }
+                    self.lastServerResponseAt = Date()
+                    self.lastChatActivityAt = Date()
+                }
+            }
         )
         for try await event in stream {
             try Task.checkCancellation()
             guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
             watchdog.recordActivity()
+            lastServerResponseAt = Date()
+            lastChatActivityAt = Date()
+            if event.event == "error" {
+                throw APIError.invalidEndpoint("Hermes stopped this chat turn: \(event.message ?? "The server emitted an error event without a reason. Check the gateway log for this session.")")
+            }
+            if event.partial == true || event.interrupted == true {
+                error = AppError(message: "Hermes returned an incomplete response (\(event.interrupted == true ? "interrupted" : "partial")). Review the saved conversation and server log before continuing.")
+            }
             if event.event == "assistant.completed" || event.event == "run.completed" {
                 receivedCompletion = true
             }
             if let completedMessage = await self.handleSSEEvent(event) {
                 assistantMessage = completedMessage
             }
+        }
+        if !receivedCompletion {
+            throw APIError.invalidEndpoint("Hermes closed the response stream before confirming completion. Any visible text is partial. Refresh this chat and check the server before resending.")
         }
         return (assistantMessage, receivedCompletion)
     }
@@ -1290,6 +1471,7 @@ final class AppStore: ObservableObject {
         )
         try Task.checkCancellation()
         guard apiClient === client, activeSession?.id == session.id else { throw CancellationError() }
+        if let runtime = response.runtime { activeRuntime = runtime }
         let content = response.message.content
         guard !content.isEmpty else { return nil }
         let message = ChatDisplayMessage(
@@ -1335,7 +1517,7 @@ final class AppStore: ObservableObject {
     }
 
     private func emptyStreamGuard(receivedCompletion: Bool, existingAssistantCount: Int) {
-        guard !receivedCompletion else { return }
+        guard !receivedCompletion, error == nil else { return }
         let newAssistantCount = self.messages.filter(\.isAssistant).count
         if newAssistantCount <= existingAssistantCount {
             self.error = AppError(message: "No response received — the server may have closed the connection early. Please try again.")
@@ -1358,9 +1540,10 @@ final class AppStore: ObservableObject {
     private func handleSSEEvent(_ event: SSEEventPayload) async -> ChatDisplayMessage? {
         switch event.event {
         case "run.started", "message.started":
-            break
+            responseActivity = "Hermes accepted the message"
 
         case "assistant.delta":
+            responseActivity = "Hermes is responding"
             // The gateway reuses assistant.delta for thinking/reasoning text
             // by setting tool_name to "_thinking" or other tool names. That
             // internal reasoning must NOT be appended to streamingText or
@@ -1378,6 +1561,7 @@ final class AppStore: ObservableObject {
                 }
             }
         case "tool.progress":
+            responseActivity = event.toolName == "_thinking" ? "Hermes is thinking" : "Hermes is working"
             // Suppress _thinking reasoning deltas — internal monologue, not user-facing
             let progToolName = event.toolName ?? ""
             if progToolName == "_thinking" || progToolName == "thinking" { break }
@@ -1392,6 +1576,7 @@ final class AppStore: ObservableObject {
             }
 
         case "tool.started":
+            responseActivity = "Hermes is running \(event.toolName ?? "a tool")"
             let startToolName = event.toolName ?? "unknown"
             if startToolName == "_thinking" || startToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
@@ -1402,6 +1587,7 @@ final class AppStore: ObservableObject {
             ))
 
         case "tool.completed":
+            responseActivity = "Hermes finished \(event.toolName ?? "a tool")"
             let compToolName = event.toolName ?? "unknown"
             if compToolName == "_thinking" || compToolName == "thinking" { break }
             toolEvents.append(ToolEvent(
@@ -1443,12 +1629,12 @@ final class AppStore: ObservableObject {
             streamingThinking = ""
 
         case "run.completed":
+            responseActivity = "Hermes confirmed completion"
             if let runtime = event.runtime {
                 activeRuntime = runtime
             }
             streamingText = ""
             streamingThinking = ""
-            await refreshSessions()
 
         case "error":
             if let msg = event.message {
@@ -1565,88 +1751,17 @@ final class AppStore: ObservableObject {
     /// dropped while in the background. Preserves the active session and
     /// messages so the user doesn't lose context.
     private var isReconnecting = false
-    private var reconnectRetryCount = 0
     private var reconnectWorkItem: DispatchWorkItem?
-    private let maxReconnectRetries = 10
 
     func reconnectIfNeeded() async {
-        guard connectionConfig != nil, !isReconnecting else { return }
+        guard connectionConfig != nil, !isReconnecting, let client = apiClient else { return }
         isReconnecting = true
         defer { isReconnecting = false }
-
-        // Quick health check — if it passes, we're still connected.
-        do {
-            let client = try self.client()
-            let health = try await client.checkHealth()
-            guard health.status == "ok" else {
-                // Server is up but unhealthy. Mark disconnected.
-                self.error = AppError(message: "Server unhealthy: \(health.status)")
-                return
-            }
-            // Connection is alive. Reset retry count and refresh sessions.
-            reconnectRetryCount = 0
-            reconnectWorkItem?.cancel()
-            reconnectWorkItem = nil
-            await refreshCapabilities()
-            await refreshSessions()
-            // Also reload the active session's messages so replies that
-            // arrived from other platforms (Telegram, Discord, macOS) while
-            // we were backgrounded show up on return. Skip while a local
-            // stream is in flight so we don't clobber in-progress output.
-            if let active = activeSession, !isStreaming {
-                await refreshActiveSessionMessages(active)
-            }
-        } catch {
-            // Connection dropped while in background. Reconnect using
-            // the saved config so the user doesn't have to re-enter it.
-            guard let config = connectionConfig else { return }
-            do {
-                let newClient = HermesAPIClient(config: config)
-                let health = try await newClient.checkHealth()
-                guard health.status == "ok" else {
-                    self.error = AppError(message: "Server returned: \(health.status)")
-                    return
-                }
-                self.apiClient = newClient
-                reconnectWorkItem?.cancel()
-                reconnectWorkItem = nil
-                reconnectRetryCount = 0
-                await refreshCapabilities()
-                await refreshSessions()
-                // Restore the active session's messages if we had one.
-                if let active = activeSession {
-                    await selectSession(active)
-                }
-            } catch {
-                // Server is unreachable. Don't clear connectionConfig — just show
-                // an error and keep the saved config so we can retry automatically.
-                self.error = AppError(message: "Lost connection to Hermes. Will retry.")
-                // Exponential backoff: 3s, 6s, 12s, 24s, 30s, 30s, ... max 10 retries
-                reconnectRetryCount += 1
-                guard reconnectRetryCount <= maxReconnectRetries else {
-                    self.error = AppError(message: "Could not reconnect to Hermes after \(maxReconnectRetries) attempts. Please check your connection.")
-                    reconnectRetryCount = 0
-                    return
-                }
-                let delay = min(3.0 * pow(2.0, Double(reconnectRetryCount - 1)), 30.0)
-                // Flag-based delay (DispatchWorkItem): Task.sleep is unreliable
-                // when the app is backgrounded. Cancel any pending retry first so
-                // overlapping chains can't accumulate.
-                reconnectWorkItem?.cancel()
-                let item = DispatchWorkItem { [weak self] in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        // Verify the config hasn't changed since we started retrying.
-                        // If the user switched servers, don't let a stale retry hijack the new connection.
-                        guard let currentConfig = self.connectionConfig, currentConfig == config else { return }
-                        self.reconnectWorkItem = nil
-                        Task { await self.reconnectIfNeeded() }
-                    }
-                }
-                reconnectWorkItem = item
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
-            }
-        }
+        // URLSession reconnects its transport itself. Replacing the API client
+        // erased the current chat and could install an old server after a switch.
+        await syncNow()
+        guard apiClient === client, syncError == nil, !Task.isCancelled else { return }
+        await refreshCapabilities()
     }
 
     private var backgroundTaskId: UIBackgroundTaskIdentifier?
@@ -1709,16 +1824,18 @@ struct ChatDisplayMessage: Identifiable, Equatable {
     let role: String
     let content: String
     let images: [Data]
+    let toolNames: [String]
     let timestamp: Date
 
     var isUser: Bool { role == "user" }
     var isAssistant: Bool { role == "assistant" }
 
-    init(id: String, role: String, content: String, images: [Data] = [], timestamp: Date) {
+    init(id: String, role: String, content: String, images: [Data] = [], toolNames: [String] = [], timestamp: Date) {
         self.id = id
         self.role = role
         self.content = content
         self.images = images
+        self.toolNames = toolNames
         self.timestamp = timestamp
     }
 
@@ -1731,6 +1848,10 @@ struct ChatDisplayMessage: Identifiable, Equatable {
         }
         self.content = msg.content ?? ""
         self.images = []
+        self.toolNames = (msg.toolCalls ?? []).map { call in
+            let name = call.function?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return name.isEmpty ? "Tool call (name not reported)" : name
+        }
         self.timestamp = msg.date ?? Date()
     }
 

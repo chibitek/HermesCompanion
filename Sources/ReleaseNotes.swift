@@ -14,6 +14,13 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.65":
+            return [
+                "Chat shows gateway reachability, response activity, and sync status.",
+                "Open conversations refresh automatically; bridge 0.1.7 adds live workspace change notifications.",
+                "Stream failures show the server's reason and no longer count as successful replies.",
+                "History pagination, model selection for new chats, and duplicate image uploads are fixed."
+            ]
         case "1.8.62":
             return [
                 "Projects now browse server-owned folders through the Companion workspace bridge.",

@@ -239,7 +239,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: theme.spacingM) {
                 cardHeader("Agent OS", icon: "film")
 
-                TextField("http://localhost:3738", text: $agentOSServer)
+                TextField("Agent OS server URL", text: $agentOSServer)
                     .textFieldStyle(.plain)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)

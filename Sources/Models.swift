@@ -138,9 +138,21 @@ struct CapabilitiesResponse: Codable {
         let chatCompletionsStreaming: Bool
         let sessionChat: Bool
         let sessionChatStreaming: Bool
+        struct RunIdempotency: Codable {
+            let supported: Bool
+            let durable: Bool
+            let retention_seconds: Double?
+        }
+        struct RunEventReplay: Codable {
+            let supported: Bool
+            let fanout: Bool
+        }
+        let runEventReplay: RunEventReplay?
+        let runsIdempotency: RunIdempotency?
         let runSubmission: Bool
         let runEventsSSE: Bool
         let runStop: Bool
+        let runSteer: Bool
         let runApprovalResponse: Bool
         let toolProgressEvents: Bool
         let approvalEvents: Bool
@@ -177,9 +189,12 @@ struct CapabilitiesResponse: Codable {
             chatCompletionsStreaming = try values.decodeIfPresent(Bool.self, forKey: .chatCompletionsStreaming) ?? false
             sessionChat = try values.decodeIfPresent(Bool.self, forKey: .sessionChat) ?? false
             sessionChatStreaming = try values.decodeIfPresent(Bool.self, forKey: .sessionChatStreaming) ?? false
+            runEventReplay = try values.decodeIfPresent(RunEventReplay.self, forKey: .runEventReplay)
+            runsIdempotency = try values.decodeIfPresent(RunIdempotency.self, forKey: .runsIdempotency)
             runSubmission = try values.decodeIfPresent(Bool.self, forKey: .runSubmission) ?? false
             runEventsSSE = try values.decodeIfPresent(Bool.self, forKey: .runEventsSSE) ?? false
             runStop = try values.decodeIfPresent(Bool.self, forKey: .runStop) ?? false
+            runSteer = try values.decodeIfPresent(Bool.self, forKey: .runSteer) ?? false
             runApprovalResponse = try values.decodeIfPresent(Bool.self, forKey: .runApprovalResponse) ?? false
             toolProgressEvents = try values.decodeIfPresent(Bool.self, forKey: .toolProgressEvents) ?? false
             approvalEvents = try values.decodeIfPresent(Bool.self, forKey: .approvalEvents) ?? false
@@ -194,9 +209,12 @@ struct CapabilitiesResponse: Codable {
             case chatCompletionsStreaming = "chat_completions_streaming"
             case sessionChat = "session_chat"
             case sessionChatStreaming = "session_chat_streaming"
+            case runEventReplay = "run_event_replay"
+            case runsIdempotency = "runs_idempotency"
             case runSubmission = "run_submission"
             case runEventsSSE = "run_events_sse"
             case runStop = "run_stop"
+            case runSteer = "run_steer"
         case runApprovalResponse = "run_approval_response"
         case modelOptions = "model_options"
         case sessionModelLock = "session_model_lock"
@@ -261,10 +279,24 @@ struct SessionListResponse: Codable {
     let object: String
     let data: [HermesSession]
     let total: Int?
+    let limit: Int?
+    let offset: Int?
+    let hasMore: Bool?
+    enum CodingKeys: String, CodingKey {
+        case object, data, total, limit, offset
+        case hasMore = "has_more"
+    }
 }
 
 struct CreateSessionRequest: Codable {
     let title: String?
+    var model: String? = nil
+    var provider: String? = nil
+    var requireModelLock: Bool? = nil
+    enum CodingKeys: String, CodingKey {
+        case title, model, provider
+        case requireModelLock = "require_model_lock"
+    }
 }
 
 // MARK: - Messages
@@ -276,11 +308,13 @@ struct SessionMessage: Codable, Identifiable, Hashable {
     let timestamp: Double?
     let toolCalls: [ToolCall]?
     let toolCallId: String?
+    let displayKind: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, content, timestamp
         case toolCalls = "tool_calls"
         case toolCallId = "tool_call_id"
+        case displayKind = "display_kind"
     }
 
     init(from decoder: Decoder) throws {
@@ -292,6 +326,7 @@ struct SessionMessage: Codable, Identifiable, Hashable {
         self.timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
         self.toolCalls = try c.decodeIfPresent([ToolCall].self, forKey: .toolCalls)
         self.toolCallId = try c.decodeIfPresent(String.self, forKey: .toolCallId)
+        self.displayKind = try c.decodeIfPresent(String.self, forKey: .displayKind)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -302,6 +337,7 @@ struct SessionMessage: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(timestamp, forKey: .timestamp)
         try c.encodeIfPresent(toolCalls, forKey: .toolCalls)
         try c.encodeIfPresent(toolCallId, forKey: .toolCallId)
+        try c.encodeIfPresent(displayKind, forKey: .displayKind)
     }
 
     var idString: String { String(id) }
@@ -311,22 +347,11 @@ struct SessionMessage: Codable, Identifiable, Hashable {
     var isTool: Bool { role == "tool" }
     /// True for assistant messages that are tool-call wrappers (no visible text).
     var isToolCall: Bool { isAssistant && (toolCalls?.isEmpty == false) }
-    /// True for messages that should be hidden from the chat UI.
+    /// Respect Hermes's display projection. Tool calls may accompany visible
+    /// assistant text; JSON can also be a legitimate assistant answer.
     var shouldHide: Bool {
-        if isTool || isSystem { return true }
-        if isToolCall { return true }
-        // Hide assistant messages with null/empty content (tool-call intermediates)
-        if isAssistant && (content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
-            return true
-        }
-        // Hide assistant messages whose content is raw JSON (tool-call artifacts)
-        if isAssistant, let c = content {
-            let trimmed = c.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("{\"") || trimmed.hasPrefix("[{") || trimmed.hasPrefix("{\"role\"") {
-                return true
-            }
-        }
-        return false
+        if displayKind == "hidden" || isTool || isSystem { return true }
+        return isAssistant && !isToolCall && (content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     var date: Date? {
@@ -349,6 +374,12 @@ struct ToolCallFunction: Codable, Hashable {
 struct SessionMessagesResponse: Codable {
     let object: String
     let data: [SessionMessage]
+    let pagination: MessagePagination?
+}
+
+struct MessagePagination: Codable {
+    let offset: Int
+    let returned: Int
 }
 
 // MARK: - Chat Request
@@ -428,11 +459,12 @@ struct SessionChatResponse: Codable {
     let object: String
     let sessionId: String
     let message: ChatMessageContent
+    let runtime: SessionRuntime?
 
     enum CodingKeys: String, CodingKey {
         case object
         case sessionId = "session_id"
-        case message
+        case message, runtime
     }
 }
 
@@ -458,8 +490,11 @@ struct SSEEventPayload: Codable, Sendable {
     let interrupted: Bool?
     let message: String?  // error message
     let runtime: SessionRuntime?
+    let sequence: Int?
+    let code: String?
 
     enum CodingKeys: String, CodingKey {
+        case sequence, code
         case event
         case sessionId = "session_id"
         case runId = "run_id"
@@ -481,6 +516,8 @@ struct SSEEventPayload: Codable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.event = try c.decodeIfPresent(String.self, forKey: .event) ?? ""
+        self.sequence = try c.decodeIfPresent(Int.self, forKey: .sequence)
+        self.code = try c.decodeIfPresent(String.self, forKey: .code)
         self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
         self.runId = try c.decodeIfPresent(String.self, forKey: .runId)
         self.message_id = try c.decodeIfPresent(String.self, forKey: .message_id)
@@ -509,8 +546,10 @@ struct SSEEventPayload: Codable, Sendable {
     init(event: String, sessionId: String?, runId: String?, message_id: String?,
          delta: String?, content: String?, toolName: String?, preview: String?,
          args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
-         message: String?, runtime: SessionRuntime? = nil) {
+         message: String?, runtime: SessionRuntime? = nil, sequence: Int? = nil, code: String? = nil) {
         self.event = event
+        self.sequence = sequence
+        self.code = code
         self.sessionId = sessionId
         self.runId = runId
         self.message_id = message_id

@@ -96,8 +96,8 @@ final class ProjectStoreTests: XCTestCase {
 
     func testWorkspaceProjectsGroupSessionsByHermesFolder() {
         let store = ProjectStore(defaults: isolatedDefaults())
-        let repo = "${HOME}/repos/HermesCompanion"
-        let cwd = "${HOME}/repos/Other"
+        let repo = "/workspace/HermesCompanion"
+        let cwd = "/workspace/Other"
         let sessions = [
             HermesSession(id: "repo-1", title: "Repo", source: "api", startedAt: 1, lastActive: 3, messageCount: 1, cwd: repo, gitRepoRoot: repo),
             HermesSession(id: "repo-2", title: "Repo Two", source: "api", startedAt: 2, lastActive: 5, messageCount: 1, cwd: repo, gitRepoRoot: repo),

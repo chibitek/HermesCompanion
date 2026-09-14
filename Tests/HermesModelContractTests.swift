@@ -2,6 +2,450 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    @MainActor
+    func testReattachedRunShowsWaitAndDoesNotCallInterruptionCompleted() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunProgress-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer {
+            defaults.removePersistentDomain(forName: domain)
+            try? FileManager.default.removeItem(at: directory)
+            SessionHistoryURLProtocol.handler = nil
+        }
+        let controller = DurableRunController(client: client, connectionScope: "test", defaults: defaults, pendingDirectory: directory)
+        var interrupted = false
+        SessionHistoryURLProtocol.handler = { request in
+            XCTAssertFalse(request.request.url!.path.hasSuffix("/events"))
+            request.succeed(body: interrupted
+                ? #"{"run_id":"run_waiting","status":"interrupted","output":"Stopped before processing"}"#
+                : #"{"run_id":"run_waiting","status":"running","last_event":"run.progress","progress_kind":"lifecycle","progress_message":"Another Hermes process is using this session; waiting for it to finish.","progress_at":1}"#)
+        }
+        await controller.attach("run_waiting")
+        XCTAssertEqual(controller.activity, "Another Hermes process is using this session; waiting for it to finish.")
+        XCTAssertNotNil(controller.lastResponseAt)
+        XCTAssertFalse(controller.status!.isTerminal)
+        interrupted = true
+        await controller.monitor()
+        XCTAssertEqual(controller.activity, "Interrupted")
+        XCTAssertTrue(controller.status!.isTerminal)
+        XCTAssertEqual(controller.status?.output, "Stopped before processing")
+    }
+
+    @MainActor
+    func testLostRunAdmissionReusesKeyAndOriginalRequest() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunAdmission-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let pendingDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer {
+            defaults.removePersistentDomain(forName: domain)
+            try? FileManager.default.removeItem(at: pendingDirectory)
+            SessionHistoryURLProtocol.handler = nil
+        }
+        let controller = DurableRunController(client: client, connectionScope: "test", supportsDurableAdmission: true, retentionSeconds: 60, defaults: defaults, pendingDirectory: pendingDirectory)
+        var keys: [String] = []
+        var bodies: [[String: Any]] = []
+        SessionHistoryURLProtocol.handler = { request in
+            keys.append(request.request.value(forHTTPHeaderField: "Idempotency-Key") ?? "")
+            bodies.append((try? JSONSerialization.jsonObject(with: request.bodyData())) as? [String: Any] ?? [:])
+            if keys.count == 1 { request.fail() }
+            else { request.succeed(body: #"{"run_id":"run_original","status":"started","replayed":true}"#, status: 202) }
+        }
+        await controller.submit(input: "Original", sessionID: "session", model: nil, provider: nil)
+        XCTAssertTrue(controller.submissionUncertain)
+        let recovered = DurableRunController(client: client, connectionScope: "test", supportsDurableAdmission: true, retentionSeconds: 60, defaults: defaults, pendingDirectory: pendingDirectory)
+        XCTAssertEqual(recovered.pendingInput, "Original")
+        XCTAssertTrue(recovered.submissionUncertain)
+        await recovered.submit(input: "Changed UI value must not replace original request", sessionID: "other", model: nil, provider: nil)
+        XCTAssertEqual(keys.count, 2)
+        XCTAssertFalse(keys[0].isEmpty)
+        XCTAssertEqual(keys[0], keys[1])
+        XCTAssertEqual(bodies.count, 2)
+        XCTAssertTrue(bodies.allSatisfy { $0["input"] as? String == "Original" && $0["session_id"] as? String == "session" })
+        XCTAssertEqual(recovered.runID, "run_original")
+        XCTAssertFalse(recovered.submissionUncertain)
+        let restored = DurableRunController(client: client, connectionScope: "test", supportsDurableAdmission: true, retentionSeconds: 60, defaults: defaults, pendingDirectory: pendingDirectory)
+        XCTAssertEqual(restored.runID, "run_original")
+        let other = DurableRunController(client: client, connectionScope: "other-server/p/second", defaults: defaults, pendingDirectory: pendingDirectory)
+        XCTAssertNil(other.runID)
+    }
+
+    @MainActor
+    func testRunApprovalUsesExactRequestAndRejectsStaleDecision() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunApproval-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let pendingDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer {
+            defaults.removePersistentDomain(forName: domain)
+            try? FileManager.default.removeItem(at: pendingDirectory)
+            SessionHistoryURLProtocol.handler = nil
+        }
+        let controller = DurableRunController(client: client, connectionScope: "test", supportsDurableAdmission: true, retentionSeconds: 60, defaults: defaults, pendingDirectory: pendingDirectory)
+        var controls = 0
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.httpMethod == "POST" {
+                controls += 1
+                let body = (try? JSONSerialization.jsonObject(with: request.bodyData())) as? [String: String]
+                XCTAssertEqual(body, ["request_id": "approval_current", "choice": "once"])
+                request.succeed(body: #"{"run_id":"run_selected","request_id":"approval_current","choice":"once","resolved":1}"#)
+            } else {
+                request.succeed(body: #"{"run_id":"run_selected","status":"waiting_for_approval","approval":{"request_id":"approval_current","command":"reviewed command","choices":["once","deny"]}}"#)
+            }
+        }
+        await controller.attach("run_selected")
+        await controller.decide(requestID: "approval_old", choice: "once")
+        await controller.decide(requestID: "approval_current", choice: "always")
+        XCTAssertEqual(controls, 0)
+        await controller.decide(requestID: "approval_current", choice: "once")
+        XCTAssertEqual(controls, 1)
+    }
+
+    func testRunStatusRejectsForeignRunAndUnsafeIdentifiers() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        var requests = 0
+        SessionHistoryURLProtocol.handler = { request in
+            requests += 1
+            request.succeed(body: #"{"run_id":"run_other","status":"running"}"#)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        do { _ = try await client.runStatus(id: "run_requested"); XCTFail("Foreign run must fail") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("another run")) }
+        do { _ = try await client.runStatus(id: "run_bad/../other"); XCTFail("Unsafe run ID must fail") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("Invalid Hermes run ID")) }
+        XCTAssertEqual(requests, 1)
+    }
+
+    @MainActor
+    func testReattachmentPollsStatusWithoutConsumingEventsAndKeepsControlError() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunReconnect-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let pendingDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer {
+            defaults.removePersistentDomain(forName: domain)
+            try? FileManager.default.removeItem(at: pendingDirectory)
+            SessionHistoryURLProtocol.handler = nil
+        }
+        let controller = DurableRunController(client: client, connectionScope: "test", defaults: defaults, pendingDirectory: pendingDirectory)
+        var attemptedSteer = false
+        var eventReads = 0
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path.hasSuffix("/events") { eventReads += 1; request.fail(); return }
+            if request.request.httpMethod == "POST" {
+                attemptedSteer = true
+                request.succeed(body: #"{"error":{"code":"run_not_accepting_steer","message":"Run settled before guidance arrived"}}"#, status: 409)
+            } else {
+                request.succeed(body: attemptedSteer ? #"{"run_id":"run_selected","status":"completed","output":"Final saved result"}"# : #"{"run_id":"run_selected","status":"running"}"#)
+            }
+        }
+        await controller.attach("run_selected")
+        let accepted = await controller.steer("Additional guidance")
+        XCTAssertFalse(accepted)
+        await controller.monitor()
+        XCTAssertEqual(eventReads, 0)
+        XCTAssertEqual(controller.status?.output, "Final saved result")
+        XCTAssertTrue(controller.operationFailure?.contains("Run settled before guidance arrived") == true)
+        controller.forgetBookmark()
+        XCTAssertNil(controller.runID)
+        XCTAssertNil(DurableRunController(client: client, connectionScope: "test", defaults: defaults, pendingDirectory: pendingDirectory).runID)
+    }
+
+    @MainActor
+    func testExpiredPendingRunCannotBeReadmitted() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunExpired-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer { defaults.removePersistentDomain(forName: domain); try? FileManager.default.removeItem(at: directory); SessionHistoryURLProtocol.handler = nil }
+        var requests = 0
+        SessionHistoryURLProtocol.handler = { request in requests += 1; request.fail() }
+        let controller = DurableRunController(client: client, connectionScope: "test", supportsDurableAdmission: true, retentionSeconds: 60, defaults: defaults, pendingDirectory: directory)
+        await controller.submit(input: "Original", sessionID: nil, model: nil, provider: nil)
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+        let original = try JSONDecoder().decode(PendingDurableRun.self, from: Data(contentsOf: file))
+        try JSONEncoder().encode(PendingDurableRun(payload: original.payload, key: original.key, createdAt: Date(timeIntervalSinceNow: -120))).write(to: file)
+        let restored = DurableRunController(client: client, connectionScope: "test", supportsDurableAdmission: true, retentionSeconds: 60, defaults: defaults, pendingDirectory: directory)
+        await restored.submit(input: "Original", sessionID: nil, model: nil, provider: nil)
+        XCTAssertEqual(requests, 1)
+        XCTAssertTrue(restored.operationFailure?.contains("retention window") == true)
+    }
+
+    @MainActor
+    func testReplayReconnectUsesLastCursorAndDoesNotDuplicateText() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunReplay-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer { defaults.removePersistentDomain(forName: domain); try? FileManager.default.removeItem(at: directory); SessionHistoryURLProtocol.handler = nil }
+        let controller = DurableRunController(client: client, connectionScope: "test", supportsEventReplay: true, defaults: defaults, pendingDirectory: directory)
+        var cursors: [String] = []
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path.hasSuffix("/events") {
+                cursors.append(request.request.value(forHTTPHeaderField: "Last-Event-ID") ?? "missing")
+                let first = #"data: {"event":"message.delta","run_id":"run_selected","sequence":1,"delta":"A"}"# + "\n\n"
+                let second = #"data: {"event":"message.delta","run_id":"run_selected","sequence":2,"delta":"B"}"# + "\n\n"
+                let done = #"data: {"event":"run.completed","run_id":"run_selected","sequence":3}"# + "\n\n"
+                request.succeed(body: cursors.count == 1 ? first : first + second + done, headers: ["Content-Type": "text/event-stream"])
+            } else {
+                Task { @MainActor in
+                    request.succeed(body: controller.liveText == "AB" ? #"{"run_id":"run_selected","status":"completed","output":"AB"}"# : #"{"run_id":"run_selected","status":"running"}"#)
+                }
+            }
+        }
+        await controller.attach("run_selected")
+        await controller.monitor()
+        XCTAssertEqual(cursors, ["0", "1"])
+        XCTAssertEqual(controller.liveText, "AB")
+        XCTAssertEqual(controller.status?.output, "AB")
+    }
+
+    @MainActor
+    func testReplayGapLabelsPartialOutputAndResumesFromServerCursor() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunReplayGap-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer { defaults.removePersistentDomain(forName: domain); try? FileManager.default.removeItem(at: directory); SessionHistoryURLProtocol.handler = nil }
+        let controller = DurableRunController(client: client, connectionScope: "test", supportsEventReplay: true, defaults: defaults, pendingDirectory: directory)
+        var cursors: [String] = []
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path.hasSuffix("/events") {
+                cursors.append(request.request.value(forHTTPHeaderField: "Last-Event-ID") ?? "missing")
+                if cursors.count == 1 {
+                    request.succeed(body: #"{"error":{"code":"run_replay_gap","message":"Replay expired"}}"#, status: 409)
+                } else {
+                    let delta = #"data: {"event":"message.delta","run_id":"run_selected","sequence":51,"delta":"tail"}"# + "\n\n"
+                    let done = #"data: {"event":"run.completed","run_id":"run_selected","sequence":52}"# + "\n\n"
+                    request.succeed(body: delta + done, headers: ["Content-Type": "text/event-stream"])
+                }
+            } else {
+                Task { @MainActor in
+                    request.succeed(body: controller.liveText == "tail" ? #"{"run_id":"run_selected","status":"completed","output":"Full saved result","event_cursor":52}"# : #"{"run_id":"run_selected","status":"running","event_cursor":50,"event_replay_floor":40}"#)
+                }
+            }
+        }
+        await controller.attach("run_selected")
+        await controller.monitor()
+        XCTAssertEqual(cursors, ["0", "50"])
+        XCTAssertTrue(controller.liveOutputIncomplete)
+        XCTAssertEqual(controller.liveText, "tail")
+        XCTAssertEqual(controller.status?.output, "Full saved result")
+    }
+
+    func testApprovalWithoutExactIDCannotOfferDecisions() throws {
+        let approval = try JSONDecoder().decode(DurableRunApproval.self, from: Data(#"{"choices":["once","always","deny"]}"#.utf8))
+        XCTAssertTrue(approval.offeredChoices.isEmpty)
+        let status = try JSONDecoder().decode(DurableRunStatus.self, from: Data(#"{"run_id":"run_done","status":"completed","pending_steer":"Not delivered"}"#.utf8))
+        XCTAssertTrue(status.isTerminal)
+        XCTAssertEqual(status.pending_steer, "Not delivered")
+    }
+
+    func testProjectPatchKeepsOtherFieldsAndCanClearMetadata() throws {
+        let project = try JSONDecoder().decode(ManagedProject.self, from: Data(#"{"id":"p_one","slug":"project","name":"Project","description":"Details","icon":"folder","color":"blue","board_slug":"board","archived":false,"folders":[]}"#.utf8))
+        let payload = ProjectWrite.changes(from: project, name: "Project", description: "", icon: "folder", color: "blue", board: "")
+        let values = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)) as? [String: String])
+        XCTAssertEqual(values, ["description": "", "board_slug": ""])
+    }
+
+    func testProjectWriteRejectsAnotherProfileAndNativeValidationIsActionable() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        SessionHistoryURLProtocol.handler = { request in
+            XCTAssertEqual(request.request.httpMethod, "PATCH")
+            let items = URLComponents(url: request.request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(items.first { $0.name == "profile" }?.value, "second")
+            XCTAssertEqual(items.first { $0.name == "project_id" }?.value, "p_one")
+            request.succeed(body: #"{"profile":"default","project":{"id":"p_one","slug":"project","name":"Project","archived":false,"folders":[]}}"#)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        var payload = ProjectWrite()
+        payload.name = "Revised"
+        do {
+            _ = try await client.saveProject(profile: "second", id: "p_one", payload: payload)
+            XCTFail("A different profile must not confirm the save")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("different profile/project")) }
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"error":{"code":"5063","message":"projects.create (5063): folder already belongs to project 'existing'"}}"#, status: 400)
+        }
+        do {
+            _ = try await client.saveProject(profile: "second", id: nil, payload: payload)
+            XCTFail("Native validation must fail")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("folder already belongs"))
+            XCTAssertTrue(error.localizedDescription.contains("5063"))
+            XCTAssertTrue(error.localizedDescription.contains("/api/companion/projects-create"))
+        }
+    }
+
+    func testTaskEditsOmitUnchangedFieldsAndPreserveExplicitClearing() throws {
+        let task = try JSONDecoder().decode(ServerBoardTask.self, from: Data(#"{"id":"task","title":"Existing","body":"Description","status":"triage","assignee":"worker","priority":2}"#.utf8))
+        let changes = ServerTaskWrite.changes(from: task, title: "Revised", body: "Description",
+            assignee: "", priority: 2, status: "triage", result: "ignored", summary: "ignored", blockReason: "ignored")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(changes)) as? [String: Any])
+        XCTAssertEqual(Set(body.keys), ["title", "assignee"])
+        XCTAssertEqual(body["assignee"] as? String, "")
+        let completed = ServerTaskWrite.changes(from: task, title: "Existing", body: "Description",
+            assignee: "worker", priority: 2, status: "done", result: "Delivered", summary: "Verified", blockReason: "ignored")
+        let done = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(completed)) as? [String: Any])
+        XCTAssertEqual(Set(done.keys), ["status", "result", "summary"])
+    }
+
+    func testTaskWriteRejectsForeignReceiptAndSurfacesNativeRefusal() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        SessionHistoryURLProtocol.handler = { request in
+            XCTAssertEqual(request.request.httpMethod, "PATCH")
+            let query = URLComponents(url: request.request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            XCTAssertEqual(query.first { $0.name == "board" }?.value, "engineering")
+            XCTAssertEqual(query.first { $0.name == "task_id" }?.value, "task")
+            request.succeed(body: #"{"board":"foreign","task":{"id":"task","title":"Title","status":"triage"}}"#)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        var payload = ServerTaskWrite()
+        payload.title = "Revised"
+        do {
+            _ = try await client.updateWorkspaceTask(board: "engineering", taskID: "task", payload: payload)
+            XCTFail("Foreign board receipt must not confirm a write")
+        } catch { XCTAssertTrue(error is APIError) }
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"error":{"code":"task_operation_rejected","message":"Blocked by parent dependency"}}"#, status: 409)
+        }
+        do {
+            _ = try await client.updateWorkspaceTask(board: "engineering", taskID: "task", payload: payload)
+            XCTFail("Refused status must fail")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Blocked by parent dependency"))
+            XCTAssertTrue(error.localizedDescription.contains("/api/companion/task"))
+        }
+    }
+
+    func testHTTPErrorRetainsServerReasonAndEndpointWithoutCredentials() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "private-test-key", label: "Test"), session: URLSession(configuration: config))
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: #"{"error":{"code":"session_busy","message":"Active turn; Bearer private-test-key"}}"#, status: 409)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        do {
+            _ = try await client.getSession(sessionId: "current")
+            XCTFail("Conflict must throw")
+        } catch {
+            let text = error.localizedDescription
+            XCTAssertTrue(text.contains("/api/sessions/current"))
+            XCTAssertTrue(text.contains("409"))
+            XCTAssertTrue(text.contains("session_busy"))
+            XCTAssertFalse(text.contains("private-test-key"))
+        }
+    }
+
+    func testMessagePaginationLoadsBeyondFiveHundred() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        SessionHistoryURLProtocol.handler = { request in
+            let query = URLComponents(url: request.request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            let offset = Int(query.first { $0.name == "offset" }!.value!)!
+            let rows = (offset..<min(offset + 500, 601)).map { ["id": $0, "role": "user", "content": "Message \($0)"] as [String: Any] }
+            let body: [String: Any] = ["object": "list", "data": rows,
+                                      "pagination": ["offset": offset, "returned": rows.count]]
+            request.succeed(body: String(data: try! JSONSerialization.data(withJSONObject: body), encoding: .utf8)!)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let history = try await client.getMessages(sessionId: "long-chat")
+        XCTAssertEqual(history.count, 601)
+        XCTAssertEqual(history.first?.id, 0)
+        XCTAssertEqual(history.last?.id, 600)
+    }
+
+    @MainActor
+    func testHistoryStartedBeforeANewTurnCannotOverwriteItAfterTurnEnds() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        let session = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        store.activeSession = session
+        let pending = expectation(description: "History read started")
+        var request: SessionHistoryURLProtocol?
+        SessionHistoryURLProtocol.handler = { value in
+            Task { @MainActor in request = value; pending.fulfill() }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let refresh = Task { try await store.refreshActiveSessionMessages(session, client: client) }
+        await fulfillment(of: [pending], timeout: 3)
+        store.stopStreaming() // invalidates the turn even though isStreaming is now false
+        store.messages = [ChatDisplayMessage(id: "new", role: "assistant", content: "Newer response", timestamp: Date())]
+        request?.succeed()
+        try await refresh.value
+        XCTAssertEqual(store.messages.first?.content, "Newer response")
+    }
+
+    @MainActor
+    func testIdleSyncPicksUpRemoteMessagesAndReportsReachability() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.activeSession = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+        SessionHistoryURLProtocol.handler = { request in
+            switch request.request.url!.path {
+            case "/health": request.succeed(body: #"{"status":"ok","platform":"hermes-agent","version":"0.21.2"}"#)
+            case "/api/sessions": request.succeed(body: #"{"object":"list","data":[{"id":"current"}]}"#)
+            default: request.succeed(body: #"{"object":"list","data":[{"id":2,"role":"assistant","content":"Reply from Mac"}]}"#)
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.syncNow()
+        XCTAssertEqual(store.messages.last?.content, "Reply from Mac")
+        XCTAssertNotNil(store.lastSyncedAt)
+        XCTAssertNotNil(store.lastServerResponseAt)
+        XCTAssertNil(store.syncError)
+        SessionHistoryURLProtocol.handler = { $0.succeed(body: #"{"error":"Gateway restarting"}"#, status: 503) }
+        await store.syncNow()
+        XCTAssertTrue(store.syncError?.contains("503") == true)
+        XCTAssertEqual(store.messages.last?.content, "Reply from Mac")
+    }
+
+    func testPinnedBackfillDoesNotSkipSessionPaginationWindow() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        SessionHistoryURLProtocol.handler = { request in
+            let query = URLComponents(url: request.request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+            let offset = Int(query.first { $0.name == "offset" }!.value!)!
+            let rows = (offset..<min(offset + 100, 201)).map { ["id": "session-\($0)"] } + [["id": "pin"]]
+            let body: [String: Any] = ["object": "list", "data": rows, "limit": 100,
+                                      "offset": offset, "has_more": offset < 200]
+            request.succeed(body: String(data: try! JSONSerialization.data(withJSONObject: body), encoding: .utf8)!)
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let sessions = try await client.listSessions()
+        XCTAssertEqual(sessions.count, 202)
+        XCTAssertTrue(sessions.contains { $0.id == "session-100" })
+        XCTAssertTrue(sessions.contains { $0.id == "session-200" })
+    }
+
     func testConnectionConfigRequiresARealGateway() {
         let demo = ConnectionConfig(baseURL: "demo://local", apiKey: "demo", label: "Demo")
         let missingKey = ConnectionConfig(baseURL: "https://hermes.local:8642", apiKey: "", label: "Hermes")
@@ -782,11 +1226,26 @@ private final class SessionHistoryURLProtocol: URLProtocol, @unchecked Sendable 
     override func startLoading() { Self.handler?(self) }
     override func stopLoading() {}
 
-    func succeed(body: String = #"{"object":"list","data":[{"id":1,"role":"assistant","content":"Old session reply"}]}"#, status: Int = 200) {
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+    func succeed(body: String = #"{"object":"list","data":[{"id":1,"role":"assistant","content":"Old session reply"}]}"#, status: Int = 200, headers: [String: String]? = nil) {
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
+    }
+
+    func bodyData() -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count <= 0 { break }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        return data
     }
 
     func fail() {

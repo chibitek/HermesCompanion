@@ -12,6 +12,7 @@ struct HermesCompanionApp: App {
         WindowGroup {
             RootView(store: store)
                 .environmentObject(appearance)
+                .environment(\.workspaceRevision, store.workspaceRevision)
                 .preferredColorScheme(effectiveColorScheme)
                 .tint(appearance.accent)
                 .task {
@@ -29,19 +30,10 @@ struct HermesCompanionApp: App {
                     // user when a chat response arrives while backgrounded.
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
-                    // Foreground liveness: reconnectIfNeeded no-ops when healthy,
-                    // silently reconnects when the socket died while the app sat
-                    // open (Tailscale rekey, gateway restart, network switch).
-                    while !Task.isCancelled {
-                        do {
-                            try await Task.sleep(for: .seconds(60))
-                        } catch {
-                            return
-                        }
-                        guard !Task.isCancelled else { return }
-                        guard scenePhase == .active, !store.isStreaming else { continue }
-                        await store.reconnectIfNeeded()
-                    }
+                }
+                .task(id: "\(scenePhase)-\(String(describing: store.apiClient.map(ObjectIdentifier.init)))") {
+                    guard scenePhase == .active else { return }
+                    await store.runLiveSync()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                                     switch newPhase {
@@ -96,24 +88,6 @@ struct RootView: View {
                 ConnectingView()
             } else if store.isConnected {
                 ChatView(store: store)
-                    .task {
-                        try? await Task.sleep(nanoseconds: 100_000_000)
-                        await MainActor.run {
-                            if store.activeSession == nil {
-                                Task {
-                                    if store.sessions.isEmpty {
-                                        await store.refreshSessions()
-                                    }
-                                    // Always create a fresh session for the app —
-                                    // reusing an existing Hermes session pulls in
-                                    // its system prompt, tools, and context, which
-                                    // causes the model to make tool calls, hit the
-                                    // iteration limit, and drop the SSE connection.
-                                    await store.createSession(title: nil)
-                                }
-                            }
-                        }
-                    }
             } else if showServerPicker {
                 ServerPickerView(store: store, appearance: appearance) { config in
                     Task {
@@ -279,7 +253,7 @@ struct ServerPickerView: View {
 
     private var autoReconnectToggle: some View {
         HStack(spacing: 12) {
-            Image(systemName: "arrow.trianglehead.clockwise.icircle")
+            Image(systemName: "arrow.clockwise.circle")
                 .font(.system(size: 16))
                 .foregroundStyle(theme.textSecondary)
             VStack(alignment: .leading, spacing: 2) {

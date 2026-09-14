@@ -13,6 +13,7 @@ struct GlassBubble: View {
     var showTimestamp: Bool = false
     var timestamp: Date? = nil
     var images: [Data] = []
+    var toolNames: [String] = []
 
     @EnvironmentObject private var appearance: AppearanceSettings
 
@@ -40,6 +41,16 @@ struct GlassBubble: View {
 
                 if !content.isEmpty {
                     MarkdownContentView(content: content, isUser: isUser, font: messageFont)
+                }
+
+                if !toolNames.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(toolNames.enumerated()), id: \.offset) { _, name in
+                            Label(name.replacingOccurrences(of: "_", with: " "), systemImage: "wrench.and.screwdriver")
+                                .font(.caption).foregroundStyle(theme.textMuted)
+                                .accessibilityLabel("Recorded tool call: \(name)")
+                        }
+                    }
                 }
 
                 if showTimestamp, let timestamp {

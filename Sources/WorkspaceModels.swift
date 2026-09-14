@@ -138,6 +138,7 @@ struct ServerBoardTask: Decodable, Identifiable {
     let assignee: String?
     let latest_summary: String?
     let result: String?
+    let priority: Int?
 }
 
 struct ServerTaskDetail: Decodable {
@@ -192,4 +193,62 @@ struct ServerTaskRun: Decodable, Identifiable {
     let summary: String?
     let error: String?
     let started_at: Double
+}
+
+
+struct WorkspaceCapabilities: Decodable {
+    let version: String
+    let task_create: Bool
+    let task_update: Bool
+    let task_comment: Bool
+    let task_statuses: [String]
+    let project_manage: Bool?
+}
+
+struct ServerTaskWrite: Encodable {
+    var title: String? = nil
+    var body: String? = nil
+    var assignee: String? = nil
+    var priority: Int? = nil
+    var status: String? = nil
+    var result: String? = nil
+    var summary: String? = nil
+    var block_reason: String? = nil
+    var triage: Bool? = nil
+    var idempotency_key: String? = nil
+
+    static func changes(from task: ServerBoardTask, title: String, body: String,
+                        assignee: String, priority: Int, status: String, result: String,
+                        summary: String, blockReason: String) -> ServerTaskWrite {
+        var changes = ServerTaskWrite()
+        if title != task.title { changes.title = title }
+        if body != (task.body ?? "") { changes.body = body }
+        if assignee != (task.assignee ?? "") { changes.assignee = assignee }
+        if priority != (task.priority ?? 0) { changes.priority = priority }
+        if status != task.status { changes.status = status }
+        if status != task.status {
+            if status == "done", result != (task.result ?? "") { changes.result = result }
+            if ["done", "review"].contains(status), !summary.isEmpty { changes.summary = summary }
+            if ["blocked", "scheduled"].contains(status), !blockReason.isEmpty { changes.block_reason = blockReason }
+        }
+        return changes
+    }
+
+    var isEmpty: Bool {
+        title == nil && body == nil && assignee == nil && priority == nil && status == nil
+            && result == nil && summary == nil && block_reason == nil && triage == nil
+            && idempotency_key == nil
+    }
+}
+
+struct ServerTaskWriteReceipt: Decodable {
+    let board: String
+    let task: ServerBoardTask
+    let warning: String?
+}
+
+struct ServerTaskCommentReceipt: Decodable {
+    let board: String
+    let task_id: String
+    let ok: Bool
 }

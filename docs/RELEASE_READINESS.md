@@ -1,5 +1,12 @@
 # Development Release Readiness
 
+The September 13 sync repair is recorded in
+[SYNC_REPAIR_VERIFICATION.md](SYNC_REPAIR_VERIFICATION.md). It supersedes older
+claims of current server health: the skills and named custom-provider fixes are
+missing from the currently running checkout and must be restored before live
+conversation verification can pass. Build 162 and bridge 0.1.7 are unreleased.
+
+
 ## Text-Only Audio Isolation Follow-Up
 
 The typed-message background keep-alive no longer generates or plays a silent
@@ -76,7 +83,6 @@ The prior verified phone installation was 1.8.62 build 156, from merged PR 42.
 - The two local gateway compatibility patches previously passed 162 focused
   server tests. A live local Qwen turn confirmed its named provider and model;
   the diagnostic session was removed. See `../GatewayPatches/README.md`.
-- Local branch inventory contains only `Dev_Erick` and `main`, with one worktree.
 
 ## Required Before Release
 

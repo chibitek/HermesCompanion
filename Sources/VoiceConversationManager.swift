@@ -428,7 +428,7 @@ final class VoiceConversationManager: ObservableObject {
                         }
                     } else {
                         self.recognitionRetryCount = 0
-                        self.voiceError = error.localizedDescription
+                        self.voiceError = "Speech recognition stopped: \(error.localizedDescription). Restart voice mode to retry."
                     }
                     return
                 }
@@ -452,7 +452,7 @@ final class VoiceConversationManager: ObservableObject {
         let recordingFormat = validRecordingFormat(for: inputNode)
         guard let recordingFormat else {
             isListening = false
-            voiceError = "Microphone input is unavailable."
+            voiceError = "The audio input reported no usable recording format. Reconnect your headset or use the phone microphone, then restart voice mode."
             FileLogger.shared.log("VoiceManager: startListening bail — invalid recording format (sampleRate 0 / route stuck)")
             self.recognitionRequest = nil
             recognitionTask?.cancel()
@@ -481,7 +481,7 @@ final class VoiceConversationManager: ObservableObject {
             startLevelMonitoring()
         } catch {
             FileLogger.shared.log("VoiceManager: audio engine start failed: \(error.localizedDescription)")
-            voiceError = "Could not start microphone."
+            voiceError = "Could not start the microphone: \(error.localizedDescription). Stop voice mode, check the selected audio input, and retry."
             stopListening()
         }
     }
