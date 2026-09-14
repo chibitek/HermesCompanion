@@ -475,6 +475,36 @@ struct ChatMessageContent: Codable {
 
 // MARK: - SSE Events (streaming)
 
+/// Message metadata carried by a structured stream event, distinct from error text.
+struct SSEMessage: Codable, Sendable {
+    let id: String?
+    let role: String?
+    let content: String?
+}
+
+private enum SSEMessageValue: Codable, Sendable {
+    case text(String)
+    case object(SSEMessage)
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let text = try? value.decode(String.self) {
+            self = .text(text)
+        } else {
+            // Reject invalid scalar values and malformed typed object fields.
+            self = .object(try value.decode(SSEMessage.self))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .text(let text): try value.encode(text)
+        case .object(let message): try value.encode(message)
+        }
+    }
+}
+
 struct SSEEventPayload: Codable, Sendable {
     var event: String
     let sessionId: String?
@@ -488,7 +518,15 @@ struct SSEEventPayload: Codable, Sendable {
     let completed: Bool?
     let partial: Bool?
     let interrupted: Bool?
-    let message: String?  // error message
+    private let messagePayload: SSEMessageValue?
+    var message: String? {
+        if case .text(let text) = messagePayload { return text }
+        return nil
+    }
+    var structuredMessage: SSEMessage? {
+        if case .object(let message) = messagePayload { return message }
+        return nil
+    }
     let runtime: SessionRuntime?
     let sequence: Int?
     let code: String?
@@ -507,12 +545,12 @@ struct SSEEventPayload: Codable, Sendable {
         case completed
         case partial
         case interrupted
-        case message
+        case messagePayload = "message"
         case runtime
     }
 
-    /// Custom decoder: the `event` field is NOT in the SSE JSON data — it comes
-    /// from the `event:` SSE protocol line. We decode without it and inject it after.
+    /// Some gateways put the event name in JSON and others use the SSE event line.
+    /// The parser applies an explicit event line after decoding this payload.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.event = try c.decodeIfPresent(String.self, forKey: .event) ?? ""
@@ -529,20 +567,11 @@ struct SSEEventPayload: Codable, Sendable {
         self.completed = try c.decodeIfPresent(Bool.self, forKey: .completed)
         self.partial = try c.decodeIfPresent(Bool.self, forKey: .partial)
         self.interrupted = try c.decodeIfPresent(Bool.self, forKey: .interrupted)
-        // The `message` field is overloaded: in `message.started` events it's an
-        // object ({"id": ..., "role": ...}), in `error` events it's a string.
-        // Try string first; if that fails, decode as object and extract nothing
-        // (we don't need the message object's fields — we only use the string form).
-        if let msg = try? c.decodeIfPresent(String.self, forKey: .message) {
-            self.message = msg
-        } else {
-            // It's an object or absent — not an error message, so nil is fine
-            self.message = nil
-        }
+        self.messagePayload = try c.decodeIfPresent(SSEMessageValue.self, forKey: .messagePayload)
         self.runtime = try c.decodeIfPresent(SessionRuntime.self, forKey: .runtime)
     }
 
-    /// Direct initializer for fallback construction
+    /// Programmatic events, including plain-text errors and completion sentinels.
     init(event: String, sessionId: String?, runId: String?, message_id: String?,
          delta: String?, content: String?, toolName: String?, preview: String?,
          args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
@@ -561,7 +590,7 @@ struct SSEEventPayload: Codable, Sendable {
         self.completed = completed
         self.partial = partial
         self.interrupted = interrupted
-        self.message = message
+        self.messagePayload = message.map(SSEMessageValue.text)
         self.runtime = runtime
     }
 }

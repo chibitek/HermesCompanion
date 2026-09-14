@@ -25,16 +25,19 @@ Built by [Chibitek Labs](https://chibitek.com) on the [Hermes Agent](https://git
 
 ---
 
-## Current verified release: 1.8.79 (176)
+## Current testing build: 1.8.80 (177)
 
 Build 176 includes the typed-chat audio fix and preserves spaces, paragraphs,
 code indentation, JSON, and literal markup in live replies. The composer shows
 a guidance arrow while busy and an up arrow while idle; guidance is queued after
 the current reply. The trailing cursor indicates an active response.
 
-The physical phone has build 176. TestFlight lists this build as Testing for the
-internal group, with the account-holder invitation sent. The App Store candidate
-is also build 176. Apple confirmed its submission on September 14, and it is
+Build 177 adds conversation-owned queued follow-ups, explicit draft recovery,
+and structured stream-message decoding with field-specific errors. It is
+installed on the physical phone; launch verification awaits an unlocked device.
+Apple accepted its upload, and TestFlight distribution is being checked.
+
+The App Store candidate remains build 176. Apple confirmed its submission on September 14, and it is
 Waiting for Review with manual release selected. Reviewer gateway access and
 screenshot refresh/verification remain follow-up work.
 

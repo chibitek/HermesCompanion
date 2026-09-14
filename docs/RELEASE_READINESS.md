@@ -2,13 +2,17 @@
 
 ## Current September 14 delivery state
 
-Companion **1.8.79 (176)** is installed on the physical phone. It includes the
-typed-chat audio-session repair and exact streamed-text preservation. Apple
-processed this build; the internal TestFlight group lists it as Testing and the
-account-holder tester as Invited. Invitation acceptance and installation through
-TestFlight have not been verified. The App Store candidate is also build 176,
-submitted on September 14 and Waiting for Review with manual release selected.
-Apple confirmed one item submitted, containing version 1.8.79 build 176.
+Companion **1.8.80 (177)** is installed on the physical phone; device inventory
+confirms its version. Launch verification was blocked by the phone being locked.
+The app and extension were archived, and the exported app's signature was
+verified. Apple accepted the upload; TestFlight processing and group assignment
+are being checked. Build 177 includes the queued follow-up and structured stream
+message repairs as well as the prior typed-chat audio and text-fidelity fixes.
+
+The App Store candidate remains **1.8.79 (176)**, Waiting for Review with manual
+release selected. Its internal TestFlight group was Testing, with the existing
+account-holder tester Invited. Invitation acceptance and installation through
+TestFlight have not been verified. Build 177 has not replaced the review submission.
 
 The running Hermes **0.21.2** gateway reports code revision
 `afbd3e296ef825922bdd8d79b7d6f4f933288d36`, containing all five compatibility
@@ -16,12 +20,13 @@ patches. Installed bridge **0.1.10** files match the current public source.
 Authenticated native and bridge capabilities returned HTTP 200 on September 14.
 No restart was needed to reapply code already running.
 
-Build 176's ordinary iOS suite passed 142 tests, with four opt-in tests skipped.
-The repeated live-gateway suite passed all four tests, including exact streamed
-text, conversation updates, run replay, and board invalidation. Intermittent
-model latency remains open in issue #55, and physical music/microphone/Bluetooth
-acceptance remains open in issue #53. Existing test results are not repeated as
-newly run tests during a documentation-only update.
+The latest source suite passed **158 tests**, with six live checks skipped.
+All six checks then passed against the real gateway and local model in an
+isolated workspace. A first six-test run failed its final cleanup gate despite
+passing the tests; after adding per-test cleanup assertions, the repeat passed
+with zero sessions remaining. The intermittent observation remains in #57.
+Model latency remains open in #55, and physical music/microphone/Bluetooth
+acceptance remains open in #53.
 
 The privacy policy now describes optional Tailscale, configured model providers,
 on-device speech recognition, and local diagnostic logs. The submitted review
@@ -34,15 +39,18 @@ See [CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) and
 [APP_STORE_SUBMISSION.md](../APP_STORE_SUBMISSION.md). Historical build and
 deployment snapshots below describe earlier checks, not current installed state.
 
-## Source repair after build 176
+## Queue and stream repair in build 177
 
 Queued follow-ups now retain server and conversation ownership through navigation,
 restart, and uncertain sends. A visible recovery list permits review and removal;
 dispatch waits for confirmation and never skips an earlier item requiring review.
 The source simulator suite passed 151 tests, with five live checks skipped; all
 five checks passed separately against an isolated real gateway and local model.
-This change is not in the submitted or phone-installed build 176.
-See [QUEUE_RELIABILITY.md](QUEUE_RELIABILITY.md) for scope and verification.
+The structured-message repair subsequently passed 158 ordinary tests and six
+live checks. Both repairs are included in the phone-installed build 177,
+but not the submitted build 176.
+See [QUEUE_RELIABILITY.md](QUEUE_RELIABILITY.md) and
+[SSE_MESSAGE_CONTRACT.md](SSE_MESSAGE_CONTRACT.md) for scope and verification.
 
 ## Text-Only Audio Isolation Follow-Up
 

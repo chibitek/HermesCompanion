@@ -53,6 +53,7 @@ sync, run replay, and board invalidation also passed. Verification left zero
 sessions, then removed its temporary gateway and workspace. This is not a claim
 that model latency is fixed for every workload; issue #55 remains open.
 
-This source repair is separate from **1.8.79 (176)** already submitted to Apple.
-It has not been uploaded to TestFlight or installed on the physical phone. The
-Apple candidate remains build 176, Waiting for Review with manual release.
+This repair is packaged in **1.8.80 (177)**, installed on the physical phone
+and accepted for upload by Apple. Launch verification awaits an unlocked phone;
+TestFlight processing and distribution are being checked. The Apple review
+candidate remains **1.8.79 (176)**, Waiting for Review with manual release.

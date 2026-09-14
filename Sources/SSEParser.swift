@@ -57,14 +57,61 @@ struct SSEParser {
                 throw APIError.sseParseError("The gateway omitted the event type. Check its streaming API version.")
             }
             return event
+        } catch let failure as APIError {
+            throw failure
         } catch {
-            if name == "error", !text.trimmingCharacters(in: .whitespaces).hasPrefix("{") {
+            let json = try? JSONSerialization.jsonObject(with: Data(text.utf8), options: .fragmentsAllowed)
+            if name == "error", let message = json as? String {
+                return SSEEventPayload(event: "error", sessionId: nil, runId: nil, message_id: nil,
+                                       delta: nil, content: nil, toolName: nil, preview: nil,
+                                       args: nil, completed: nil, partial: nil, interrupted: nil, message: message)
+            }
+            if name == "error", json == nil, !text.trimmingCharacters(in: .whitespaces).hasPrefix("{") {
                 return SSEEventPayload(event: "error", sessionId: nil, runId: nil, message_id: nil,
                                        delta: nil, content: nil, toolName: nil, preview: nil,
                                        args: nil, completed: nil, partial: nil, interrupted: nil, message: text)
             }
-            throw APIError.sseParseError("The gateway sent an invalid \(name.isEmpty ? "unnamed" : name) frame. Check the gateway log and streaming API compatibility.")
+            let field = Self.decodingFailure(error)
+            // Only known protocol names and schema fields enter diagnostics. Never
+            // log the raw JSON, decoder debugDescription, or server-provided values.
+            let jsonName = (json as? [String: Any])?["event"] as? String
+            let candidate = name.isEmpty ? jsonName ?? "" : name
+            let label = Self.knownEvents.contains(candidate) ? candidate : "unrecognized"
+            let detail = "The gateway sent an invalid \(label) frame. \(field) Check the gateway log and streaming API compatibility."
+            #if DEBUG
+            FileLogger.shared.log("SSEParser: \(detail)")
+            #endif
+            throw APIError.sseParseError(detail)
         }
+    }
+
+    private static let knownEvents: Set<String> = [
+        "assistant.delta", "assistant.completed", "message.started", "message.delta", "message.completed",
+        "run.started", "run.progress", "run.completed", "run.failed", "run.cancelled", "run.interrupted",
+        "tool.started", "tool.progress", "tool.completed", "tool.failed", "error", "done", "workspace.changed"
+    ]
+
+    private static func decodingFailure(_ error: Error) -> String {
+        let path: [CodingKey]
+        let reason: String
+        switch error {
+        case DecodingError.typeMismatch(_, let context):
+            path = context.codingPath
+            reason = "has an unexpected JSON type"
+        case DecodingError.valueNotFound(_, let context):
+            path = context.codingPath
+            reason = "requires a non-null value"
+        case DecodingError.keyNotFound(let key, let context):
+            path = context.codingPath + [key]
+            reason = "is required but missing"
+        default:
+            return "The payload is not valid JSON or contains an unsupported field value."
+        }
+        let fields: Set<String> = ["event", "session_id", "run_id", "message_id", "delta", "content",
+            "tool_name", "preview", "args", "completed", "partial", "interrupted", "message", "runtime",
+            "sequence", "code", "id", "role", "provider", "model", "route_source", "model_lock", "requested"]
+        let field = path.map { fields.contains($0.stringValue) ? $0.stringValue : "field" }.joined(separator: ".")
+        return "Field '\(field.isEmpty ? "payload" : field)' \(reason)."
     }
 
     private func value(_ line: String, prefix: String) -> String {

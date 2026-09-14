@@ -2,6 +2,10 @@
 
 ## Current candidate
 
+The newer **1.8.80 (177)** testing build contains queue and structured-message
+repairs and is installed on the phone. Apple accepted its upload; TestFlight
+distribution is being checked. It has not replaced the review candidate below.
+
 - Version: **1.8.79 (176)**.
 - Bundle identifier: `com.chibitek.hermescompanion`.
 - TestFlight: build is **Testing** in the internal testing group; the account

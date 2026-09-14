@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Run real iOS/two-client tests against an isolated, tool-free local Hermes gateway.
 
+Author: Chibitek Contributors
+Updated: 2026-09-14
+Usage: supply the server repository, Python runtime, simulator, derived-data,
+artifact directory and model arguments shown by --help.
+
 Uses a fresh Hermes home and ephemeral API credential; never edits or restarts an
 installed gateway. The model endpoint must already be running on loopback.
 """
@@ -131,7 +136,10 @@ def main():
                 after = get("/api/sessions")
                 report = {"source": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=server_repo, text=True).strip(),
                           "model": args.model, "features": capabilities.get("features"),
-                          "tests": summary, "remaining_sessions": len(after.get("data", []))}
+                          "tests": summary, "remaining_sessions": len(after.get("data", [])),
+                          "remaining_session_metadata": [
+                              {field: row.get(field) for field in ("id", "title", "source", "message_count")}
+                              for row in after.get("data", [])]}
                 (artifacts / "verification.json").write_text(json.dumps(report, indent=2))
                 if tested.returncode or summary.get("passedTests", 0) < 1 or summary.get("failedTests") or summary.get("skippedTests"):
                     raise RuntimeError("Real iOS verification did not pass; inspect ios.log and verification.json")

@@ -4,6 +4,55 @@ import XCTest
 /// Opt-in integration against the operator's real gateway. Credentials arrive
 /// through TEST_RUNNER_HERMES_LIVE_KEY, never a tracked configuration file.
 final class LiveGatewayTests: XCTestCase {
+    override func tearDown() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+           let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] {
+            let client = HermesAPIClient(config: ConnectionConfig(baseURL: url, apiKey: key, label: "Cleanup verification"))
+            let remaining = try await client.listSessions()
+            XCTAssertTrue(remaining.isEmpty, "Disposable gateway retained sessions after this test: \(remaining.map(\.id))")
+        }
+        try await super.tearDown()
+    }
+
+    @MainActor
+    func testRealGatewayStructuredAcknowledgementMatchesCompletedMessage() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Structured message verification requires the disposable workspace runner.")
+        }
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: url, apiKey: key, label: "Message contract"))
+        let options = try await client.getModelOptions()
+        let session = try await client.createSession(title: "Structured acknowledgement verification", model: options.model, provider: options.provider)
+        do {
+            let events = try await withTimeout(seconds: 90) {
+                var events: [SSEEventPayload] = []
+                let stream = try await client.streamChat(sessionId: session.id,
+                    message: "Message contract verification only. Reply with exactly HERMES_MESSAGE_CHECK. Do not use tools or take actions.")
+                for try await event in stream { events.append(event) }
+                return events
+            }
+            let started = try XCTUnwrap(events.first { $0.event == "message.started" })
+            let message = try XCTUnwrap(started.structuredMessage)
+            let messageID = try XCTUnwrap(message.id)
+            XCTAssertEqual(message.role, "assistant")
+            XCTAssertNil(started.message)
+            let completed = try XCTUnwrap(events.first { $0.event == "assistant.completed" })
+            XCTAssertEqual(completed.message_id, messageID)
+            XCTAssertEqual(completed.sessionId, session.id)
+            XCTAssertFalse(completed.content?.isEmpty ?? true)
+            let store = AppStore(client: client)
+            _ = await store.handleSSEEvent(started)
+            XCTAssertEqual(store.responseActivity, "Hermes accepted the message")
+            XCTAssertTrue(store.messages.isEmpty)
+        } catch {
+            try await client.deleteSession(sessionId: session.id)
+            throw error
+        }
+        try await client.deleteSession(sessionId: session.id)
+    }
+
     @MainActor
     func testRealGatewayQueuedFollowUpIsConfirmedOnceInOriginalConversation() async throws {
         let environment = ProcessInfo.processInfo.environment
