@@ -51,3 +51,9 @@ certs/
 *.sqlite*
 private/
 .local/
+
+# Keep raw captures and design exports out of public commits
+screenshots/
+design/Markdown files review*
+design/IMG_*
+design/Hermes Companion.dc.html
