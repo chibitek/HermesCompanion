@@ -6,11 +6,11 @@ Companion **1.8.81 (178)** is installed on the physical phone; device inventory
 confirms its version and launching the app succeeded. The first installation
 command lost its connection; the later inventory check established completion.
 The app and widget have matching versions, and the signed export was verified.
-Apple accepted the upload; TestFlight processing and assignment are being checked.
+Build 178 is Testing in the internal TestFlight group.
 Build 178 adds confirmed session deletion and specific in-app update notes to the
 queue, structured-message, typed-chat audio and text-fidelity repairs.
 
-Build 177 is Testing in the internal TestFlight group. The existing tester remains
+The internal group contains builds 176, 177 and 178. The existing tester remains
 Invited; the invitation was resent on September 14 after the tester reported the
 app absent from the active list. TestFlight acceptance and installation remain
 unverified, and the screenshot's Incompatible entry is still unidentified.

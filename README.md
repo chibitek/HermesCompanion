@@ -36,10 +36,9 @@ Build 177 adds conversation-owned queued follow-ups, explicit draft recovery,
 and structured stream-message decoding with field-specific errors. Build 178
 also requires confirmed remote deletion before clearing a conversation or its
 queued drafts and includes specific in-app update notes. Device inventory confirms
-build 178 is installed, and launching it succeeded. Apple accepted the upload;
-TestFlight processing and assignment are being checked.
+build 178 is installed, and launching it succeeded. Build 178 is Testing in the internal TestFlight group.
 
-Build 177 remains Testing in the internal group. The existing tester remains
+Builds 176, 177 and 178 are Testing in the internal group. The existing tester remains
 Invited after a September 14 resend and reports the app absent from the active
 TestFlight list. Acceptance and installation through TestFlight remain unverified.
 

@@ -24,6 +24,6 @@ an unrelated `ok: true` body now use the native confirmation contract.
 
 This repair is packaged in 1.8.81 (178). The signed export was verified, device
 inventory confirms installation, and launching the app succeeded. Apple accepted
-the upload; TestFlight processing and assignment are being checked. The first
+the upload, and build 178 is Testing in the internal group. The first
 install command lost its device connection, so installation was confirmed by a
 separate inventory check. Build 177 and the submitted build 176 do not contain it.

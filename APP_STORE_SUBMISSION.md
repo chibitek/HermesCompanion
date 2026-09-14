@@ -4,8 +4,8 @@
 
 The newer **1.8.81 (178)** build adds confirmed session deletion to the queue and
 structured-message repairs. Device inventory and launch confirm installation.
-Apple accepted its upload; TestFlight processing and assignment are being checked.
-Build 177 is Testing in the internal group, but its existing tester remains Invited
+Build 178 is Testing in the internal TestFlight group.
+The existing internal tester remains Invited
 after the September 14 resend. TestFlight acceptance and installation are unverified.
 Build 178 has not replaced the review candidate below.
 
