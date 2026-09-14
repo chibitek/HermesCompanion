@@ -71,17 +71,31 @@ final class HermesAPIClient: Sendable {
         return req
     }
 
+    /// Keep the request context when URLSession reports a transport failure.
+    /// Long-running chat and uploads retain the session's existing deadlines.
+    private func perform(_ request: URLRequest, timeout: Double? = nil) async throws -> (Data, URLResponse) {
+        do {
+            if let timeout {
+                return try await withTimeout(seconds: timeout) { [session] in
+                    try await session.data(for: request)
+                }
+            }
+            return try await session.data(for: request)
+        } catch {
+            if Task.isCancelled || error is CancellationError { throw CancellationError() }
+            throw APIError.transport(TransportFailure(request: request, error: error, timeout: timeout))
+        }
+    }
+
     private func get<T: Decodable>(path: String, queryItems: [URLQueryItem]? = nil, type: T.Type) async throws -> T {
         let request = try request(method: "GET", path: path, queryItems: queryItems)
-        let (data, response) = try await withTimeout(seconds: 20) { [session] in
-            try await session.data(for: request)
-        }
+        let (data, response) = try await perform(request, timeout: 20)
         try checkHTTPStatus(response, data: data)
         return try decode(type, data: data, response: response)
     }
 
     private func sendEmpty(method: String, path: String) async throws {
-        let (data, response) = try await session.data(for: try request(method: method, path: path))
+        let (data, response) = try await perform(try request(method: method, path: path))
         try checkHTTPStatus(response, data: data)
     }
 
@@ -208,9 +222,7 @@ final class HermesAPIClient: Sendable {
         req.httpBody = try JSONEncoder().encode(body)
         req.timeoutInterval = 20
         let outgoing = req
-        let (data, response) = try await withTimeout(seconds: 20) { [session] in
-            try await session.data(for: outgoing)
-        }
+        let (data, response) = try await perform(outgoing, timeout: 20)
         try checkHTTPStatus(response, data: data)
         return try decode(Result.self, data: data, response: response)
     }
@@ -278,7 +290,7 @@ final class HermesAPIClient: Sendable {
         if let idempotencyKey { req.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key") }
         req.timeoutInterval = 20
         let outgoing = req
-        let (data, response) = try await withTimeout(seconds: 20) { [session] in try await session.data(for: outgoing) }
+        let (data, response) = try await perform(outgoing, timeout: 20)
         try checkHTTPStatus(response, data: data)
         return try decode(Result.self, data: data, response: response)
     }
@@ -321,9 +333,7 @@ final class HermesAPIClient: Sendable {
         req.httpBody = try JSONEncoder().encode(body)
         req.timeoutInterval = 20
         let outgoing = req
-        let (data, response) = try await withTimeout(seconds: 20) { [session] in
-            try await session.data(for: outgoing)
-        }
+        let (data, response) = try await perform(outgoing, timeout: 20)
         try checkHTTPStatus(response, data: data)
         return try decode(Result.self, data: data, response: response)
     }
@@ -364,9 +374,7 @@ final class HermesAPIClient: Sendable {
     /// GET /health — no auth required, used for connection test
     func checkHealth() async throws -> HealthResponse {
         let url = try makeURL(path: "/health")
-        let (data, response) = try await withTimeout(seconds: 5) { [session] in
-            try await session.data(from: url)
-        }
+        let (data, response) = try await perform(URLRequest(url: url), timeout: 5)
         try checkHTTPStatus(response, data: data)
         return try decode(HealthResponse.self, data: data, response: response)
     }
@@ -395,7 +403,7 @@ final class HermesAPIClient: Sendable {
     func createJob(_ payload: HermesJobWrite) async throws -> HermesJob {
         var req = try request(method: "POST", path: "/api/jobs")
         req.httpBody = try JSONEncoder().encode(payload)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await perform(req)
         try checkHTTPStatus(response, data: data)
         return try decode(HermesJobResponse.self, data: data, response: response).job
     }
@@ -403,7 +411,7 @@ final class HermesAPIClient: Sendable {
     func updateJob(jobId: String, updates: HermesJobWrite) async throws -> HermesJob {
         var req = try request(method: "PATCH", path: "/api/jobs/\(jobId)")
         req.httpBody = try JSONEncoder().encode(updates)
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await perform(req)
         try checkHTTPStatus(response, data: data)
         return try decode(HermesJobResponse.self, data: data, response: response).job
     }
@@ -434,7 +442,7 @@ final class HermesAPIClient: Sendable {
         req.setValue(fileName, forHTTPHeaderField: "X-Artifact-Filename")
         req.httpBody = data
 
-        let (resp, response) = try await session.data(for: req)
+        let (resp, response) = try await perform(req)
         try checkHTTPStatus(response, data: resp)
         return try decode(HermesArtifactReceipt.self, data: resp, response: response)
     }
@@ -490,7 +498,7 @@ final class HermesAPIClient: Sendable {
     func createSession(title: String? = nil, model: String? = nil, provider: String? = nil) async throws -> HermesSession {
         var req = try request(method: "POST", path: "/api/sessions")
         req.httpBody = try JSONEncoder().encode(CreateSessionRequest(title: title, model: model, provider: provider, requireModelLock: model == nil ? nil : true))
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await perform(req)
         try checkHTTPStatus(response, data: data)
         // Server returns {"object": "hermes.session", "session": {...}}
         let wrapper = try decode(CreateSessionResponse.self, data: data, response: response)
@@ -530,7 +538,7 @@ final class HermesAPIClient: Sendable {
 
     /// DELETE /api/sessions/{id}
     func deleteSession(sessionId: String) async throws {
-        let (data, response) = try await session.data(for: try request(method: "DELETE", path: "/api/sessions/\(sessionId)"))
+        let (data, response) = try await perform(try request(method: "DELETE", path: "/api/sessions/\(sessionId)"))
         try checkHTTPStatus(response, data: data)
     }
 
@@ -551,7 +559,7 @@ final class HermesAPIClient: Sendable {
        if refresh { components.queryItems = [URLQueryItem(name: "refresh", value: "1")] }
        var req = try request(method: "GET", path: "")
         req.url = components.url
-       let (data, response) = try await session.data(for: req)
+       let (data, response) = try await perform(req)
        try checkHTTPStatus(response, data: data)
        return try decode(ModelsResponse.self, data: data, response: response)
     }
@@ -578,7 +586,7 @@ final class HermesAPIClient: Sendable {
         req.httpBody = try JSONEncoder().encode(
             SessionModelLockRequest(model: model, provider: provider, requireModelLock: true)
         )
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await perform(req)
         try checkHTTPStatus(response, data: data)
         return try decode(SessionModelLockResponse.self, data: data, response: response).runtime
     }
@@ -661,7 +669,7 @@ final class HermesAPIClient: Sendable {
         }
         req.httpBody = body
 
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await perform(req)
         try checkHTTPStatus(response, data: data)
         return try decode(SessionChatResponse.self, data: data, response: response)
     }
@@ -733,7 +741,7 @@ final class HermesAPIClient: Sendable {
                 title: title, isPinned: isPinned, isArchived: isArchived, isHidden: isHidden
             )
         )
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await perform(req)
         try checkHTTPStatus(response, data: data)
         let result = try decode(CreateSessionResponse.self, data: data, response: response)
         return result.session
@@ -744,7 +752,7 @@ final class HermesAPIClient: Sendable {
     func forkSession(sessionId: String, title: String? = nil) async throws -> HermesSession {
         var req = try request(method: "POST", path: "/api/sessions/\(sessionId)/fork")
         req.httpBody = try JSONEncoder().encode(ForkSessionRequest(title: title))
-        let (data, response) = try await session.data(for: req)
+        let (data, response) = try await perform(req)
         try checkHTTPStatus(response, data: data)
         let result = try decode(ForkSessionResponse.self, data: data, response: response)
         return result.session
@@ -797,6 +805,7 @@ func withTimeout<T>(seconds: Double, operation: @escaping @Sendable () async thr
 
 enum APIError: LocalizedError {
     case http(HTTPFailure)
+    case transport(TransportFailure)
     case invalidResponse
     case invalidURL(String)
     case unauthorized
@@ -817,6 +826,7 @@ enum APIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .http(let failure): return failure.errorDescription
+        case .transport(let failure): return failure.errorDescription
         case .invalidResponse: return "Hermes returned data that does not match the requested resource or pagination. Refresh the view; if it repeats, verify the gateway and Companion bridge versions."
         case .invalidURL(let url): return "Invalid URL: \(url)"
         case .unauthorized: return "Invalid API key"

@@ -40,3 +40,39 @@ struct HTTPFailure: LocalizedError, Sendable {
         return "\(endpoint) (HTTP \(status)): \(detail.map { $0 + ". " } ?? "")\(action)"
     }
 }
+
+/// A transport error must never include URL credentials, query values, or headers.
+struct TransportFailure: LocalizedError, Sendable {
+    let method: String
+    let endpoint: String
+    let code: Int
+    let timeout: Double?
+
+    init(request: URLRequest, error: Error, timeout: Double?) {
+        method = request.httpMethod ?? "GET"
+        endpoint = request.url?.path ?? "Hermes API"
+        let underlying = error as NSError
+        code = underlying.domain == NSURLErrorDomain ? underlying.code : URLError.unknown.rawValue
+        self.timeout = timeout
+    }
+
+    var errorDescription: String? {
+        let reason: String
+        switch code {
+        case URLError.timedOut.rawValue:
+            reason = "No response arrived" + (timeout.map { " within \(Int($0)) seconds" } ?? " before the request timed out") + ". Check Wi-Fi or Tailscale and the gateway log for this endpoint. A responding health check does not confirm this operation succeeded."
+        case URLError.notConnectedToInternet.rawValue:
+            reason = "The device is offline. Reconnect Wi-Fi or cellular data, then check Tailscale if this server uses it."
+        case URLError.cannotConnectToHost.rawValue, URLError.cannotFindHost.rawValue, URLError.dnsLookupFailed.rawValue:
+            reason = "The gateway could not be reached. Verify the server address, listening port, and Wi-Fi or Tailscale connection."
+        case URLError.networkConnectionLost.rawValue:
+            reason = "The network connection dropped before Hermes confirmed the result. Reconnect and refresh the session before retrying."
+        case URLError.secureConnectionFailed.rawValue, URLError.serverCertificateUntrusted.rawValue, URLError.serverCertificateHasBadDate.rawValue:
+            reason = "The server's secure connection could not be verified. Check its HTTPS certificate and the device date."
+        default:
+            reason = "The network request failed before Hermes confirmed the result. Check the gateway log and network connection."
+        }
+        let retry = method == "GET" ? "" : " The operation may have reached the server; refresh its state before repeating it."
+        return "\(method) \(endpoint) (network \(code)): \(reason)\(retry)"
+    }
+}

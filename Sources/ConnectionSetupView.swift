@@ -5,10 +5,13 @@ import SwiftUI
 struct ConnectionSetupView: View {
     @ObservedObject var store: AppStore
     @EnvironmentObject var appearance: AppearanceSettings
+    @Environment(\.dismiss) private var dismiss
     @State private var baseURL = ""
     @State private var apiKey = ""
     @State private var label = "My Hermes"
     @State private var isTesting = false
+    @State private var serverToDelete: ConnectionConfig?
+    @State private var isDeletingServer = false
     
     // Whether we're editing an existing connection
     private let initialConfig: ConnectionConfig?
@@ -84,7 +87,21 @@ struct ConnectionSetupView: View {
                         }
                         
                         actionButtons
-                        
+
+                        if let savedServer = store.savedConnections.first(where: {
+                            $0.normalizedBaseURL == ConnectionConfig(baseURL: baseURL, apiKey: "", label: "").normalizedBaseURL
+                        }) {
+                            Button(role: .destructive) {
+                                serverToDelete = savedServer
+                            } label: {
+                                Label("Delete Server", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                            }
+                            .disabled(isTesting || isDeletingServer)
+                            .accessibilityHint("Remove this saved connection from Companion")
+                        }
+
                         tipsSection
                         
                         Spacer(minLength: 40)
@@ -99,7 +116,7 @@ struct ConnectionSetupView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if initialConfig != nil {
                         Button("Done") {
-                            // Let user dismiss if editing
+                            dismiss()
                         }
                         .foregroundStyle(appearance.accent)
                     }
@@ -108,6 +125,30 @@ struct ConnectionSetupView: View {
             .onAppear {
                 prefillDebugConnectionIfAvailable()
                 prefillExistingConnectionIfAvailable()
+            }
+            .confirmationDialog("Delete saved server?", isPresented: Binding(
+                get: { serverToDelete != nil },
+                set: { if !$0 { serverToDelete = nil } }
+            ), titleVisibility: .visible, presenting: serverToDelete) { config in
+                Button("Delete Server", role: .destructive) {
+                    Task {
+                        isDeletingServer = true
+                        defer { isDeletingServer = false }
+                        await store.deleteConnection(config)
+                        if store.savedConnections.contains(where: { $0.baseURL == config.baseURL }) {
+                            testResult = .failure(store.error?.message ?? "The saved server could not be removed. Try again from Settings.")
+                        } else {
+                            baseURL = ""
+                            apiKey = ""
+                            label = "My Hermes"
+                            testResult = nil
+                            if initialConfig != nil { dismiss() }
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { config in
+                Text("Remove \(config.label) (\(config.normalizedBaseURL)) from this app? This disconnects it if active. Hermes and its conversations on the server are kept.")
             }
             .sheet(isPresented: $showChooseServer) {
                 serverPickerSheet
@@ -566,16 +607,12 @@ struct ConnectionSetupView: View {
         let config = ConnectionConfig(baseURL: baseURL, apiKey: apiKey, label: label)
         let client = HermesAPIClient(config: config)
         do {
-            let result: (HealthResponse, CapabilitiesResponse)
-            result = try await withTimeout(seconds: 10) {
-                let health = try await client.checkHealth()
-                guard health.status == "ok", health.isHermesAPI else {
-                    throw APIError.invalidEndpoint(AppStore.invalidHealthMessage(health))
-                }
-                let caps = try await client.getCapabilities()
-                return (health, caps)
+            let health = try await client.checkHealth()
+            guard health.status == "ok", health.isHermesAPI else {
+                throw APIError.invalidEndpoint(AppStore.invalidHealthMessage(health))
             }
-            testResult = .success("Connected — Hermes v\(result.0.version ?? "unknown")")
+            _ = try await client.getCapabilities()
+            testResult = .success("Connection test passed — Hermes v\(health.version ?? "unknown")")
         } catch let error as APIError {
             testResult = .failure(error.errorDescription ?? "Connection failed")
         } catch {
@@ -635,9 +672,7 @@ struct ConnectionSetupView: View {
                 try KeychainManager.shared.addOrUpdate(config)
                 store.savedConnections = KeychainManager.shared.loadAll()
                 if store.connectionConfig?.baseURL == baseURL {
-                    let success = try await withTimeout(seconds: 15) {
-                        await store.connect(config: config)
-                    }
+                    let success = await store.connect(config: config)
                     if success {
                         testResult = .success("Connected — \(label)")
                     } else {
@@ -661,14 +696,7 @@ struct ConnectionSetupView: View {
             }
         }
         
-        var success = false
-        do {
-            success = try await withTimeout(seconds: 15) {
-                await store.connect(config: config)
-            }
-        } catch {
-            success = false
-        }
+        let success = await store.connect(config: config)
         
         if success {
             testResult = .success("Connected — \(label)")

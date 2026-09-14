@@ -123,6 +123,7 @@ final class AppStore: ObservableObject {
     private(set) var apiClient: HermesAPIClient? {
         didSet {
             guard oldValue !== apiClient else { return }
+            hasExplicitlyConnected = false
             streamTask?.cancel()
             liveChangesAvailable = false
             liveChangesError = nil
@@ -326,6 +327,8 @@ final class AppStore: ObservableObject {
     }
 
     func connect(config: ConnectionConfig) async -> Bool {
+        isLoadingConnection = true
+        defer { isLoadingConnection = false }
         let client = HermesAPIClient(config: config)
         self.apiClient = client
         // An explicit (re)connect supersedes any pending background retry.
@@ -434,7 +437,7 @@ final class AppStore: ObservableObject {
             let updated = try KeychainManager.shared.remove(baseURL: config.baseURL)
             self.savedConnections = updated
         } catch {
-            self.error = AppError(message: "Failed to delete: \(error.localizedDescription)")
+            self.error = AppError(message: "Could not remove the saved server from this device: \(error.localizedDescription). The connection has been kept; try again from Settings.")
             return
         }
         if connectionConfig?.baseURL == config.baseURL {
@@ -645,6 +648,7 @@ final class AppStore: ObservableObject {
         } catch {
             guard !Task.isCancelled, apiClient === client, sessionRefreshID == refreshID else { return }
             self.error = AppError(message: "Failed to load sessions: \(error.localizedDescription)")
+            syncError = "Session sync paused: \(error.localizedDescription) Retrying automatically."
             FileLogger.shared.log("AppStore: refreshSessions failed for \(connectionConfig?.baseURL ?? "unknown") — \(error.localizedDescription)")
         }
     }
@@ -828,7 +832,7 @@ final class AppStore: ObservableObject {
     }
 
     func syncNow() async {
-        guard !isSyncing, let client = apiClient else { return }
+        guard !isSyncing, !isLoadingConnection, let client = apiClient else { return }
         isSyncing = true
         defer { isSyncing = false }
         do {
@@ -857,7 +861,7 @@ final class AppStore: ObservableObject {
             }
             guard apiClient === client, !Task.isCancelled else { return }
             syncError = nil
-            if !isStreaming { lastSyncedAt = Date() }
+            if !isStreaming, activeSession != nil { lastSyncedAt = Date() }
         } catch {
             guard apiClient === client, !Task.isCancelled else { return }
             syncError = "Sync paused: \(error.localizedDescription) Retrying automatically."

@@ -2,6 +2,58 @@ import XCTest
 @testable import HermesCompanion
 
 final class HermesModelContractTests: XCTestCase {
+    func testCapabilityTimeoutIdentifiesEndpointWithoutPrivateURLDetails() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        SessionHistoryURLProtocol.handler = { request in
+            request.client?.urlProtocol(request, didFailWithError: URLError(.timedOut))
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        do {
+            _ = try await client.getCapabilities()
+            XCTFail("Timeout must surface")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("GET /v1/capabilities"))
+            XCTAssertTrue(error.localizedDescription.contains("20 seconds"))
+            XCTAssertFalse(error.localizedDescription.contains("hermes.invalid"))
+        }
+        let request = URLRequest(url: URL(string: "https://private.invalid/api/sessions?private=value")!)
+        let failure = TransportFailure(request: request, error: URLError(.timedOut), timeout: 20)
+        XCTAssertFalse(failure.localizedDescription.contains("private"))
+        XCTAssertFalse(failure.localizedDescription.contains("value"))
+    }
+
+    @MainActor
+    func testHealthyServerWithFailedSessionSyncReportsFailureWithoutChatSyncStamp() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url?.path == "/health" {
+                request.succeed(body: #"{"status":"ok","platform":"hermes-agent","version":"0.21.2"}"#)
+            } else {
+                request.client?.urlProtocol(request, didFailWithError: URLError(.timedOut))
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.refreshSessions()
+        XCTAssertTrue(store.syncError?.contains("GET /api/sessions") == true)
+        await store.syncNow()
+        XCTAssertNotNil(store.lastServerResponseAt)
+        XCTAssertNil(store.lastSyncedAt)
+        XCTAssertTrue(store.syncError?.contains("GET /api/sessions") == true)
+        SessionHistoryURLProtocol.handler = { request in
+            request.succeed(body: request.request.url?.path == "/health"
+                ? #"{"status":"ok","platform":"hermes-agent","version":"0.21.2"}"#
+                : #"{"object":"list","data":[]}"#)
+        }
+        await store.syncNow()
+        XCTAssertNil(store.syncError)
+        XCTAssertNil(store.lastSyncedAt, "Refreshing an empty session list must not claim that chat was synced")
+    }
+
     @MainActor
     func testReattachedRunShowsWaitAndDoesNotCallInterruptionCompleted() async throws {
         let config = URLSessionConfiguration.ephemeral
@@ -889,7 +941,12 @@ final class HermesModelContractTests: XCTestCase {
             _ = try await client.checkHealth()
             XCTFail("A health request that never responds must time out")
         } catch {
-            XCTAssertEqual((error as? URLError)?.code, .timedOut)
+            guard case APIError.transport(let failure) = error else {
+                return XCTFail("Expected endpoint-specific transport error, got \(error)")
+            }
+            XCTAssertEqual(failure.code, URLError.timedOut.rawValue)
+            XCTAssertEqual(failure.endpoint, "/health")
+            XCTAssertTrue(failure.localizedDescription.contains("5 seconds"))
             XCTAssertLessThan(Date().timeIntervalSince(start), 8)
         }
     }

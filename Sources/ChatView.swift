@@ -28,13 +28,17 @@ struct ChatView: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let age = store.lastServerResponseAt.map { context.date.timeIntervalSince($0) }
             let responsive = age.map { $0 < 15 } ?? false
+            let ready = responsive && store.isConnected && store.syncError == nil
+            let status = store.isLoadingConnection ? "Connecting to Hermes" :
+                (store.syncError != nil ? "Sync needs attention" :
+                    (ready ? "Hermes connected" : (responsive ? "Health check responding" : "Checking Hermes")))
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Circle().fill(responsive ? Color.green : Color.orange).frame(width: 7, height: 7)
-                    Text(store.isStreaming ? store.responseActivity : (responsive ? "Hermes reachable" : "Checking Hermes"))
+                    Circle().fill(ready ? Color.green : Color.orange).frame(width: 7, height: 7)
+                    Text(store.isStreaming ? store.responseActivity : status)
                     Spacer()
                     if let age {
-                        Text("Server \(max(0, Int(age)))s ago")
+                        Text("Health \(max(0, Int(age)))s ago")
                     }
                     if let latency = store.serverLatencyMs { Text("\(latency) ms") }
                 }
@@ -50,7 +54,7 @@ struct ChatView: View {
                 }
                 if let issue = store.syncError {
                     Text(issue).foregroundStyle(.orange).textSelection(.enabled)
-                } else if !store.isStreaming, let synced = store.lastSyncedAt {
+                } else if !store.isStreaming, store.activeSession != nil, let synced = store.lastSyncedAt {
                     Text("Chat synced \(max(0, Int(context.date.timeIntervalSince(synced))))s ago")
                 }
             }
