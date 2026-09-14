@@ -596,6 +596,45 @@ final class HermesModelContractTests: XCTestCase {
     }
 
     @MainActor
+    func testReattachingSelectedRunPreservesMonitorAndReplayCursor() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"), session: URLSession(configuration: config))
+        let domain = "RunReplay-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(domain)
+        defer { defaults.removePersistentDomain(forName: domain); try? FileManager.default.removeItem(at: directory); SessionHistoryURLProtocol.handler = nil }
+        let controller = DurableRunController(client: client, connectionScope: "test", supportsEventReplay: true, defaults: defaults, pendingDirectory: directory)
+        var cursors: [String] = []
+        SessionHistoryURLProtocol.handler = { request in
+            if request.request.url!.path.hasSuffix("/events") {
+                cursors.append(request.request.value(forHTTPHeaderField: "Last-Event-ID") ?? "missing")
+                let first = #"data: {"event":"message.delta","run_id":"run_selected","sequence":1,"delta":"A"}"# + "\n\n"
+                let second = #"data: {"event":"message.delta","run_id":"run_selected","sequence":2,"delta":"B"}"# + "\n\n"
+                let done = #"data: {"event":"run.completed","run_id":"run_selected","sequence":3}"# + "\n\n"
+                request.succeed(body: cursors.count == 1 ? first : first + second + done, headers: ["Content-Type": "text/event-stream"])
+            } else {
+                Task { @MainActor in
+                    request.succeed(body: controller.liveText == "AB" ? #"{"run_id":"run_selected","status":"completed","output":"AB"}"# : #"{"run_id":"run_selected","status":"running"}"#)
+                }
+            }
+        }
+        await controller.attach("run_selected")
+        let monitor = Task { await controller.monitor() }
+        defer { monitor.cancel() }
+        for _ in 0..<100 where controller.liveText != "A" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(controller.liveText, "A")
+        await controller.attach("run_selected")
+        XCTAssertEqual(controller.liveText, "A", "Attaching the selected run must preserve its live output")
+        await monitor.value
+        XCTAssertEqual(cursors, ["0", "1"])
+        XCTAssertEqual(controller.liveText, "AB")
+        XCTAssertEqual(controller.status?.output, "AB")
+    }
+
+    @MainActor
     func testReplayGapLabelsPartialOutputAndResumesFromServerCursor() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]

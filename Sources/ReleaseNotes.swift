@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.84":
+            return [
+                "Attaching again to the run already on screen keeps its live response and status updates active.",
+                "Interrupted run streams resume from the saved event position without clearing or duplicating text.",
+                "Includes operational reasoning controls and the earlier chat steering and audio fixes."
+            ]
         case "1.8.83":
             return [
                 "Reasoning choices now apply to chat responses on supported Hermes gateways.",

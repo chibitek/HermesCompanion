@@ -61,7 +61,11 @@ final class DurableRunController: ObservableObject {
         defer { isWorking = false }
         do {
             let value = try await client.runStatus(id: id)
-            select(id)
+            // The view keys monitoring by run ID. Reattaching the same run
+            // must retain its generation and replay cursor so that monitor lives on.
+            if runID != id { select(id) }
+            failure = nil
+            operationFailure = nil
             status = value
             activity = value.activityDescription
             lastResponseAt = Date()
