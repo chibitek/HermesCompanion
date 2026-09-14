@@ -1,6 +1,26 @@
 # Development Release Readiness
 
-## Current September 14 delivery state
+## Active steering update: 1.8.82 (179)
+
+Build 179 adds native active-chat steering and recoverable undelivered guidance
+from other clients. The full suite passed 168 ordinary tests; all seven isolated
+real-gateway checks passed with zero retained sessions or metadata. See
+[CHAT_STEERING.md](CHAT_STEERING.md).
+
+The signed archive and exported app/widget versions match. Physical-device
+inventory confirms 1.8.82 (179) installed; launch was blocked because the phone
+was locked. Apple accepted the upload; build 179 is Testing in the existing
+internal group. The tester remains Invited with no registered device; TestFlight
+acceptance and installation remain unverified. The screenshot's Incompatible
+entry is still unidentified.
+
+The pending build 178 submission was withdrawn. Apple confirmed one submitted
+item, **1.8.82 (179)**, on September 14 at 1:58 AM Eastern; it is Waiting for Review
+with manual release selected. Reviewer gateway access and screenshot refresh
+remain follow-up work. No subscription or additional paid platform experience
+is included. The build 178 record below is historical.
+
+## Build 178 September 14 delivery snapshot
 
 Companion **1.8.81 (178)** is installed on the physical phone; device inventory
 confirms its version and launching the app succeeded. The first installation

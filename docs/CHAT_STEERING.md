@@ -47,7 +47,13 @@ of all diagnostic sessions. All seven real-gateway checks passed with zero remai
 metadata. This run observed first response activity at 7.703 seconds, steering
 acceptance at 7.717 seconds and completion at 17.407 seconds. An earlier single
 client probe took roughly 110 seconds; latency remains tracked separately in #55.
-The repair is being packaged as 1.8.82 (179); Apple delivery is not yet verified.
+The repair is archived as 1.8.82 (179), with matching signed app/widget versions.
+Physical-device inventory confirms installation. Launch was blocked by the
+locked phone. Apple accepted the upload, compliance and specific testing notes
+were saved, and build 179 is Testing in the existing internal group. Invitation
+acceptance and a TestFlight installation on the phone remain unverified. Build
+179 replaces the withdrawn build 178 review submission and is Waiting for Review
+with manual release selected.
 
 No authentication, credential storage, or production gateway changes are needed.
 This repair does not establish complete Hermes parity or resolve model latency.

@@ -2,27 +2,27 @@
 
 ## Current candidate
 
-The newer **1.8.81 (178)** build adds confirmed session deletion to the queue and
-structured-message repairs. Device inventory and launch confirm installation.
-Build 178 is Testing in the internal TestFlight group.
-The existing internal tester remains Invited
-after the September 14 resend. TestFlight acceptance and installation are unverified.
-Build 178 replaces the withdrawn build 176 review submission.
+**1.8.82 (179)** adds active chat steering and recovery of undelivered guidance
+from other clients to the earlier deletion, queue, stream and audio repairs.
+Device inventory confirms installation; launching was blocked by the locked phone.
 
-- Version: **1.8.81 (178)**.
+- Version: **1.8.82 (179)**.
 - Bundle identifier: `com.chibitek.hermescompanion`.
-- TestFlight: build is **Testing** in the internal testing group; the account
-  holder is **Invited**. Invitation acceptance and installation through
-  TestFlight remain separate device actions.
-- App Store Connect: this build replaces 1.8.79 (176). The saved candidate is
-  **Waiting for Review**, with manual release selected.
-- Apple confirmed **1 Item Submitted** on September 14, 2026. The submission
-  contains **1.8.81 (178)**. Reviewer gateway access has not been supplied;
-  review notes disclose the self-hosted gateway requirement. Arranging isolated
-  access and refreshing/verifying screenshots remain follow-up work.
-- No subscriptions are implemented in this candidate. The planned paid
-  experiences are specified in
-  [SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).
+- TestFlight: **Testing** in the internal group alongside builds 176 through 178.
+  The existing tester remains **Invited** after the September 14 resend, with no
+  registered device. Invitation acceptance and TestFlight installation remain
+  unverified; the screenshot's Incompatible entry is still unidentified.
+- App Review: the pending build 178 submission was withdrawn. Apple confirmed
+  **1 Item Submitted** on September 14, 2026 at 1:58 AM Eastern, containing
+  **1.8.82 (179)**. The candidate is **Waiting for Review**, with manual release.
+- Validation: 168 ordinary tests and seven separate real-gateway checks passed;
+  the isolated workspace had zero sessions or metadata remaining. Physical audio
+  acceptance and variable model latency remain open.
+- Reviewer gateway access has not been supplied. Review notes disclose the
+  self-hosted gateway requirement and verification limits. Isolated reviewer
+  access and screenshot refresh/verification remain follow-up work.
+- No subscriptions are implemented in this candidate. Planned paid experiences
+  are specified in [SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).
 
 These are observed release states, not permanent guarantees. Recheck App Store
 Connect before announcing a later release. Keep tester contact details, Apple
