@@ -140,3 +140,33 @@ steering; it preserves the existing queued-follow-up transport.
 
 Device inventory confirmed 1.8.77 (174). Apple accepted the uploaded build;
 TestFlight processing and tester availability remain unverified.
+
+
+## Text chat audio ownership, build 175
+
+Issue #53 covers audio changing during typed chat. Idle phone and CarPlay voice
+controllers both observed system interruptions and unconditionally selected the
+playback category during cleanup. A regression reproduced ambient changing to
+playback without starting either controller. They now ignore interruptions when
+they do not own audio and deactivate only sessions they activated. Dictation
+cleanup also avoids selecting a new playback category.
+
+Text focus, draft editing, sending, and queuing suspend the optional wake
+listener. This suspension survives automatic foreground and sheet transitions,
+dictation completion, and pending permission callbacks. Only explicitly opening
+voice conversation or re-enabling Hey Hermes clears it. Wake capture is released
+before dictation starts or a voice page opens, avoiding a later SwiftUI callback
+deactivating the new recorder. Settings explain the resulting behavior.
+
+Voice preview now uses the system-managed speech audio session and stops on
+leaving settings, so preview completion does not retain shared playback.
+The idle-interruption regression failed before the fix. The focused voice,
+dictation, and composer suite passed all 30 tests after the initial fix.
+Physical playback continuity and microphone indicators require observation on the
+updated phone; Simulator category checks do not prove Bluetooth route behavior.
+
+The final full iOS suite reported 139 passing tests, three integration checks
+skipped, and zero failures. The signed release archive and exported application
+signature verified. Paired-device inventory confirmed 1.8.78 (175) installed.
+Public tracked files and history passed secret scanning; no signing files, env
+files, private device identifiers, or local logs are included in the change.

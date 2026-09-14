@@ -172,20 +172,21 @@ struct ChatView: View {
         .onAppear {
             wakePhraseListener.onWakePhrase = {
                 guard !showVoicePage, !voiceConversation.isConversing else { return }
-                showVoicePage = true
+                openVoiceConversation()
             }
             if heyHermesEnabled { wakePhraseListener.start() }
             Task { await store.refreshSkills() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openVoiceMode)) { _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                showVoicePage = true
+                openVoiceConversation()
             }
         }
         .onDisappear {
             wakePhraseListener.stop()
         }
         .onChange(of: heyHermesEnabled) { _, enabled in
+            if enabled { wakePhraseListener.allowAfterExplicitVoiceRequest() }
             enabled ? wakePhraseListener.start() : wakePhraseListener.stop()
             ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
         }
@@ -203,7 +204,7 @@ struct ChatView: View {
                if SharedDefaults.shared.bool(forKey: "open_voice_page") {
                    SharedDefaults.shared.set(false, forKey: "open_voice_page")
                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                       showVoicePage = true
+                       openVoiceConversation()
                     }
                  }
            case .background:
@@ -325,15 +326,16 @@ struct ChatView: View {
                 handleVoiceTranscription(transcription)
             },
             onOpenVoicePage: {
-                showVoicePage = true
+                openVoiceConversation()
             },
             onDictationStateChange: { isRecording in
                 if isRecording {
-                    wakePhraseListener.pause()
+                    wakePhraseListener.suspendForTextInput()
                 } else if scenePhase == .active, !showVoicePage {
                     wakePhraseListener.resume()
                 }
             },
+            onTextInput: { wakePhraseListener.suspendForTextInput() },
             voiceConversation: voiceConversation
         )
     }
@@ -472,9 +474,16 @@ struct ChatView: View {
         .padding(.vertical, appearance.activeTheme.spacingS)
     }
 
+    private func openVoiceConversation() {
+        wakePhraseListener.pause()
+        wakePhraseListener.allowAfterExplicitVoiceRequest()
+        showVoicePage = true
+    }
+
     // MARK: - Send
 
     private func sendMessage() {
+        wakePhraseListener.suspendForTextInput()
         let visibleText = inputText.trimmingCharacters(in: .whitespaces)
         let images = attachments.filter { $0.isImage }.map { $0.data }
         let fileAttachments = attachments
@@ -492,6 +501,7 @@ struct ChatView: View {
     }
 
     private func queueMessage() {
+        wakePhraseListener.suspendForTextInput()
         guard attachments.isEmpty else {
             store.error = AppError(message: "Follow-up guidance currently accepts text only. Wait for Hermes to finish before sending attachments. Your draft and attachments have been kept.")
             return

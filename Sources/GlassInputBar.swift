@@ -33,6 +33,7 @@ struct GlassInputBar: View {
     // Callback to open the full-screen cyberpunk voice page
     var onOpenVoicePage: (() -> Void)? = nil
     var onDictationStateChange: ((Bool) -> Void)? = nil
+    var onTextInput: (() -> Void)? = nil
 
     @FocusState private var focused: Bool
     @State private var suppressNextSubmit = false
@@ -204,6 +205,7 @@ struct GlassInputBar: View {
                     .foregroundStyle(theme.textPrimary)
                     .tint(theme.accent)
                     .onChange(of: text) { _, newValue in
+                        if !voiceTranscriber.isRecording, !newValue.isEmpty { onTextInput?() }
                         // When return-sends is enabled, strip any newlines the user may have
                         // pasted or the keyboard inserted so Return stays a send action.
                         if appearance.returnKeySends && newValue.contains("\n") {
@@ -337,6 +339,9 @@ struct GlassInputBar: View {
                     if !voiceTranscriber.isRecording && !voiceConversation.isConversing {
                         Button {
                             dictationOriginalText = text
+                            // Release wake listening before recording activates
+                            // the shared session, not in a later SwiftUI update.
+                            onDictationStateChange?(true)
                             voiceTranscriber.startTranscription()
                         } label: {
                             Image(systemName: "mic.fill")
@@ -385,6 +390,7 @@ struct GlassInputBar: View {
             .padding(.bottom, 12)
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
+                    onTextInput?()
                     suppressNextSubmit = true
                 }
             }

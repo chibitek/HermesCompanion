@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.78":
+            return [
+                "Text chat leaves the microphone and audio route alone, including during system audio interruptions.",
+                "Typing or dictating pauses Hey Hermes until you explicitly reopen voice conversation or re-enable wake listening.",
+                "Dictation releases wake listening before starting microphone capture."
+            ]
         case "1.8.77":
             return [
                 "The composer shows a guidance arrow while Hermes is working and an up arrow when idle.",
