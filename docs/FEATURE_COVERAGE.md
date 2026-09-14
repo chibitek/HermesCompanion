@@ -2,7 +2,7 @@
 
 This record separates implemented surfaces from verified behavior. The original
 feature extraction document is a historical roadmap, not evidence of complete
-Hermes parity. The current delivered baseline is Companion 1.8.84 (181), native
+Hermes parity. The current delivered baseline is Companion 1.8.85 (182), native
 Hermes 0.21.2 with six compatibility patches, and Companion bridge 0.1.10.
 
 ## Current evidence and remaining acceptance
@@ -21,7 +21,7 @@ Hermes 0.21.2 with six compatibility patches, and Companion bridge 0.1.10.
 | Skills, toolsets and artifacts | API client and native UI surfaces exist | Verify every currently enabled operation against native contracts and live behavior |
 | Voice and audio | Typed-chat ownership repairs and automatic wake suppression have regression coverage | Physical microphone, music and Bluetooth continuity (#53) |
 | Broader Hermes features | Historical extraction lists files, Git, analytics, MCP, profile configuration, session correction and subagent surfaces | These require a fresh native-to-iOS contract inventory and implementation; full parity is not established |
-| Delivery | Build 181 installed by device inventory, internal TestFlight Testing, Waiting for Review with manual release | TestFlight invitation acceptance, unlocked-device visual tests, reviewer gateway access and screenshot verification |
+| Delivery | Build 182 installed by device inventory, internal TestFlight Testing, Waiting for Review with manual release | TestFlight invitation acceptance, unlocked-device visual tests, reviewer gateway access and screenshot verification |
 
 ## Project lifecycle verification
 
@@ -44,8 +44,8 @@ are isolated local-run timings, not production latency guarantees.
 
 The runner now checks an empty project baseline and fails on retained project
 records, active selection or removed linked files. Test credentials, temporary
-paths and captured metadata remain outside public source. Build 181's app binary
-is unchanged; this pass adds verification and documentation only.
+paths and captured metadata remain outside public source. That project-only pass left build 181's binary
+unchanged. Build 182 subsequently adds the scheduled-job synchronization repair.
 
 ## Live capability audit, September 14
 

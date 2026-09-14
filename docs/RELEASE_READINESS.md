@@ -1,6 +1,6 @@
 # Development Release Readiness
 
-## Prepared scheduled-job sync update: 1.8.85 (182)
+## Current scheduled-job sync update: 1.8.85 (182)
 
 Remote scheduled-job changes now refresh the Companion list through workspace
 invalidation, with a 30-second foreground polling fallback. Older responses
@@ -14,10 +14,14 @@ project remained, and linked files retained their contents. The job regression
 failed before repair and passed afterward. Intermittent admission-test issue #66
 and native job capability/execution issue #65 remain open. The gateway is unchanged.
 
-Build 182 is being packaged. Build 181 remains the last verified phone install,
-TestFlight Testing build and Waiting for Review submission until replacement is
-confirmed. Physical audio/network tests, invitation acceptance, reviewer gateway
-access, screenshots and full feature parity remain incomplete.
+Build 182 has matching app/widget versions and a verified signed export. Device
+inventory confirms installation; launch was blocked by the locked phone, so
+physical visual/audio acceptance remains incomplete. Apple processed the upload
+and build 182 is Testing in the existing internal group. The build 181 submission
+was withdrawn. Apple confirmed one submitted item, 1.8.85 (182), on September 14
+at 3:16 AM Eastern, Waiting for Review with manual release selected. Invitation
+acceptance, reviewer gateway access, screenshots, physical network transitions
+and full feature parity remain incomplete.
 
 ## Historical run monitoring update: 1.8.84 (181)
 

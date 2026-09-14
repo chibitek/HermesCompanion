@@ -2,32 +2,35 @@
 
 ## Current candidate
 
-**1.8.84 (181)** fixes run monitoring stopping when reattaching the run already
-selected. It retains live text and replay position while authoritative status
-continues updating. It includes the earlier reasoning, steering, deletion,
-queue, stream and audio repairs.
+**1.8.85 (182)** fixes scheduled jobs remaining stale after remote writes.
+Workspace changes and periodic synchronization refresh the list; older responses
+cannot overwrite newer snapshots, and failures show a specific warning and retry
+action. Earlier run-monitoring, reasoning, steering, deletion, queue, stream and
+audio repairs remain included.
 
-- Version: **1.8.84 (181)**.
+- Version: **1.8.85 (182)**.
 - Bundle identifier: `com.chibitek.hermescompanion`.
-- Device: signed export and matching app/widget versions verified. Inventory
+- Device: matching app/widget versions and signed export verified. Inventory
   confirms installation; launch was blocked by the locked phone. Physical
   visual/audio acceptance remains incomplete.
 - TestFlight: **Testing** in the existing internal group alongside builds 176
-  through 180. The existing invitation remains unaccepted in the latest observed
-  tester state; TestFlight installation remains unverified. The screenshot's
-  Incompatible entry is still unidentified.
-- App Review: the pending build 180 submission was withdrawn. Apple confirmed
-  **1 Item Submitted** on September 14, 2026 at 2:44 AM Eastern, containing
-  **1.8.84 (181)**. It is **Waiting for Review**, with manual release selected.
-- Validation: 171 ordinary iOS tests and eight separate real-gateway checks passed,
-  with zero retained sessions or metadata. The new regression fails before the
-  fix and passes after it. No gateway change was required; the six compatibility
-  patches and bridge 0.1.10 remain the deployed baseline.
-- Reviewer gateway access has not been supplied. Review notes disclose the
-  self-hosted gateway requirement and verification limits. Isolated reviewer
-  access and screenshot refresh/verification remain follow-up work.
-- No subscriptions are implemented in this candidate. Planned paid experiences
-  are specified in [SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).
+  through 181. Invitation acceptance and TestFlight installation remain
+  unverified. The screenshot's Incompatible entry is still unidentified.
+- App Review: the pending build 181 submission was withdrawn. Apple confirmed
+  **1 Item Submitted** on September 14, 2026 at 3:16 AM Eastern, containing
+  **1.8.85 (182)**. It is **Waiting for Review**, with manual release selected.
+- Validation: the final full rerun passed 174 ordinary iOS tests. All ten separate
+  real-gateway checks passed with zero retained jobs, sessions, projects or active
+  project; linked files were retained. The job regression failed before repair
+  and passed afterward. The gateway remains unchanged.
+- Scheduler execution/delivery and capability coherence (#65), intermittent
+  admission-test investigation (#66), physical audio (#53), variable model
+  latency (#55), retained-session investigation (#57) and full feature parity
+  remain incomplete. Review notes disclose these verification limits.
+- Reviewer gateway access has not been supplied. Isolated reviewer access and
+  screenshot refresh/verification remain follow-up work.
+- No subscriptions are implemented. Planned paid experiences are specified in
+  [SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).
 
 These are observed release states, not permanent guarantees. Recheck App Store
 Connect before announcing a later release. Keep tester contact details, Apple
