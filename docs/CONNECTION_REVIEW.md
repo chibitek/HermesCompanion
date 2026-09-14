@@ -170,3 +170,42 @@ skipped, and zero failures. The signed release archive and exported application
 signature verified. Paired-device inventory confirmed 1.8.78 (175) installed.
 Public tracked files and history passed secret scanning; no signing files, env
 files, private device identifiers, or local logs are included in the change.
+
+
+## Stream text fidelity, build 176
+
+Issue #54 records the live spacing failure visible in the phone screenshot.
+The renderer treated each delta as a whole document: it trimmed whitespace,
+discarded JSON objects without a text field, unwrapped objects with a content
+field, and stripped literal markup. This corrupted prose and code before the
+completed response arrived and could remove a complete JSON answer entirely.
+
+Assistant deltas, completed answers, and recovered partial text now preserve
+the gateway's content. Reasoning stays separate through event metadata, which
+the native API already supplies. A run-completed event leaves any uncommitted
+text available for the send pipeline to save. Regression tests pass SSE frames
+through the actual AppStore event handler and check every live prefix, spaces,
+newlines, indentation, JSON, literal markup, and reasoning separation.
+
+All three new regression cases failed on the prior renderer. The focused
+stream, SSE parser, and markdown/voice suite passed after the repair. The real
+gateway integration also observes live prefixes and compares the completed
+answer with canonical history; it runs in a disposable Hermes home against the
+installed local model, without changing the production gateway or conversations.
+
+The first live run passed stream fidelity, two-client conversation/rename, and
+board live invalidation, but independent run replay timed out after 123 seconds.
+Stream fidelity took 73 seconds and conversation/rename took 12 seconds. Ollama
+logged a large prompt prefill and failed requests in that window; the cause is
+not yet established. Issue #55 tracks this separate performance failure. These
+results do not establish fast or reliable responses for every workload.
+
+The repeated full live suite passed all four checks: independent run viewers
+and replay in 8.2 seconds, stream fidelity in 4.8 seconds, two-client chat and
+rename in 6.2 seconds, and board invalidation in 1.1 seconds. The verifier removed
+all diagnostic sessions, stopped its owned gateway, and removed the temporary
+home. This warm repeat does not resolve the initial latency failure in #55.
+
+The full iOS suite passed 142 tests, with the four opt-in integration tests
+skipped there and exercised separately above. The release archive and exported
+signature verified. Device inventory confirmed 1.8.79 (176), and launch succeeded.

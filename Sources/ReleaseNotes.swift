@@ -14,6 +14,12 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.79":
+            return [
+                "Live replies preserve spaces, paragraphs, and code indentation as Hermes sends them.",
+                "JSON replies and literal markup remain intact instead of being removed or rewritten.",
+                "Includes the text-chat microphone and audio ownership fixes from build 175."
+            ]
         case "1.8.78":
             return [
                 "Text chat leaves the microphone and audio route alone, including during system audio interruptions.",

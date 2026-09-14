@@ -68,6 +68,7 @@
 		AA0469C11390A59867DA014C /* HermesControlWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE746186A15D314B390ECCF0 /* HermesControlWidgetBundle.swift */; };
 		B18883A7CAE315EF2E85159F /* ServerTaskEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DD234508E0F3E649C530865 /* ServerTaskEditorView.swift */; };
 		BE05839130FC3CA7E1665096 /* BotChatAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 329602A7FE18628983F89A02 /* BotChatAccessView.swift */; };
+		C07934E2261BC5CEE042DB0A /* ChatStreamFidelityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75113D68B4A6D2C159F8524F /* ChatStreamFidelityTests.swift */; };
 		C24193D80B7FDF094EAB4267 /* HTTPFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB5CEDE2B2588D770C00A295 /* HTTPFailure.swift */; };
 		C3B9E7CA5A98A25BE25299F3 /* HermesModelContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0DDD0EF00AE53B1CB6CE883 /* HermesModelContractTests.swift */; };
 		C976F5D603BB2A2E0CBC38D6 /* ReleaseNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2C3FB2D1F3715F2B90F9EA /* ReleaseNotes.swift */; };
@@ -166,6 +167,7 @@
 		6D2171E6397695C9022968BD /* LiveGatewayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveGatewayTests.swift; sourceTree = "<group>"; };
 		6FE25F978F1F71764F7FF83D /* ProjectStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStoreTests.swift; sourceTree = "<group>"; };
 		73744DD7755B96A455966F0B /* AppearanceSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettings.swift; sourceTree = "<group>"; };
+		75113D68B4A6D2C159F8524F /* ChatStreamFidelityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStreamFidelityTests.swift; sourceTree = "<group>"; };
 		78F84C3E68E0066661BF529D /* SkillsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsListView.swift; sourceTree = "<group>"; };
 		7BA0CF13FA8236518ACD411E /* ModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSelectionView.swift; sourceTree = "<group>"; };
 		86EA7AA684EE78863AEC2F0A /* VoiceConversationPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConversationPage.swift; sourceTree = "<group>"; };
@@ -306,6 +308,7 @@
 				3BCDB840B57CFBFE15AFEAD3 /* ActiveSessionPersistenceTests.swift */,
 				BE76A6B4AB8E923D7B1114AF /* BotChatAccessTests.swift */,
 				57CA5A3F43C7D8E2E2915185 /* ChatHistoryVisibilityTests.swift */,
+				75113D68B4A6D2C159F8524F /* ChatStreamFidelityTests.swift */,
 				C6CC0110AB94C4C9331E73C4 /* ComposerSubmissionLogicTests.swift */,
 				B0DDD0EF00AE53B1CB6CE883 /* HermesModelContractTests.swift */,
 				6D2171E6397695C9022968BD /* LiveGatewayTests.swift */,
@@ -448,6 +451,7 @@
 				A8FBD11A8D629EB4A29E5F40 /* ActiveSessionPersistenceTests.swift in Sources */,
 				283ED6DCED1BE70001A9EB2C /* BotChatAccessTests.swift in Sources */,
 				2655F29BEC20C6EC7EC77AF3 /* ChatHistoryVisibilityTests.swift in Sources */,
+				C07934E2261BC5CEE042DB0A /* ChatStreamFidelityTests.swift in Sources */,
 				447392FE56BF7B3443B7CBAF /* ComposerSubmissionLogicTests.swift in Sources */,
 				C3B9E7CA5A98A25BE25299F3 /* HermesModelContractTests.swift in Sources */,
 				41B03565E7F4BF1F5FC3D612 /* LiveGatewayTests.swift in Sources */,
@@ -579,7 +583,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 175;
+				CURRENT_PROJECT_VERSION = 176;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -590,7 +594,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = YES;
-				MARKETING_VERSION = 1.8.78;
+				MARKETING_VERSION = 1.8.79;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -605,7 +609,7 @@
 				CODE_SIGN_ENTITLEMENTS = HermesCompanion.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 175;
+				CURRENT_PROJECT_VERSION = 176;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				ENABLE_PREVIEWS = YES;
@@ -616,7 +620,7 @@
 					"@executable_path/Frameworks",
 				);
 				LLVM_DEBUG_SYMBOLS = NO;
-				MARKETING_VERSION = 1.8.78;
+				MARKETING_VERSION = 1.8.79;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -697,7 +701,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 175;
+				CURRENT_PROJECT_VERSION = 176;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -705,7 +709,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.78;
+				MARKETING_VERSION = 1.8.79;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -779,7 +783,7 @@
 				CODE_SIGN_ENTITLEMENTS = ControlWidget/HermesControlWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 175;
+				CURRENT_PROJECT_VERSION = 176;
 				DEVELOPMENT_TEAM = "$(CHIBITEK_TEAM_ID)";
 				INFOPLIST_FILE = ControlWidget/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -787,7 +791,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.78;
+				MARKETING_VERSION = 1.8.79;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chibitek.hermescompanion.controlwidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

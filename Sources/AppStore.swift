@@ -1324,7 +1324,7 @@ final class AppStore: ObservableObject {
                     assistantMessage = streamedMsg
                     if streamedCompletion { receivedCompletion = true }
                     if !self.streamingText.isEmpty {
-                        let leftover = Self.stripRawArtifacts(self.streamingText)
+                        let leftover = self.streamingText
                         if !leftover.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             let message = ChatDisplayMessage(
                                 id: UUID().uuidString, role: "assistant",
@@ -1381,7 +1381,7 @@ final class AppStore: ObservableObject {
                   self.activeSession?.id == session.id else { return }
             if self.error != nil, !self.streamingText.isEmpty {
                 self.messages.append(ChatDisplayMessage(id: UUID().uuidString, role: "assistant",
-                    content: Self.stripRawArtifacts(self.streamingText), timestamp: Date()))
+                    content: self.streamingText, timestamp: Date()))
             }
             self.streamingText = ""
             self.streamingThinking = ""
@@ -1562,7 +1562,7 @@ final class AppStore: ObservableObject {
 
     // MARK: - SSE Event Handler
 
-    private func handleSSEEvent(_ event: SSEEventPayload) async -> ChatDisplayMessage? {
+    func handleSSEEvent(_ event: SSEEventPayload) async -> ChatDisplayMessage? {
         switch event.event {
         case "run.started", "message.started":
             responseActivity = "Hermes accepted the message"
@@ -1580,10 +1580,9 @@ final class AppStore: ObservableObject {
                 break
             }
             if let delta = event.delta {
-                let cleaned = Self.stripRawArtifacts(delta)
-                if !cleaned.isEmpty {
-                    streamingText += cleaned
-                }
+                // Deltas are fragments, not standalone documents. Spaces,
+                // newlines, JSON, and literal markup belong to the answer.
+                streamingText += delta
             }
         case "tool.progress":
             responseActivity = event.toolName == "_thinking" ? "Hermes is thinking" : "Hermes is working"
@@ -1636,7 +1635,7 @@ final class AppStore: ObservableObject {
             if let runtime = event.runtime {
                 activeRuntime = runtime
             }
-            let finalContent = Self.stripRawArtifacts(event.content ?? streamingText)
+            let finalContent = event.content ?? streamingText
 
             if !finalContent.isEmpty {
                 let message = ChatDisplayMessage(
@@ -1658,7 +1657,7 @@ final class AppStore: ObservableObject {
             if let runtime = event.runtime {
                 activeRuntime = runtime
             }
-            streamingText = ""
+            // Keep any uncommitted response for the send pipeline to save.
             streamingThinking = ""
 
         case "error":
@@ -1682,40 +1681,6 @@ final class AppStore: ObservableObject {
             FileLogger.shared.log("AppStore: unhandled SSE event: \(event.event)")
         }
         return nil
-    }
-
-    // MARK: - Raw Artifact Stripping
-
-    /// Strip raw JSON, thinking tags, and tool-call artifacts from text that
-    /// should only contain human-readable assistant text.
-    static func stripRawArtifacts(_ text: String) -> String {
-        var cleaned = text
-
-        // Strip reasoning/thinking blocks: <think> to </think> (inclusive)
-        while let startTag = cleaned.range(of: "<think"),
-              let endTag = cleaned.range(of: "</think", range: startTag.upperBound..<cleaned.endIndex) {
-            cleaned.removeSubrange(startTag.lowerBound..<endTag.upperBound)
-        }
-        // Strip any leftover bare <think> or </think> tags (unclosed or mismatched)
-        cleaned = cleaned.replacingOccurrences(of: "<think>", with: "")
-        cleaned = cleaned.replacingOccurrences(of: "</think>", with: "")
-
-        // Strip standalone JSON objects/arrays that aren't human text
-        let trimmed = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
-            if let data = trimmed.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                // Try to extract human-readable text from common JSON shapes
-                if let text = json["content"] as? String ?? json["text"] as? String ?? json["message"] as? String {
-                    cleaned = text
-                } else {
-                    // It's JSON but has no readable text field -- discard it
-                    cleaned = ""
-                }
-            }
-        }
-
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Approval

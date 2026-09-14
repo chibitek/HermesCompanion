@@ -5,6 +5,42 @@ import XCTest
 /// through TEST_RUNNER_HERMES_LIVE_KEY, never a tracked configuration file.
 final class LiveGatewayTests: XCTestCase {
     @MainActor
+    func testRealGatewayStreamMatchesCanonicalAnswerWithoutJoiningWords() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Stream fidelity verification requires the disposable workspace runner.")
+        }
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: url, apiKey: key, label: "Stream fidelity"))
+        let options = try await client.getModelOptions()
+        let session = try await client.createSession(title: "Stream fidelity verification", model: options.model, provider: options.provider)
+        do {
+            let store = AppStore(client: client)
+            await store.selectSession(session)
+            var livePrefixes: [String] = []
+            let observation = store.$streamingText.sink { text in
+                if !text.isEmpty { livePrefixes.append(text) }
+            }
+            defer { observation.cancel() }
+            let response = await store.sendMessage("Stream verification only. Reply with exactly: HERMES FIDELITY CHECK PASSED. Do not call tools or take any actions.")
+            XCTAssertNil(store.error, store.error?.message ?? "")
+            let answer = try XCTUnwrap(response?.content)
+            XCTAssertTrue(answer.contains(" "), "The verification answer must exercise word spacing")
+            XCTAssertGreaterThan(livePrefixes.count, 1, "Verify live deltas, not only a final response")
+            for prefix in livePrefixes {
+                XCTAssertTrue(answer.hasPrefix(prefix), "Every live prefix must retain the gateway's word boundaries")
+            }
+            let history = try await client.getMessages(sessionId: session.id)
+            let persisted = try XCTUnwrap(history.last(where: \.isAssistant))
+            XCTAssertEqual(answer, ChatDisplayMessage(from: persisted).content)
+        } catch {
+            try await client.deleteSession(sessionId: session.id)
+            throw error
+        }
+        try await client.deleteSession(sessionId: session.id)
+    }
+
+    @MainActor
     func testRealGatewayTwoClientConversationAndRename() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let url = environment["HERMES_LIVE_URL"],
