@@ -1090,6 +1090,48 @@ final class HermesModelContractTests: XCTestCase {
     }
 
     @MainActor
+    func testUnconfirmedDeletionPreservesConversationAndQueuedDrafts() async throws {
+        let cases: [(String, String)] = [
+            (#"{"object":"hermes.session.deleted","id":"current","deleted":false}"#, "did not confirm deletion"),
+            (#"{"object":"hermes.session.deleted","id":"unrelated-private-value","deleted":true}"#, "different conversation"),
+            (#"{"object":"unexpected-private-value","id":"current","deleted":true}"#, "unexpected receipt type"),
+            (#"{"object":"hermes.session.deleted","id":"current"}"#, "deleted"),
+            (#"{"object":"hermes.session.deleted","id":"current","deleted":"true"}"#, "deleted"),
+            (#"{"ok":true}"#, "object"),
+            ("", "JSON root")
+        ]
+        for (body, diagnostic) in cases {
+            let config = URLSessionConfiguration.ephemeral
+            config.protocolClasses = [SessionHistoryURLProtocol.self]
+            let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                         session: URLSession(configuration: config))
+            let store = AppStore(client: client)
+            let session = try JSONDecoder().decode(HermesSession.self, from: Data(#"{"id":"current"}"#.utf8))
+            store.activeSession = session
+            store.sessions = [session]
+            store.isStreaming = true
+            store.streamingText = "Pending response"
+            store.queueMessage("Keep this unsent draft")
+            let queuedID = try XCTUnwrap(store.queuedMessages.first?.id)
+            SessionHistoryURLProtocol.handler = { request in
+                XCTAssertEqual(request.request.httpMethod, "DELETE")
+                XCTAssertEqual(request.request.url?.path, "/api/sessions/current")
+                request.succeed(body: body)
+            }
+            await store.deleteSession(session)
+            SessionHistoryURLProtocol.handler = nil
+            XCTAssertEqual(store.activeSession?.id, session.id)
+            XCTAssertEqual(store.sessions.map(\.id), [session.id])
+            XCTAssertEqual(store.queuedMessages.first?.id, queuedID)
+            XCTAssertTrue(store.isStreaming)
+            XCTAssertEqual(store.streamingText, "Pending response")
+            let error = try XCTUnwrap(store.error?.message)
+            XCTAssertTrue(error.contains(diagnostic), error)
+            XCTAssertFalse(error.contains("private-value"))
+        }
+    }
+
+    @MainActor
     func testDeletedSessionCannotBeRepopulatedByPendingHistory() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [SessionHistoryURLProtocol.self]
@@ -1105,7 +1147,7 @@ final class HermesModelContractTests: XCTestCase {
                     history = request
                     started.fulfill()
                 } else {
-                    request.succeed(body: #"{"ok":true}"#)
+                    request.succeed(body: #"{"object":"hermes.session.deleted","id":"current","deleted":true}"#)
                 }
             }
         }
@@ -1134,7 +1176,7 @@ final class HermesModelContractTests: XCTestCase {
         store.isStreaming = true
         store.streamingText = "In-flight reply"
         store.queueMessage("Queued for this session")
-        SessionHistoryURLProtocol.handler = { $0.succeed(body: #"{"ok":true}"#) }
+        SessionHistoryURLProtocol.handler = { $0.succeed(body: #"{"object":"hermes.session.deleted","id":"current","deleted":true}"#) }
         defer { SessionHistoryURLProtocol.handler = nil }
         await store.deleteSession(session)
         XCTAssertNil(store.activeSession)

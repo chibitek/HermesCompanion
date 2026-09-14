@@ -42,6 +42,15 @@ See [CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) and
 [APP_STORE_SUBMISSION.md](../APP_STORE_SUBMISSION.md). Historical build and
 deployment snapshots below describe earlier checks, not current installed state.
 
+## Verified source change after build 177
+
+Session deletion now requires the native receipt type, requested conversation ID
+and `deleted: true` before clearing local conversation or queued drafts. Failed
+confirmation preserves local state with a specific diagnostic. The full suite
+passed 159 ordinary tests with six skipped, and all six real-gateway checks passed
+separately with zero retained sessions. This source repair is not in build 177 or
+the submitted build 176. See [SESSION_DELETION_RECEIPTS.md](SESSION_DELETION_RECEIPTS.md).
+
 ## Queue and stream repair in build 177
 
 Queued follow-ups now retain server and conversation ownership through navigation,

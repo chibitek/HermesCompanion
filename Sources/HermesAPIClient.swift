@@ -573,10 +573,26 @@ final class HermesAPIClient: Sendable {
         return page.data
     }
 
-    /// DELETE /api/sessions/{id}
+    private struct SessionDeletionReceipt: Decodable {
+        let object: String
+        let id: String
+        let deleted: Bool
+    }
+
+    /// DELETE /api/sessions/{id}. HTTP success alone does not confirm deletion.
     func deleteSession(sessionId: String) async throws {
         let (data, response) = try await perform(try request(method: "DELETE", path: "/api/sessions/\(sessionId)"))
         try checkHTTPStatus(response, data: data)
+        let receipt = try decode(SessionDeletionReceipt.self, data: data, response: response)
+        guard receipt.object == "hermes.session.deleted" else {
+            throw APIError.invalidEndpoint("DELETE /api/sessions returned an unexpected receipt type. Refresh the conversation list and check the gateway version before retrying.")
+        }
+        guard receipt.id == sessionId else {
+            throw APIError.invalidEndpoint("DELETE /api/sessions returned confirmation for a different conversation. Refresh the conversation list before retrying; this conversation's local state was preserved.")
+        }
+        guard receipt.deleted else {
+            throw APIError.invalidEndpoint("Hermes did not confirm deletion (deleted: false). Refresh the conversation list to check whether it still exists before retrying; this conversation's local state was preserved.")
+        }
     }
 
     // MARK: - Skills
