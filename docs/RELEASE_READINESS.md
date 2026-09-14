@@ -23,6 +23,16 @@ Waiting for Review with manual release preserved. The tester remains Invited.
 Physical visual/audio acceptance, external messaging delivery, full native job
 configuration, reviewer access and complete feature parity remain unfinished.
 
+## Subsequent Kanban verification, same build 183
+
+All thirteen real gateway checks passed, including native desktop task edits,
+comments, child results, attachment bytes/removal and iOS completion/archive.
+The native half independently verified the phone's saved fields. No chat, job or
+project records remained; the owned Kanban board was archived in the disposable
+home and linked files were retained. See [KANBAN_LIVE_VERIFICATION.md](KANBAN_LIVE_VERIFICATION.md)
+for exact scope and missing attachment/dependency editing operations. This work
+does not change the shipped binary, native gateway or Apple review candidate.
+
 ## Historical scheduled-job sync update: 1.8.85 (182)
 
 Remote scheduled-job changes now refresh the Companion list through workspace

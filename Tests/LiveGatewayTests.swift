@@ -391,6 +391,101 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayTasksRoundTripWithNativeDesktopAndAttachments() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"],
+              let slug = environment["HERMES_LIVE_KANBAN_BOARD"] else {
+            throw XCTSkip("Native task verification requires the disposable workspace runner.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Task verification")
+        let phone = HermesAPIClient(config: config)
+        let second = HermesAPIClient(config: config)
+        let store = AppStore(client: phone)
+        let live = Task { await store.runLiveSync() }
+        defer { live.cancel() }
+        try await waitForLiveSync { store.liveChangesAvailable }
+        var board = ServerBoardWrite()
+        board.slug = slug
+        board.name = "Native task verification"
+        _ = try await phone.createWorkspaceBoard(payload: board)
+        do {
+            var creation = ServerTaskWrite()
+            creation.title = "Phone task verification"
+            creation.body = "Phone description"
+            creation.idempotency_key = UUID().uuidString
+            let created = try await phone.createWorkspaceTask(board: slug, payload: creation)
+            let taskID = created.task.id
+            let retry = try await phone.createWorkspaceTask(board: slug, payload: creation)
+            XCTAssertEqual(retry.task.id, taskID)
+            let seenBySecond = try await second.workspaceTask(board: slug, id: taskID)
+            XCTAssertEqual(seenBySecond.task.body, "Phone description")
+            // Native child completion requires its parent dependency to be done.
+            var completion = ServerTaskWrite()
+            completion.status = "done"
+            completion.result = "Phone completion result"
+            completion.summary = "Phone completion summary"
+            _ = try await phone.updateWorkspaceTask(board: slug, taskID: taskID, payload: completion)
+            let revision = store.workspaceRevision
+            try await phone.commentWorkspaceTask(board: slug, taskID: taskID, body: "Phone ready for desktop changes")
+            let nativeDeadline = ContinuousClock.now + .seconds(20)
+            var detail = try await phone.workspaceTask(board: slug, id: taskID)
+            while detail.task.title != "Desktop task update", ContinuousClock.now < nativeDeadline {
+                try await Task.sleep(for: .milliseconds(200))
+                detail = try await phone.workspaceTask(board: slug, id: taskID)
+            }
+            XCTAssertEqual(detail.task.title, "Desktop task update")
+            try await waitForLiveSync { store.workspaceRevision > revision }
+            XCTAssertTrue(detail.comments.contains { $0.body == "Desktop comment arrived" && $0.author == "dashboard" })
+            XCTAssertEqual(detail.links?.children.count, 1)
+            XCTAssertEqual(detail.child_results?.first?.result, "Native child result")
+            XCTAssertEqual(detail.child_results?.first?.latest_summary, "Native child summary")
+            let attachment = try XCTUnwrap(detail.attachments?.first)
+            let download = try await phone.downloadTaskAttachment(board: slug, taskID: taskID, attachment: attachment)
+            defer { try? FileManager.default.removeItem(at: download.deletingLastPathComponent()) }
+            XCTAssertEqual(try Data(contentsOf: download), Data("Hermes attachment round trip: café\n".utf8))
+            var changes = ServerTaskWrite()
+            changes.priority = 2
+            _ = try await phone.updateWorkspaceTask(board: slug, taskID: taskID, payload: changes)
+            let completed = try await second.workspaceTask(board: slug, id: taskID)
+            XCTAssertEqual(completed.task.body, "Desktop body retained")
+            XCTAssertEqual(completed.task.result, "Phone completion result")
+            let removalRevision = store.workspaceRevision
+            try await phone.commentWorkspaceTask(board: slug, taskID: taskID, body: "Phone verified desktop attachment")
+            let removalDeadline = ContinuousClock.now + .seconds(20)
+            detail = try await phone.workspaceTask(board: slug, id: taskID)
+            while detail.task.title != "Desktop removal complete", ContinuousClock.now < removalDeadline {
+                try await Task.sleep(for: .milliseconds(200))
+                detail = try await phone.workspaceTask(board: slug, id: taskID)
+            }
+            XCTAssertEqual(detail.task.title, "Desktop removal complete")
+            XCTAssertTrue(detail.attachments?.isEmpty == true)
+            XCTAssertTrue(detail.links?.children.isEmpty == true)
+            try await waitForLiveSync { store.workspaceRevision > removalRevision }
+            do {
+                let unexpected = try await phone.downloadTaskAttachment(board: slug, taskID: taskID, attachment: attachment)
+                try? FileManager.default.removeItem(at: unexpected.deletingLastPathComponent())
+                XCTFail("A removed attachment must not remain downloadable")
+            } catch {
+                XCTAssertTrue(error.localizedDescription.contains("Attachment is not in the selected task"))
+            }
+            var archive = ServerTaskWrite()
+            archive.status = "archived"
+            _ = try await phone.updateWorkspaceTask(board: slug, taskID: taskID, payload: archive)
+            let archived = try await second.workspaceTask(board: slug, id: taskID)
+            XCTAssertEqual(archived.task.status, "archived")
+        } catch {
+            try await phone.performWorkspaceBoardAction(slug: slug, archive: true)
+            throw error
+        }
+        try await phone.performWorkspaceBoardAction(slug: slug, archive: true)
+        let remaining = try await second.workspaceBoards()
+        XCTAssertFalse(remaining.boards.contains { $0.slug == slug })
+        live.cancel()
+        await live.value
+    }
+
+    @MainActor
     func testRealGatewayProjectsSyncAcrossClientsAndRetainLinkedFiles() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
