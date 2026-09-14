@@ -93,3 +93,27 @@ configuration conflict while its other platforms continued. After confirming the
 port was bindable, a second drain-aware restart restored the API. Authenticated
 checks returned bridge 0.1.10, board management enabled, and the live board catalog.
 Automatic recovery from this transient startup bind failure remains follow-up work.
+
+## API restart bind recovery plan
+
+Issue #52 traces the macOS restart outage to a native API bind failure that the
+gateway treats as permanently fatal. The repair will reuse the gateway reconnect
+queue for two additional exclusive bind attempts after the initial failure,
+without blocking other platforms or changing socket reuse settings. A conflict
+that persists through that bounded window must remain fatal and actionable.
+Tests will drive native startup aggregation and reconnect using real TCP sockets
+and isolated Hermes storage, checking recovery, persistent ownership, and cleanup.
+
+The repair is packaged as compatibility patch 5. Its first regression failed on
+the original code; 227 distinct canonical tests passed with the fix. An additional
+full native gateway verification kept an authenticated Companion event feed open
+across SIGUSR1 shutdown, relaunched once, and recovered the API and live feed
+automatically in 33.30 seconds. The macOS test using a real server-closed HTTP
+connection also recovered after the native socket wait. Persistent conflicts
+remained fatal after the bounded attempts and retained their original listener.
+
+Deployment used one drain-aware restart. The replacement process confirmed native
+revision `afbd3e296e` and a connected API platform. Subsequent live requests
+verified health, bridge 0.1.10 capabilities, and an authenticated workspace event.
+No production tasks or conversations were created for these checks. Build 173
+remains the installed/uploaded iOS build; this repair changes only the server.

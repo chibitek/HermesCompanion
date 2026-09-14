@@ -4,13 +4,15 @@ These reviewed server fixes supplement the Companion bridge. The plugin does
 not apply them automatically, and installing the iOS app does not update a
 remote Hermes server. Hosted operators must deploy equivalent fixes themselves.
 
-Current validation: September 13, 2026. The four patches were deployed on a
+Current validation: September 13, 2026. The first four patches were deployed on a
 local development branch based on native revision `3f86ed75da`, after the
 canonical runner passed 266 tests across nine files. Companion bridge 0.1.9
 passed 28 tests and was deployed with a graceful gateway restart. Live checks
 confirmed skills, projects, Bots, boards, bridge capabilities, and event replay
 capabilities. The current verification record is in
 [CONNECTION_REVIEW.md](../docs/CONNECTION_REVIEW.md).
+
+Patch 5 adds bounded macOS API bind recovery and is validated separately below.
 
 Installation remains operator-controlled; this repository does not update other
 Hermes servers automatically.
@@ -39,6 +41,12 @@ Hermes servers automatically.
   status clears progress and ignores late lifecycle callbacks. Interruptions
   outside the explicit Stop path finish as `interrupted`, not `completed`.
 
+- `0005-api-restart-bind-recovery.patch`: routes macOS API port conflicts through
+  the existing reconnect schedule for two additional exclusive bind attempts.
+  This covers transient BSD socket state after a clean restart. Persistent
+  conflicts become fatal after the bounded window; no socket reuse settings,
+  credential checks, or other platforms' retry policies are changed.
+
 The original provider/skills source commits are `bac8e5f98d` and `e171798ebe`. No authentication or token
 storage changes are included. Regression coverage uses temporary profile data,
 including real skill discovery and named custom-provider resolution. The API,
@@ -46,8 +54,9 @@ session API, and custom-provider identity suites pass: 162 tests, zero failures.
 
 ## Historical deployment evidence
 
-The following September 11 evidence is historical. The current source no longer
-contains those two fixes and returned the documented errors on September 13.
+The following September 11 evidence is historical. At the start of the September
+13 repair, the installed source had lost those two fixes and returned the
+documented errors; the deployment described above restored them.
 
 Live verification on September 11, 2026: `/v1/skills` returned HTTP 200 with 286
 entries; the bridge returned ten project profile groups without errors, ten Bot
@@ -57,14 +66,14 @@ provider `custom:local-(localhost:11434)`, model `qwen3.8:27b-mlx`, and
 
 The first graceful restart hit a transient macOS port-8642 bind failure. After
 the old process exited and the port was confirmed free, a second graceful
-restart restored the API. This restart edge case is not fixed by these patches;
-always verify the HTTP listener rather than relying only on service status.
+restart restored the API. The first four patches did not fix this restart edge case. Patch 5 adds bounded
+recovery; always verify the HTTP listener rather than relying only on service status.
 
 ## Applying to a Compatible Checkout
 
 Review the patches against the installed Hermes version first. Start from a
 clean development branch, not `main`. The first two patches are commit-format
-patches applied with `git am`; the third and fourth are plain diffs applied in order with `git apply`
+patches applied with `git am`; the remaining patches are plain diffs applied in order with `git apply`
 and then committed on the development branch.
 Skip a fix already integrated upstream. If a patch conflicts, stop and review;
 do not force it onto a newer release or discard existing local changes.
@@ -78,6 +87,8 @@ scripts/run_tests.sh tests/gateway/test_api_server.py \
   tests/gateway/test_api_server_runs.py tests/gateway/test_api_server_run_fanout.py \
   tests/gateway/test_api_server_run_progress.py tests/agent/test_cross_process_turn_lease.py \
   tests/agent/test_turn_facade_lease.py tests/hermes_state/test_session_turn_lease.py \
+  tests/gateway/test_api_server_restart_recovery.py \
+  tests/gateway/test_api_server_bind_guard.py tests/gateway/test_platform_reconnect.py \
   --file-retries 0
 ```
 
@@ -112,3 +123,25 @@ streaming and polling checks, credential redaction, wait-to-output transition,
 and late-callback rejection. Logs: `/tmp/hermes-progress-native-tests.log` and
 `/tmp/hermes-progress-reviewed-native-tests.log`. No model provider is contacted
 by these tests; the HTTP boundary uses a controlled agent.
+
+## macOS restart recovery verification
+
+The new regression failed on the original startup path, which discarded the API
+after its first failed bind. The patched canonical runs passed 227 distinct tests
+across startup, shutdown, reconnect, API, and resource-cleanup suites. The real
+macOS closed-HTTP-connection test needed the scheduled recovery window and passed;
+a persistent TCP listener remained owned by its original process, with failed
+adapters' SQLite handles closed.
+
+The `scripts/verify-gateway-restart.py` command takes `--server-repo`, `--python`,
+and a new `--artifacts` directory. It runs the full native gateway in a disposable home with an open authenticated Companion feed.
+It requests a graceful restart, relaunches once, and verifies the API and feed
+recover. The local run passed in 33.30 seconds after relaunch. It dispatches no
+model turns and does not restart an installed gateway. This timing is a restart
+recovery measurement, not a model-response latency benchmark.
+
+The installed gateway was updated to native commit `afbd3e296e` with one
+drain-aware restart. The replacement process reported that revision and a
+connected API platform; health, authenticated bridge 0.1.10 capabilities, and an
+authenticated workspace event all succeeded. Companion build 173 is compatible
+with this server-only fix; no app rebuild is needed.
