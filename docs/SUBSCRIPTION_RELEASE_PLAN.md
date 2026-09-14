@@ -32,16 +32,17 @@ trial, annual tier, or family-sharing offer is assumed.
 
 ## Current evidence
 
-- Build 173 has no StoreKit purchase, transaction listener, entitlement, restore,
+- Build 176 has no StoreKit purchase, transaction listener, entitlement, restore,
   or subscription-management implementation.
-- `APP_STORE_SUBMISSION.md` is a historical free-app draft. Its pricing,
-  subscription claims, version, and several service descriptions are stale.
+- `APP_STORE_SUBMISSION.md` records the current non-subscription candidate,
+  accurate store copy, and the remaining reviewer-access and privacy checks.
 - `PRIVACY.md` still references the removed ElevenLabs integration and assumes
   every connection uses Tailscale. The current client also supports configured
   HTTP/HTTPS endpoints. Voice recognition paths require on-device recognition.
-- Apple sign-in currently prevents inspection of live subscription records,
-  agreements, tax/banking readiness, and tester assignment. An accepted binary
-  upload does not prove purchase or TestFlight availability.
+- Apple sign-in is available. Build 176 is Testing for the internal group and
+  its account-holder tester is Invited. Subscription records, agreements, and
+  tax/banking readiness have not been verified; upload or internal testing does
+  not establish purchase readiness.
 
 ## Implementation contract
 
