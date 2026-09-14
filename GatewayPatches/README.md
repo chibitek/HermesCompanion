@@ -4,12 +4,16 @@ These reviewed server fixes supplement the Companion bridge. The plugin does
 not apply them automatically, and installing the iOS app does not update a
 remote Hermes server. Hosted operators must deploy equivalent fixes themselves.
 
-Current validation: September 13, 2026, installed revision `3f86ed75da` on
-`main`. All four patches pass a combined `git apply --check` there. The first
-two were retested in `/tmp/hermes-server-sync-verification`; event replay uses
-`/tmp/hermes-server-events-verification`. Lifecycle progress uses
-`/tmp/hermes-server-progress-verification`. None of these checkouts changes the
-running gateway. Deployment approval remains outstanding.
+Current validation: September 13, 2026. The four patches were deployed on a
+local development branch based on native revision `3f86ed75da`, after the
+canonical runner passed 266 tests across nine files. Companion bridge 0.1.9
+passed 28 tests and was deployed with a graceful gateway restart. Live checks
+confirmed skills, projects, Bots, boards, bridge capabilities, and event replay
+capabilities. The current verification record is in
+[CONNECTION_REVIEW.md](../docs/CONNECTION_REVIEW.md).
+
+Installation remains operator-controlled; this repository does not update other
+Hermes servers automatically.
 
 ## Included Fixes
 

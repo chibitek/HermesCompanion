@@ -16,4 +16,12 @@ Saved-server removal existed in Settings but was absent from the connection test
 
 The iOS simulator suite passed: 128 tests executed, two live-gateway tests skipped, zero failures. Coverage includes a nonresponding health request, capability timeout context, exclusion of private URL details, health success with session-sync failure, and an empty session catalog without a chat-sync claim. The app and extension compiled.
 
-Physical-device connectivity after credential replacement still requires re-pairing and verification. The skipped live tests do not establish provider completion or full two-way feature parity. Native bridge deployment and live provider verification remain separate acceptance work.
+## Deployment and live checks
+
+Build 1.8.73 (170) was installed and launched on the paired iPhone. Apple processed the uploaded build successfully; TestFlight shows Ready to Submit, with testing notes saved. External beta distribution has not been submitted.
+
+The four native gateway patches were deployed after 266 canonical tests passed. Bridge 0.1.9 passed 28 tests and was installed. A legacy backup directory inside the plugin search path was overriding the current plugin; moving that backup outside plugin discovery allowed the current bridge to load. Keep plugin backups outside all discovery directories.
+
+Live requests confirmed skills, projects, Bots, boards, and bridge 0.1.9 capabilities. A real chat verification created a temporary session, observed a live workspace change event, received the expected model response, and read the user message and assistant reply through an independent client. The temporary session was deleted successfully. Model completion took 92.58 seconds, so this proves delivery and persistence, not acceptable response speed.
+
+The physical phone still requires verification after credential replacement. The simulator's two live-gateway tests remain skipped; the separate live HTTP check does not establish every iOS/desktop feature or concurrent model-stream behavior. Full feature parity and model latency remain open acceptance work.
