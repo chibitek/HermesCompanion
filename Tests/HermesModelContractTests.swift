@@ -446,7 +446,10 @@ final class HermesModelContractTests: XCTestCase {
         XCTAssertFalse(keys[0].isEmpty)
         XCTAssertEqual(keys[0], keys[1])
         XCTAssertEqual(bodies.count, 2)
-        XCTAssertTrue(bodies.allSatisfy { $0["input"] as? String == "Original" && $0["session_id"] as? String == "session" })
+        for (index, body) in bodies.enumerated() {
+            XCTAssertEqual(body["input"] as? String, "Original", "Admission request \(index) input changed or could not be read")
+            XCTAssertEqual(body["session_id"] as? String, "session", "Admission request \(index) session changed or could not be read")
+        }
         XCTAssertEqual(recovered.runID, "run_original")
         XCTAssertFalse(recovered.submissionUncertain)
         let restored = DurableRunController(client: client, connectionScope: "test", supportsDurableAdmission: true, retentionSeconds: 60, defaults: defaults, pendingDirectory: pendingDirectory)
@@ -979,6 +982,86 @@ final class HermesModelContractTests: XCTestCase {
                                                 fallback: ["legacy": ModelInfo(id: "legacy", ownedBy: "author", provider: "gateway")])
         XCTAssertEqual(choices, [ModelSourceChoice(model: "legacy", provider: "gateway"),
                                  ModelSourceChoice(model: "unknown", provider: nil)])
+    }
+
+    @MainActor
+    func testPeriodicSyncLoadsJobsWithoutLiveFeedAndAvoidsRapidPolling() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        var jobReads = 0
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                switch request.request.url?.path {
+                case "/health": request.succeed(body: Self.connectionHealth)
+                case "/api/jobs":
+                    jobReads += 1
+                    request.succeed(body: #"{"jobs":[{"id":"job","name":"Remote job"}]}"#)
+                case "/api/sessions": request.succeed(body: #"{"object":"list","data":[]}"#)
+                default: request.fail()
+                }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.syncNow()
+        XCTAssertEqual(store.platformJobs.first?.name, "Remote job")
+        await store.syncNow()
+        XCTAssertEqual(jobReads, 1)
+        XCTAssertFalse(store.liveChangesAvailable)
+        XCTAssertNil(store.syncError)
+    }
+
+    @MainActor
+    func testOlderJobsRefreshCannotOverwriteNewerSnapshot() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        let firstStarted = expectation(description: "Older job snapshot pending")
+        let secondStarted = expectation(description: "Newer job snapshot pending")
+        var requests: [SessionHistoryURLProtocol] = []
+        SessionHistoryURLProtocol.handler = { request in
+            Task { @MainActor in
+                requests.append(request)
+                if requests.count == 1 { firstStarted.fulfill() }
+                else { secondStarted.fulfill() }
+            }
+        }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        let older = Task { await store.refreshJobsOnly() }
+        await fulfillment(of: [firstStarted], timeout: 3)
+        let newer = Task { await store.refreshJobsOnly() }
+        await fulfillment(of: [secondStarted], timeout: 3)
+        requests[1].succeed(body: #"{"jobs":[{"id":"job","name":"Current","enabled":false}]}"#)
+        await newer.value
+        requests[0].succeed(body: #"{"jobs":[{"id":"job","name":"Stale","enabled":true}]}"#)
+        await older.value
+        XCTAssertEqual(store.platformJobs.first?.name, "Current")
+        XCTAssertEqual(store.platformJobs.first?.enabled, false)
+        XCTAssertNil(store.jobsError)
+    }
+
+    @MainActor
+    func testJobRefreshErrorIsSpecificAndClearsAfterRecovery() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SessionHistoryURLProtocol.self]
+        let client = HermesAPIClient(config: ConnectionConfig(baseURL: "https://hermes.invalid", apiKey: "", label: "Test"),
+                                     session: URLSession(configuration: config))
+        let store = AppStore(client: client)
+        store.platformError = "Unrelated platform operation failed"
+        SessionHistoryURLProtocol.handler = { $0.succeed(body: #"{"error":"Cron module not available"}"#, status: 501) }
+        defer { SessionHistoryURLProtocol.handler = nil }
+        await store.refreshJobsOnly()
+        XCTAssertTrue(store.jobsError?.contains("Cron module not available") == true)
+        XCTAssertTrue(store.jobsError?.contains("outdated") == true)
+        XCTAssertEqual(store.platformError, "Unrelated platform operation failed")
+        SessionHistoryURLProtocol.handler = { $0.succeed(body: #"{"jobs":[]}"#) }
+        await store.refreshJobsOnly()
+        XCTAssertNil(store.jobsError)
+        XCTAssertEqual(store.platformError, "Unrelated platform operation failed")
     }
 
     @MainActor

@@ -1,6 +1,25 @@
 # Development Release Readiness
 
-## Current run monitoring update: 1.8.84 (181)
+## Prepared scheduled-job sync update: 1.8.85 (182)
+
+Remote scheduled-job changes now refresh the Companion list through workspace
+invalidation, with a 30-second foreground polling fallback. Older responses
+cannot overwrite newer job snapshots. A failed read displays a job-specific
+stale-data warning and retry action without erasing unrelated platform errors.
+See [JOB_SYNC.md](JOB_SYNC.md).
+
+Validation: 174 ordinary simulator tests passed in the final full rerun; all ten
+real-gateway checks passed separately. No jobs, sessions, projects or active
+project remained, and linked files retained their contents. The job regression
+failed before repair and passed afterward. Intermittent admission-test issue #66
+and native job capability/execution issue #65 remain open. The gateway is unchanged.
+
+Build 182 is being packaged. Build 181 remains the last verified phone install,
+TestFlight Testing build and Waiting for Review submission until replacement is
+confirmed. Physical audio/network tests, invitation acceptance, reviewer gateway
+access, screenshots and full feature parity remain incomplete.
+
+## Historical run monitoring update: 1.8.84 (181)
 
 Build 181 preserves live output, the replay cursor and status monitoring when
 reattaching the run already selected. The regression failed before repair and

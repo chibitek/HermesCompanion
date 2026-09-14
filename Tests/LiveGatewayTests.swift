@@ -474,6 +474,58 @@ final class LiveGatewayTests: XCTestCase {
     }
 
     @MainActor
+    func testRealGatewayJobsSyncAcrossClients() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["HERMES_DISPOSABLE_WORKSPACE"] == "1",
+              let url = environment["HERMES_LIVE_URL"], let key = environment["HERMES_LIVE_KEY"] else {
+            throw XCTSkip("Job lifecycle verification requires the disposable workspace runner.")
+        }
+        let config = ConnectionConfig(baseURL: url, apiKey: key, label: "Job verification")
+        let phone = HermesAPIClient(config: config)
+        let second = HermesAPIClient(config: config)
+        let store = AppStore(client: phone)
+        let live = Task { await store.runLiveSync() }
+        defer { live.cancel() }
+        try await waitForLiveSync { store.liveChangesAvailable }
+        let before = try await phone.listJobs()
+        XCTAssertTrue(before.isEmpty)
+        let created = try await second.createJob(HermesJobWrite(name: "Two-client verification",
+            schedule: "0 0 1 1 *", prompt: "Local connection verification. Reply READY.", deliver: "local", skills: []))
+        var deleted = false
+        do {
+            try await waitForLiveSync { store.platformJobs.contains { $0.id == created.id } }
+            var edit = HermesJobWrite(name: "Phone job edit", schedule: nil, prompt: nil, deliver: nil, skills: nil)
+            _ = try await phone.updateJob(jobId: created.id, updates: edit)
+            let afterEdit = try await second.listJobs()
+            XCTAssertEqual(afterEdit.first?.name, edit.name)
+            try await second.pauseJob(jobId: created.id)
+            try await waitForLiveSync { store.platformJobs.first?.enabled == false }
+            XCTAssertEqual(store.platformJobs.first?.state, "paused")
+            try await phone.resumeJob(jobId: created.id)
+            let resumed = try await second.listJobs()
+            XCTAssertEqual(resumed.first?.enabled, true)
+            XCTAssertEqual(resumed.first?.state, "scheduled")
+            XCTAssertNotNil(resumed.first?.nextRunAt)
+            // This isolated adapter does not run a scheduler. Verify admission,
+            // not execution or delivery, before immediately removing the job.
+            try await second.runJob(jobId: created.id)
+            let triggered = try await phone.listJobs()
+            XCTAssertNotEqual(triggered.first?.nextRunAt, resumed.first?.nextRunAt)
+            edit.name = "Second client final edit"
+            _ = try await second.updateJob(jobId: created.id, updates: edit)
+            try await waitForLiveSync { store.platformJobs.first?.name == edit.name }
+            try await second.deleteJob(jobId: created.id)
+            deleted = true
+            try await waitForLiveSync { store.platformJobs.isEmpty }
+            let remaining = try await phone.listJobs()
+            XCTAssertTrue(remaining.isEmpty)
+        } catch {
+            if !deleted { try await phone.deleteJob(jobId: created.id) }
+            throw error
+        }
+    }
+
+    @MainActor
     private func waitForLiveSync(_ condition: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(10)
         while !condition() {

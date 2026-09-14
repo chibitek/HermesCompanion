@@ -128,6 +128,9 @@ def main():
                 before = get("/api/sessions")
                 if before.get("data"):
                     raise RuntimeError("Isolated gateway unexpectedly contains conversations before testing")
+                jobs_before = get("/api/jobs?include_disabled=true")
+                if jobs_before.get("jobs"):
+                    raise RuntimeError("Isolated gateway unexpectedly contains scheduled jobs before testing")
                 projects_before = get("/api/companion/project-records?profile=default")
                 if projects_before.get("projects") or projects_before.get("active_id"):
                     raise RuntimeError("Isolated gateway unexpectedly contains saved projects before testing")
@@ -144,12 +147,14 @@ def main():
                     tested = subprocess.run(command, cwd=repo, env=test_env, stdout=test_log, stderr=subprocess.STDOUT, timeout=420)
                 summary = json.loads(subprocess.check_output(["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", str(result)]))
                 after = get("/api/sessions")
+                jobs_after = get("/api/jobs?include_disabled=true")
                 projects_after = get("/api/companion/project-records?profile=default")
                 linked_files_retained = all((folder / "retain.txt").is_file() and (folder / "retain.txt").read_text() == "Project deletion must retain linked server files.\n"
                                             for folder in (project_folder, reference_folder))
                 report = {"source": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=server_repo, text=True).strip(),
                           "model": args.model, "features": capabilities.get("features"),
                           "tests": summary, "remaining_sessions": len(after.get("data", [])),
+                          "remaining_jobs": len(jobs_after.get("jobs", [])),
                           "remaining_projects": len(projects_after.get("projects", [])),
                           "active_project": projects_after.get("active_id"),
                           "linked_project_files_retained": linked_files_retained,
@@ -161,6 +166,8 @@ def main():
                     raise RuntimeError("Real iOS verification did not pass; inspect ios.log and verification.json")
                 if report["remaining_sessions"]:
                     raise RuntimeError("Verification left conversations in the isolated gateway")
+                if report["remaining_jobs"]:
+                    raise RuntimeError("Verification left scheduled jobs in the isolated gateway")
                 if report["remaining_projects"] or report["active_project"] or not linked_files_retained:
                     raise RuntimeError("Project lifecycle verification left records or removed linked files")
                 print("Real two-client iOS checks passed; owned records removed and linked files retained", flush=True)

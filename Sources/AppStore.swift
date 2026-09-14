@@ -44,6 +44,7 @@ final class AppStore: ObservableObject {
     @Published private(set) var sessionProviderOverride: String?
     @Published var platformHealth: PlatformHealthResponse?
     @Published var platformJobs: [HermesJob] = []
+    @Published private(set) var jobsError: String?
     @Published var artifactReceipt: HermesArtifactReceipt?
     @Published var isLoadingPlatform = false
     @Published var platformError: String?
@@ -160,6 +161,9 @@ final class AppStore: ObservableObject {
             platformRefreshID = nil
             platformHealth = nil
             platformJobs = []
+            jobsError = nil
+            jobsRefreshID = UUID()
+            lastJobsSyncAt = nil
             artifactReceipt = nil
             platformError = nil
             isLoadingPlatform = false
@@ -175,6 +179,8 @@ final class AppStore: ObservableObject {
         }
     }
     private var platformRefreshID: UUID?
+    private var jobsRefreshID = UUID()
+    private var lastJobsSyncAt: Date?
     private var sessionSelectionID = UUID()
     private var modelSelectionID = UUID()
     private var sessionRefreshID = UUID()
@@ -873,6 +879,7 @@ final class AppStore: ObservableObject {
                     workspaceRevision += 1
                     forceHistoryRefresh = true
                     lastSessionListSyncAt = nil
+                    await refreshJobsOnly()
                     await syncNow()
                 }
                 try Task.checkCancellation()
@@ -940,6 +947,9 @@ final class AppStore: ObservableObject {
             }
             if !isStreaming, activeSession != nil { lastSyncedAt = Date() }
             if recoveringConnection { await refreshCapabilities() }
+            if lastJobsSyncAt == nil || Date().timeIntervalSince(lastJobsSyncAt!) >= 30 {
+                await refreshJobsOnly()
+            }
         } catch {
             guard apiClient === client, !Task.isCancelled else { return }
             syncError = "Sync paused: \(error.localizedDescription) Retrying automatically."
@@ -1151,7 +1161,7 @@ final class AppStore: ObservableObject {
             if platformRefreshID == refreshID { isLoadingPlatform = false }
         }
         async let health = client.getDetailedHealth()
-        async let jobs = client.listJobs()
+        async let jobs: Void = refreshJobsOnly()
         async let capabilities = client.getCapabilities()
         async let sessions = client.listSessions()
         async let toolsets = client.getToolsets()
@@ -1164,14 +1174,7 @@ final class AppStore: ObservableObject {
             guard apiClient === client, platformRefreshID == refreshID else { return }
             platformError = error.localizedDescription
         }
-        do {
-            let value = try await jobs
-            guard apiClient === client, platformRefreshID == refreshID else { return }
-            platformJobs = value
-        } catch {
-            guard apiClient === client, platformRefreshID == refreshID else { return }
-            platformError = [platformError, "Jobs: \(error.localizedDescription)"].compactMap { $0 }.joined(separator: "\n")
-        }
+        await jobs
         do {
             let value = try await capabilities
             guard apiClient === client, platformRefreshID == refreshID else { return }
@@ -1263,15 +1266,20 @@ final class AppStore: ObservableObject {
         }
     }
 
-    private func refreshJobsOnly() async {
-        guard let client = apiClient else { return }
+    func refreshJobsOnly() async {
+        guard let client = apiClient, !Task.isCancelled else { return }
+        let refreshID = UUID()
+        jobsRefreshID = refreshID
+        // Bound fallback retries even when this gateway cannot list jobs.
+        lastJobsSyncAt = Date()
         do {
             let jobs = try await client.listJobs()
-            guard apiClient === client else { return }
+            guard apiClient === client, jobsRefreshID == refreshID, !Task.isCancelled else { return }
             platformJobs = jobs
+            jobsError = nil
         } catch {
-            guard apiClient === client else { return }
-            platformError = "Could not refresh jobs: \(error.localizedDescription)"
+            guard apiClient === client, jobsRefreshID == refreshID, !Task.isCancelled else { return }
+            jobsError = "Scheduled jobs could not refresh: \(error.localizedDescription) Displayed jobs may be outdated. Retrying automatically."
         }
     }
 

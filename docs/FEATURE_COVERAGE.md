@@ -17,7 +17,8 @@ Hermes 0.21.2 with six compatibility patches, and Companion bridge 0.1.10.
 | Projects | Native profile-scoped project RPC through bridge; bridge tests cover native writes and ownership. New real iOS lifecycle check covers both clients, live invalidation, folder links, archive/restore, active selection and deletion | Physical rendered workflow still requires confirmation |
 | Kanban | Boards, task edits, comments, hierarchy, results and attachments; board lifecycle has real iOS live coverage | Full real task/comment/attachment lifecycle and desktop invalidation |
 | Bots and profiles | Canonical history, profile ownership checks and capability-aware chat access | Installed gateway does not establish every profile's chat transport; preserve profile authorization |
-| Jobs, skills, toolsets and artifacts | API client and native UI surfaces exist | Verify every currently enabled operation against native contracts and live behavior |
+| Scheduled jobs | Two-client live create/edit/pause/resume/run admission/delete; workspace invalidation plus periodic fallback update the cached list; see [JOB_SYNC.md](JOB_SYNC.md) | Scheduler execution/delivery and native capability coherence (#65), physical rendered workflow |
+| Skills, toolsets and artifacts | API client and native UI surfaces exist | Verify every currently enabled operation against native contracts and live behavior |
 | Voice and audio | Typed-chat ownership repairs and automatic wake suppression have regression coverage | Physical microphone, music and Bluetooth continuity (#53) |
 | Broader Hermes features | Historical extraction lists files, Git, analytics, MCP, profile configuration, session correction and subagent surfaces | These require a fresh native-to-iOS contract inventory and implementation; full parity is not established |
 | Delivery | Build 181 installed by device inventory, internal TestFlight Testing, Waiting for Review with manual release | TestFlight invitation acceptance, unlocked-device visual tests, reviewer gateway access and screenshot verification |
@@ -54,5 +55,5 @@ version 0.1.10 with project, board and task creation/edit/comment capabilities.
 Native `admin_config_rw`, `jobs_admin`, `memory_write_api`, `audio_api` and
 `realtime_voice` report false. These fields are evidence of the advertised
 contract, not proof of route enforcement. In particular, native source still
-mounts scheduled-job write routes despite `jobs_admin: false`; scheduled-job
-behavior and capability coherence require direct isolated verification.
+mounts scheduled-job write routes despite `jobs_admin: false`; the isolated lifecycle now verifies these writes and run admission. Scheduler
+execution, delivery and capability coherence remain open in issue #65.

@@ -63,6 +63,14 @@ struct PlatformHubView: View {
                         }
                     }
 
+                    if let error = store.jobsError {
+                        Section {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(theme.danger)
+                            Button("Retry Scheduled Jobs") { Task { await store.refreshJobsOnly() } }
+                        }
+                    }
+
                     if let client = store.apiClient, let config = store.connectionConfig {
                         Section("Live Run Controls") {
                             NavigationLink {
