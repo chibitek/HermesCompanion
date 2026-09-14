@@ -1,8 +1,8 @@
 # Connection and saved-server review
 
 Current candidate: **1.8.79 (176)**. The latest phone inventory confirms this
-build, internal TestFlight is Testing, and App Store Connect saves it as Prepare
-for Submission. The verified server runs bridge 0.1.10 and all five compatibility
+build, internal TestFlight is Testing, and App Store Connect confirms it is
+Waiting for Review. The verified server runs bridge 0.1.10 and all five compatibility
 patches. See [RELEASE_READINESS.md](RELEASE_READINESS.md) for current evidence and
 remaining acceptance work. The sections below retain the per-build repair history.
 

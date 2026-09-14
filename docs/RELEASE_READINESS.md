@@ -7,7 +7,8 @@ typed-chat audio-session repair and exact streamed-text preservation. Apple
 processed this build; the internal TestFlight group lists it as Testing and the
 account-holder tester as Invited. Invitation acceptance and installation through
 TestFlight have not been verified. The App Store candidate is also build 176,
-saved as Prepare for Submission with manual release selected.
+submitted on September 14 and Waiting for Review with manual release selected.
+Apple confirmed one item submitted, containing version 1.8.79 build 176.
 
 The running Hermes **0.21.2** gateway reports code revision
 `afbd3e296ef825922bdd8d79b7d6f4f933288d36`, containing all five compatibility
@@ -23,8 +24,9 @@ acceptance remains open in issue #53. Existing test results are not repeated as
 newly run tests during a documentation-only update.
 
 The privacy policy now describes optional Tailscale, configured model providers,
-on-device speech recognition, and local diagnostic logs. Final App Review still
-needs working isolated reviewer access and verification of uploaded screenshots.
+on-device speech recognition, and local diagnostic logs. The submitted review
+notes disclose the gateway requirement; working isolated reviewer access and
+screenshot refresh/verification remain follow-up work.
 No subscription, Watch, native Vision Pro, or unapproved CarPlay experience is
 included in this candidate's advertised scope.
 

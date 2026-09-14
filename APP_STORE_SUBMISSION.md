@@ -8,9 +8,11 @@
   holder is **Invited**. Invitation acceptance and installation through
   TestFlight remain separate device actions.
 - App Store Connect: this build replaces 1.8.64 (161). The saved candidate is
-  **Prepare for Submission**, with manual release selected.
-- App Review submission is **not complete**. Reviewers still need access to a
-  working, isolated gateway. The previous review notes supplied no gateway.
+  **Waiting for Review**, with manual release selected.
+- Apple confirmed **1 Item Submitted** on September 14, 2026. The submission
+  contains **1.8.79 (176)**. Reviewer gateway access has not been supplied;
+  review notes disclose the self-hosted gateway requirement. Arranging isolated
+  access and refreshing/verifying screenshots remain follow-up work.
 - No subscriptions are implemented in this candidate. The planned paid
   experiences are specified in
   [SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).

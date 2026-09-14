@@ -3,7 +3,7 @@
 Current delivery: **1.8.79 (176)** with bridge **0.1.10** and all five gateway
 compatibility patches. The phone and running gateway versions were rechecked on
 September 14. TestFlight is Testing for the internal group; the App Store candidate
-is Prepare for Submission. See [RELEASE_READINESS.md](RELEASE_READINESS.md).
+is Waiting for Review. See [RELEASE_READINESS.md](RELEASE_READINESS.md).
 
 The September 13 build 169 / bridge 0.1.9 snapshot below is historical. Its
 deployment checklist has since been completed for the verified local gateway;

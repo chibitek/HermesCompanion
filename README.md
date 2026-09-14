@@ -34,8 +34,9 @@ the current reply. The trailing cursor indicates an active response.
 
 The physical phone has build 176. TestFlight lists this build as Testing for the
 internal group, with the account-holder invitation sent. The App Store candidate
-is also build 176, saved as Prepare for Submission. Final review submission still
-needs working isolated reviewer access and screenshot/privacy verification.
+is also build 176. Apple confirmed its submission on September 14, and it is
+Waiting for Review with manual release selected. Reviewer gateway access and
+screenshot refresh/verification remain follow-up work.
 
 The running verified gateway is Hermes 0.21.2 with all five compatibility patches
 and Companion bridge 0.1.10. Authenticated native and bridge capability requests
