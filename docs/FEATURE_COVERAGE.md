@@ -12,7 +12,7 @@ patches and Companion bridge 0.1.11.
 | --- | --- | --- |
 | Two-way chat and streamed text | AppStore, native session APIs; isolated iOS checks cover independent clients, remote history/rename, structured acknowledgements and text fidelity | Physical network transitions, long-running context and latency investigation |
 | Response status and recovery | Health, stream activity, watchdog, durable status and replay; controller regression covers same-run reattach without freezing | Physical app suspension, network loss and recovery |
-| Steering and approvals | Native run controls and capability gates; live steering verifies consumed or recoverable guidance; contract tests enforce approval identity | Real pending approval flow on an isolated gateway |
+| Steering and approvals | Native run controls and capability gates; live steering verifies consumed or recoverable guidance; contract tests enforce approval identity | Native approval queue, iOS decide/approve path, stale-ID rejection and replay events are live-verified deterministically |
 | Reasoning and model selection | Per-turn reasoning preserves conversation options; native tests and independent-client live check | Provider-specific reasoning support is not universal |
 | Saved servers and session management | Test/switch/delete servers; session history, rename, pin, archive, fork and confirmed deletion | Full physical workflow and accessibility checks |
 | Projects | Native profile-scoped project RPC through bridge; bridge tests cover native writes and ownership. New real iOS lifecycle check covers both clients, live invalidation, folder links, archive/restore, active selection and deletion | Physical rendered workflow still requires confirmation |

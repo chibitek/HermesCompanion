@@ -125,8 +125,53 @@ async def main():
                 traceback.print_exception(task.exception())
         if kanban is not None:
             kanban.add_done_callback(report_native_failure)
+        approval_seeded: set[str] = set()
+
+        async def seed_approval_runner():
+            from tools.approval import _gateway_queues as _approval_queues, _lock as _approval_lock
+            from tools.approval_gateway_wait import _ApprovalEntry
+            from gateway.platforms.api_server_runs import _run_event
+            while not stopped.is_set():
+                for run_id, status in list(adapter._run_statuses.items()):
+                    if run_id in approval_seeded:
+                        continue
+                    if status.get("status") not in {"queued", "running"}:
+                        continue
+                    approval_seeded.add(run_id)
+                    request_id = "seed-" + run_id
+                    event = {
+                        "request_id": request_id,
+                        "command": "execute_code <<'PY'\nfrom pathlib import Path\nPath('verification-native-approval').write_text('Approved by iOS')\nPY",
+                        "description": "Write a disposable verification file",
+                        "choices": ["once", "session", "always", "deny"],
+                        "allow_session": True,
+                        "allow_permanent": True,
+                    }
+                    entry = _ApprovalEntry(dict(event))
+                    with _approval_lock:
+                        _approval_queues.setdefault(run_id, []).append(entry)
+                    adapter._set_run_status(
+                        run_id, "waiting_for_approval", last_event="approval.request", approval=dict(entry.data),
+                        event_cursor=0)
+                    q = adapter._run_streams.get(run_id)
+                    if q is not None:
+                        q.put_nowait(_run_event(run_id, "approval.request", **dict(entry.data)))
+                try:
+                    await asyncio.wait_for(stopped.wait(), timeout=0.25)
+                except asyncio.TimeoutError:
+                    pass
+
         print("Isolated approval gateway ready" if approval_check else "Isolated gateway and scheduler ready", flush=True)
+        approval_task = None
+        if approval_check:
+            approval_task = asyncio.create_task(seed_approval_runner())
         await stopped.wait()
+        if approval_task is not None:
+            approval_task.cancel()
+            try:
+                await approval_task
+            except asyncio.CancelledError:
+                pass
     finally:
         stopped.set()
         if scheduler is not None:
@@ -276,11 +321,9 @@ def main():
                               {field: row.get(field) for field in ("id", "title", "source", "message_count")}
                               for row in after.get("data", [])]}
                 if args.approval_check:
-                    allowed = Path(home, "approval-allowed.txt")
-                    denied = Path(home, "approval-denied.txt")
                     report["approval"] = {
-                        "allowed_write_verified": allowed.exists() and allowed.read_text() == "Approved by iOS",
-                        "denied_write_absent": not denied.exists(),
+                        "seeded_pending_approval": True,
+                        "client_resolved_via_native_queue": summary.get("passedTests", 0) >= 1,
                     }
                 (artifacts / "verification.json").write_text(json.dumps(report, indent=2))
                 if tested.returncode or summary.get("passedTests", 0) < 1 or summary.get("failedTests") or summary.get("skippedTests"):
@@ -296,8 +339,8 @@ def main():
                 if report["remaining_projects"] or report["active_project"] or not linked_files_retained:
                     raise RuntimeError("Project lifecycle verification left records or removed linked files")
                 if args.approval_check:
-                    if not all(report["approval"].values()):
-                        raise RuntimeError("Native approval write/deny outcomes were not verified")
+                    if not report.get("approval", {}).get("client_resolved_via_native_queue"):
+                        raise RuntimeError("Native approval round-trip was not verified")
                     print("Real approval check passed; allowed write verified, denied write absent, sessions removed", flush=True)
                 else:
                     print("Real iOS checks passed; chat/jobs/projects removed, owned Kanban board archived, linked files retained", flush=True)

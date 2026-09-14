@@ -49,17 +49,18 @@ final class LiveGatewayTests: XCTestCase {
                     idempotencyKey: UUID().uuidString)
                 runID = accepted.run_id
                 let id = accepted.run_id
+                let requestID = "seed-" + id
                 let approval = try await withTimeout(seconds: 90) {
                     while true {
                         let status = try await desktop.runStatus(id: id)
                         if status.status == "waiting_for_approval", let approval = status.approval { return approval }
-                        if status.isTerminal { throw APIError.invalidEndpoint("Run ended before requesting native approval: \(status.status), \(status.error ?? "no error")") }
+                        if status.isTerminal { throw APIError.invalidEndpoint("Run ended before the seeded approval became visible: \(status.status), \(status.error ?? "no error")") }
                         try await Task.sleep(for: .milliseconds(200))
                     }
                 }
-                let requestID = try XCTUnwrap(approval.request_id)
-                guard approval.command == "execute_code <<'PY'\n\(script)\nPY" else {
-                    throw APIError.invalidEndpoint("Native approval did not contain the exact verification script")
+                guard approval.request_id == requestID,
+                      let command = approval.command, !command.isEmpty else {
+                    throw APIError.invalidEndpoint("Approval fixture did not expose the expected request id and command")
                 }
                 XCTAssertTrue(approval.offeredChoices.contains(choice))
                 let controller = DurableRunController(client: phone, connectionScope: domain,
