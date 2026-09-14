@@ -111,7 +111,7 @@ The app uses only HTTPS/TLS for network communication. No custom cryptographic a
 
 ### CarPlay
 
-CarPlay support is implemented but requires the `com.apple.developer.carplay-audio` entitlement, which needs separate approval. The entitlement is not included in the current build. We will request it separately and submit an update.
+CarPlay has partial implementation and is planned for the paid tier. Its current list/transcript interface and signing entitlements do not establish approval for a voice-based conversational app. Verify the current Apple category, allowed templates, entitlement grant, signed archive, and device behavior before advertising support. See `docs/SUBSCRIPTION_RELEASE_PLAN.md` for the confirmed paid-platform scope.
 
 ### Self-Hosted Architecture
 
