@@ -1,6 +1,6 @@
 # Development Release Readiness
 
-## Current preparation: 1.8.87 (184)
+## Current delivery: 1.8.87 (184)
 
 Task attachments now support full-size uploads, resumable retries and deletion.
 Task dependencies can be added and removed with native ownership and cycle
@@ -18,8 +18,16 @@ The verified local gateway was gracefully restarted after confirming no active
 runs or delegations. It runs native revision `480383eb3f` with eight compatibility
 patches and bridge 0.1.11. Live reads confirmed healthy status, attachment/link
 writes, the 25 MiB file limit and 4 MiB chunks. Installed bridge files match the
-verified sources. Build 184 packaging is in progress; build 183 remains the
-TestFlight and Apple review candidate until replacement is confirmed.
+verified sources. Build 184 was archived, exported with matching app/widget
+versions and verified signing, and installed on the paired device. Device
+inventory confirms 1.8.87 (184). Launch was blocked by the locked phone.
+Apple accepted the upload at 4:37 AM Eastern on September 14. TestFlight shows
+Testing in the existing internal group with one tester and nine builds. The
+tester remains Invited. Build 183 was withdrawn, and Apple confirmed one submitted
+item, 1.8.87 (184), at 4:43 AM Eastern, Waiting for Review. Manual release remains
+selected. Review notes disclose missing reviewer gateway access, unchanged
+screenshots and unfinished physical audio/network/visual acceptance. Full feature
+parity and paid platform experiences remain unfinished.
 
 ## Historical delivery diagnostics update: 1.8.86 (183)
 

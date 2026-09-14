@@ -2,8 +2,9 @@
 
 This record separates implemented surfaces from verified behavior. The original
 feature extraction document is a historical roadmap, not evidence of complete
-Hermes parity. The current delivered baseline is Companion 1.8.86 (183), native
-Hermes 0.21.2 with seven compatibility patches, and Companion bridge 0.1.10.
+Hermes parity. Companion 1.8.87 (184) is installed on the paired device; TestFlight shows Testing
+in the existing internal group. The local server runs native Hermes 0.21.2 with eight compatibility
+patches and Companion bridge 0.1.11.
 
 ## Current evidence and remaining acceptance
 
@@ -15,13 +16,13 @@ Hermes 0.21.2 with seven compatibility patches, and Companion bridge 0.1.10.
 | Reasoning and model selection | Per-turn reasoning preserves conversation options; native tests and independent-client live check | Provider-specific reasoning support is not universal |
 | Saved servers and session management | Test/switch/delete servers; session history, rename, pin, archive, fork and confirmed deletion | Full physical workflow and accessibility checks |
 | Projects | Native profile-scoped project RPC through bridge; bridge tests cover native writes and ownership. New real iOS lifecycle check covers both clients, live invalidation, folder links, archive/restore, active selection and deletion | Physical rendered workflow still requires confirmation |
-| Kanban | Board lifecycle plus real native/iOS task edits, completion, comments, child summaries, attachment download/removal, invalidation and archive; see [KANBAN_LIVE_VERIFICATION.md](KANBAN_LIVE_VERIFICATION.md) | iOS attachment upload/delete, dependency-link writes, advanced task configuration, download error detail and physical rendering |
+| Kanban | Board lifecycle plus real native/iOS task edits, completion, comments, child summaries, full-size attachment upload/retry/download/delete, dependency linking/cycle rejection, invalidation and archive; see [KANBAN_LIVE_VERIFICATION.md](KANBAN_LIVE_VERIFICATION.md) | Advanced task configuration, interrupted physical uploads, accessibility and physical rendering |
 | Bots and profiles | Canonical history, profile ownership checks and capability-aware chat access | Installed gateway does not establish every profile's chat transport; preserve profile authorization |
 | Scheduled jobs | Two-client live create/edit/pause/resume/delete and real local-model scheduler execution with saved-output verification; workspace invalidation plus periodic fallback update the cached list; delivery failure/recovery diagnostics verified; see [JOB_SYNC.md](JOB_SYNC.md) and [JOB_DELIVERY_DIAGNOSTICS.md](JOB_DELIVERY_DIAGNOSTICS.md) | External messaging delivery, full native job configuration and physical rendered workflow |
 | Skills, toolsets and artifacts | API client and native UI surfaces exist | Verify every currently enabled operation against native contracts and live behavior |
 | Voice and audio | Typed-chat ownership repairs and automatic wake suppression have regression coverage | Physical microphone, music and Bluetooth continuity (#53) |
 | Broader Hermes features | Historical extraction lists files, Git, analytics, MCP, profile configuration, session correction and subagent surfaces | These require a fresh native-to-iOS contract inventory and implementation; full parity is not established |
-| Delivery | Build 183 installed by device inventory, internal TestFlight Testing, Waiting for Review with manual release | TestFlight invitation acceptance, unlocked-device visual tests, reviewer gateway access and screenshot verification |
+| Delivery | Build 184 installed by device inventory and internal TestFlight Testing; Waiting for Review with manual release | TestFlight invitation acceptance, unlocked-device visual tests, reviewer gateway access and screenshot verification |
 
 ## Project lifecycle verification
 
