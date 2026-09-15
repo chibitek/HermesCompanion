@@ -2,7 +2,7 @@
 
 Current verified phone build: **1.8.87 (184)**. TestFlight shows Testing and the
 replacement Apple review candidate is Waiting for Review, submitted September 14
-at 4:43 AM Eastern with manual release. The tester invitation remains unaccepted.
+at 4:43 AM Eastern with manual release. The tester accepted and the paired iPhone shows Installed 1.8.87 (184).
 The verified local server runs bridge **0.1.11** with eight compatibility patches.
 See [RELEASE_READINESS.md](RELEASE_READINESS.md) for current evidence and remaining
 acceptance work. The sections below retain the per-build repair history.
