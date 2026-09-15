@@ -149,7 +149,7 @@ The archive has matching app/widget versions and the signed export passed
 verification. Physical-device inventory confirms 1.8.83 (180) installed. Launch
 and visual acceptance of this build remain unverified. Apple processed the
 upload; build 180 is Testing in the existing internal group. The tester remains
-Invited, so acceptance and installation through TestFlight remain unverified.
+accepted by September 14, so acceptance and installation through TestFlight are verified.
 The screenshot's Incompatible entry is still unidentified.
 
 The pending build 179 submission was withdrawn. After a transient submission
@@ -170,8 +170,8 @@ real-gateway checks passed with zero retained sessions or metadata. See
 The signed archive and exported app/widget versions match. Physical-device
 inventory confirms 1.8.82 (179) installed; launch was blocked because the phone
 was locked. Apple accepted the upload; build 179 is Testing in the existing
-internal group. The tester remains Invited with no registered device; TestFlight
-acceptance and installation remain unverified. The screenshot's Incompatible
+internal group. The tester remains accepted by September 14 with no registered device; TestFlight
+acceptance and installation are verified. The screenshot's Incompatible
 entry is still unidentified.
 
 The pending build 178 submission was withdrawn. Apple confirmed one submitted
@@ -191,7 +191,7 @@ Build 178 adds confirmed session deletion and specific in-app update notes to th
 queue, structured-message, typed-chat audio and text-fidelity repairs.
 
 The internal group contains builds 176, 177 and 178. The existing tester remains
-Invited; the invitation was resent on September 14 after the tester reported the
+accepted by September 14; the invitation was resent on September 14 after the tester reported the
 app absent from the active list. TestFlight acceptance and installation remain
 unverified, and the screenshot's Incompatible entry is still unidentified.
 The connected phone meets the exported build's requirements.
