@@ -119,7 +119,7 @@ The archive has matching app/widget versions and the signed export was verified.
 Physical-device inventory confirms 1.8.84 (181) installed, but launch was blocked
 by the locked phone. Physical visual/audio acceptance remains incomplete. Apple
 processed the upload and build 181 is Testing in the existing internal group.
-Invitation acceptance through TestFlight remains unverified.
+TestFlight invitation acceptance and install are verified.
 
 The older build 180 submission was withdrawn. Apple confirmed one submitted item,
 **1.8.84 (181)**, on September 14 at 2:44 AM Eastern; it is Waiting for Review with
