@@ -511,3 +511,9 @@ endpoint behavior must be verified separately.
 
 The paired iPhone is unlocked and Hermes 1.8.87 (184) launches via devicectl.
 TestFlight invite acceptance remains the only gap to the app appearing in iOS TestFlight.
+
+
+## TestFlight acceptance recorded
+
+App Store Connect shows Installed 1.8.87 (184) for erick.grau@chibitek.com on the
+paired iPhone. Physical launch is verified via devicectl.
