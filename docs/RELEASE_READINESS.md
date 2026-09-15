@@ -505,3 +505,9 @@ and a late not-found response after switching chats. Live Mac deletion and phone
 foreground recovery still require device verification. This assumes the connected
 Hermes gateway implements the native direct-session endpoint; alternate hosted
 endpoint behavior must be verified separately.
+
+
+## Physical launch update
+
+The paired iPhone is unlocked and Hermes 1.8.87 (184) launches via devicectl.
+TestFlight invite acceptance remains the only gap to the app appearing in iOS TestFlight.
