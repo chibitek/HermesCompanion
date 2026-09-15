@@ -61,6 +61,7 @@ final class VoiceConversationManager: ObservableObject {
     private var recognitionRetryCount = 0
 
     private var remoteTurnID: UUID?
+    private var ownsAudioSession = false
 
     init() {
         delegateBridge.manager = self
@@ -131,6 +132,10 @@ final class VoiceConversationManager: ObservableObject {
     }
 
     @objc private func handleAudioSessionInterruption(_ notification: Notification) {
+        // The phone and CarPlay controllers both exist during text chat. An
+        // interruption from keyboard dictation or another app belongs to neither
+        // idle controller; even setCategory during cleanup would change its route.
+        guard ownsAudioSession else { return }
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
@@ -220,8 +225,7 @@ final class VoiceConversationManager: ObservableObject {
         isFinalizing = false
         voiceError = nil
         onTranscriptionComplete = nil
-        // Deactivate audio session now that conversation is fully over
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        releaseAudioSessionIfOwned()
     }
 
     func beginRemoteTurn() -> UUID {
@@ -362,6 +366,7 @@ final class VoiceConversationManager: ObservableObject {
             try? audioSession.setPreferredSampleRate(44_100)
             try? audioSession.setPreferredInputNumberOfChannels(1)
             try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            ownsAudioSession = true
         } catch {
             isListening = false
             FileLogger.shared.log("VoiceManager: audio session activation failed: \(error.localizedDescription)")
@@ -428,7 +433,7 @@ final class VoiceConversationManager: ObservableObject {
                         }
                     } else {
                         self.recognitionRetryCount = 0
-                        self.voiceError = error.localizedDescription
+                        self.voiceError = "Speech recognition stopped: \(error.localizedDescription). Restart voice mode to retry."
                     }
                     return
                 }
@@ -452,7 +457,7 @@ final class VoiceConversationManager: ObservableObject {
         let recordingFormat = validRecordingFormat(for: inputNode)
         guard let recordingFormat else {
             isListening = false
-            voiceError = "Microphone input is unavailable."
+            voiceError = "The audio input reported no usable recording format. Reconnect your headset or use the phone microphone, then restart voice mode."
             FileLogger.shared.log("VoiceManager: startListening bail — invalid recording format (sampleRate 0 / route stuck)")
             self.recognitionRequest = nil
             recognitionTask?.cancel()
@@ -481,7 +486,7 @@ final class VoiceConversationManager: ObservableObject {
             startLevelMonitoring()
         } catch {
             FileLogger.shared.log("VoiceManager: audio engine start failed: \(error.localizedDescription)")
-            voiceError = "Could not start microphone."
+            voiceError = "Could not start the microphone: \(error.localizedDescription). Stop voice mode, check the selected audio input, and retry."
             stopListening()
         }
     }
@@ -569,14 +574,14 @@ final class VoiceConversationManager: ObservableObject {
         recognitionRequest?.endAudio()
         recognitionRequest = nil
 
-        if !isConversing {
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
-         }
-         // When conversation IS active, keep the audio session active so the
-         // app doesn't get suspended by iOS when backgrounded. The .playAndRecord
-         // category + audio background mode keeps the app alive. → skipped: voice-only ducking, reset always added.
+        if !isConversing && !isSpeaking { releaseAudioSessionIfOwned() }
+        // Active voice turns retain ownership between listening and speaking.
+    }
+
+    private func releaseAudioSessionIfOwned() {
+        guard ownsAudioSession else { return }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        ownsAudioSession = false
     }
 
     private func removeInputTapIfNeeded() {
@@ -721,10 +726,17 @@ final class VoiceConversationManager: ObservableObject {
         // Audio session is already configured as .playAndRecord from the
         // listening phase. Skip redundant reconfiguration to reduce latency.
         let session = AVAudioSession.sharedInstance()
-        if session.category != .playAndRecord {
-            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try? session.setActive(true)
-         }
+        if !ownsAudioSession || session.category != .playAndRecord {
+            do {
+                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+                try session.setActive(true)
+                ownsAudioSession = true
+            } catch {
+                isSpeaking = false
+                voiceError = "Could not start voice playback: \(error.localizedDescription)"
+                return
+            }
+        }
 
         let utterance = AVSpeechUtterance(string: text)
         // Use selected voice identifier if available, otherwise system default

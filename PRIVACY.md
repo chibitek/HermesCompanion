@@ -1,42 +1,80 @@
 # Privacy Policy
 
-**Last updated: July 21, 2026**
+**Last updated: September 14, 2026**
 
-Hermes AI Companion ("the App") is built by Chibitek LLC. This policy explains how your data is handled.
+Hermes AI Companion is built by Chibitek. This policy describes the current
+iPhone application and its connection to a gateway you configure.
 
-## Data Collection
+## Your gateway and model providers
 
-**The App does not collect, store, or transmit your personal data to any third party.**
+The app sends your chat messages, attached photos and files, and requested
+workspace changes directly to your configured Hermes Agent gateway. It reads
+conversation history and workspace data from that gateway. The app does not
+require a Chibitek account or a Chibitek-operated relay.
 
-- **No accounts.** The App has no sign-up, no login, and no user accounts. There is no Chibitek-operated server.
-- **No analytics.** The App contains no analytics, telemetry, crash reporting, or tracking of any kind.
-- **No cloud storage.** Your conversations, settings, and preferences are stored locally on your device and on your self-hosted Hermes Agent gateway.
+Your gateway controls storage and processing of that content. It may run models
+locally or forward content to external AI providers or tools according to its
+configuration. A remotely hosted gateway is also operated under its host's
+policies. Chibitek does not control those independent servers or providers.
+Self-hosting does not by itself mean that every model request stays on your
+hardware.
 
-## How the App Works
+## Network connections
 
-The App connects directly to a Hermes Agent gateway that you run on your own hardware. All communication is between your iPhone and your gateway over an encrypted Tailscale WireGuard tunnel. No data passes through Chibitek or any third-party server.
+The app supports user-configured HTTP and HTTPS addresses. HTTPS protects the
+connection using the operating system's TLS implementation. A private network
+such as Tailscale can provide additional protection when you have configured it
+on both ends. The app does not establish a Tailscale tunnel itself, and a plain
+HTTP address is not automatically encrypted.
 
-## Data You Control
+## Voice, photos, and files
 
-- **Gateway credentials** (URL and API key) are stored in the iOS Keychain — not in plaintext, not in UserDefaults, not synced to iCloud.
-- **Voice transcription** runs on-device via Apple's SFSpeechRecognizer. Raw audio is never stored or transmitted. Only the transcribed text is sent to your gateway.
-- **Photos and files** you attach in chat are sent directly to your self-hosted gateway. They are not stored by Chibitek.
-- **Conversation history** lives on your Hermes Agent gateway. You control it entirely.
+- Dictation, voice conversation, and optional wake-phrase listening require
+  microphone and speech permissions. The recognition paths require Apple's
+  on-device speech recognition; when it is unavailable the app reports that
+  voice recognition cannot start.
+- Recognized text is sent to the gateway when you submit it or use voice
+  conversation. The app's speech-recognition paths do not send raw microphone
+  audio to the gateway.
+- Speech playback uses Apple's system speech synthesizer. The current app has
+  no ElevenLabs integration.
+- Photos and files you choose to attach are sent to your configured gateway.
+  Its model or tool configuration determines any further processing.
+- Apple-managed features such as Siri and TestFlight operate under Apple's
+  own privacy settings and policies.
 
-## Third-Party Services
+## Information stored on your device
 
-The App integrates with services you configure:
-- **ElevenLabs** (optional TTS): If you provide an ElevenLabs API key, text is sent to ElevenLabs for speech synthesis. Their privacy policy applies to that data.
-- **Tailscale**: Network connectivity is provided by Tailscale's WireGuard tunnel. Their privacy policy applies to network traffic.
+The app stores connection credentials in iOS Keychain. It also keeps local
+settings, connection and conversation selections, and recovery information for
+pending requests. Conversation history is read from the gateway.
 
-## Children's Privacy
+Local diagnostic logs help investigate connection and voice problems. They can
+include connection addresses, error details, transcribed text, and excerpts of
+responses. The app does not automatically upload these logs to Chibitek.
+Review and redact logs before sharing them with support, particularly in a
+public GitHub issue.
 
-The App is not directed to children under 13. We do not knowingly collect data from children.
+Removing a saved server in the app removes that saved connection; it does not
+delete conversations or files from the server. Use the server's own controls
+to manage its retained data.
 
-## Changes
+## Analytics and support
 
-We may update this policy. Changes will be posted on this page.
+The app has no advertising, tracking, or third-party analytics SDK. It does
+not automatically send app usage or diagnostic logs to Chibitek.
 
-## Contact
+If you choose to contact support through GitHub, GitHub and the recipients can
+access what you submit. Public issues are public. Do not include passwords,
+API keys, private conversations, or personal files in an issue.
 
-For privacy questions: open an issue at [github.com/chibitek/HermesCompanion/issues](https://github.com/chibitek/HermesCompanion/issues).
+## Children
+
+The app is not directed to children under 13. Chibitek does not knowingly
+collect personal information from children through this app.
+
+## Changes and contact
+
+Updates to this policy are published on this page. For privacy questions, use
+the [project's support page](https://github.com/chibitek/HermesCompanion/issues)
+without including sensitive information in a public issue.

@@ -2,7 +2,9 @@
 
 Original analysis: `NousResearch/hermes-agent` at `04dd80a977`, Hermes 0.21.1,
 Companion 1.8.48 (134). The tables below are the historical extraction plan,
-not a claim that every listed capability has shipped.
+not a claim that every listed capability has shipped. See
+[FEATURE_COVERAGE.md](FEATURE_COVERAGE.md) for current evidence and remaining
+acceptance checks.
 
 ## September 11 Update
 
@@ -77,11 +79,11 @@ Do not extract:
 - Broad configuration or secret editing from a phone.
 - Core agent behavior or a second agent runtime.
 
-## Current Companion baseline
+## Historical Companion baseline
 
 Already implemented:
 
-- Multi-server connections, server health, and automatic gateway fallback.
+- Multi-server connections, server health, and recovery on the selected gateway. Automatic fallback to unrelated saved servers was removed in the September 13 connection repair.
 - Session listing, creation, history, rename, delete, and fork.
 - Streaming session chat with assistant deltas, thinking, and tool events.
 - Session-backed model locking.

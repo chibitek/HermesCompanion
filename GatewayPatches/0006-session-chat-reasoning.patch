@@ -1,0 +1,160 @@
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index bdbb7cb2de..e2982c17e7 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -69,6 +69,7 @@ _STATIC_FEATURE_FLAGS = {
+     "run_approval_response": True, "tool_progress_events": True, "approval_events": True,
+     "session_resources": True, "model_options": True, "session_chat": True,
+     "session_chat_streaming": True, "session_fork": True, "session_model_lock": True,
++    "session_chat_reasoning": True,
+     "admin_config_rw": False, "jobs_admin": False, "memory_write_api": False,
+     "skills_api": True, "audio_api": False, "realtime_voice": False,
+     "session_continuity_header": "X-Hermes-Session-Id",
+@@ -1927,6 +1928,10 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+             result["requested"] = {"provider": provider, "model": model}
+         if model_lock or payload.get("model_lock"):
+             result["model_lock"] = cls._clean_runtime_id(model_lock or payload.get("model_lock"), max_len=32)
++        from gateway.platforms.api_server_reasoning import public_reasoning_config
++        reasoning = public_reasoning_config(payload.get("reasoning"))
++        if reasoning is not None:
++            result["reasoning"] = reasoning
+         return result
+ 
+     @staticmethod
+@@ -3028,6 +3033,11 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+         system_prompt = body.get("system_message") or body.get("instructions")
+         if system_prompt is not None and not isinstance(system_prompt, str):
+             return None, _error_response("system_message must be a string", 400, code="invalid_system_message")
++        from gateway.platforms.api_server_reasoning import parse_turn_reasoning, apply_turn_reasoning
++        try:
++            turn_reasoning = parse_turn_reasoning(body)
++        except ValueError as exc:
++            return None, _error_response(str(exc), 400, code="invalid_reasoning_effort")
+         runtime_request = self._effective_session_runtime_request(session=session, body=body)
+         lock_error = self._runtime_lock_error(runtime_request)
+         if lock_error is not None:
+@@ -3058,6 +3068,9 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+                 requested_provider=agent_overrides.get("requested_provider"), route=route)
+             if selection_error:
+                 return None, _error_response(selection_error, 400)
++        if turn_reasoning is not None:
++            agent_overrides["model_options"] = apply_turn_reasoning(
++                agent_overrides.get("model_options"), turn_reasoning)
+         run_kwargs = dict(
+             user_message=user_message, ephemeral_system_prompt=system_prompt, session_id=session_id,
+             gateway_session_key=gateway_session_key, route=route, session_model=session_model,
+@@ -3602,6 +3615,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+         """Sanitized actual-vs-requested runtime for a finished turn; raises RuntimeError when a
+         confirmed model lock's provider/model differs from what the agent actually ran with."""
+         runtime = dict(getattr(agent, "_hermes_api_runtime", {}) or {})
++        runtime["reasoning"] = getattr(agent, "reasoning_config", None)
+         raw_provider = getattr(agent, "provider", "")
+         raw_model = getattr(agent, "model", "")
+         actual_provider = self._clean_runtime_id(raw_provider, max_len=80) if isinstance(raw_provider, str) else ""
+diff --git a/gateway/platforms/api_server_reasoning.py b/gateway/platforms/api_server_reasoning.py
+new file mode 100644
+index 0000000000..e2a01ba500
+--- /dev/null
++++ b/gateway/platforms/api_server_reasoning.py
+@@ -0,0 +1,34 @@
++"""Per-turn session reasoning overrides that never rewrite persisted model options."""
++from typing import Any, Dict, Optional
++
++from hermes_constants import VALID_REASONING_EFFORTS
++
++
++def parse_turn_reasoning(body: Dict[str, Any]) -> Optional[str]:
++    if "reasoning_effort" not in body:
++        return None
++    value = body["reasoning_effort"]
++    if not isinstance(value, str) or value not in {"default", "none", *VALID_REASONING_EFFORTS}:
++        raise ValueError("reasoning_effort must be default, none, minimal, low, medium, high, xhigh, max, or ultra")
++    return value
++
++
++def apply_turn_reasoning(options: Any, effort: str) -> Dict[str, Any]:
++    # A sparse model_options replacement would erase settings chosen by another client.
++    result = dict(options or {})
++    result.pop("reasoning", None)
++    result.pop("reasoning_effort", None)
++    if effort != "default":
++        result["reasoning"] = {"enabled": False} if effort == "none" else {"enabled": True, "effort": effort}
++    return result
++
++
++def public_reasoning_config(value: Any) -> Optional[Dict[str, Any]]:
++    if not isinstance(value, dict):
++        return None
++    result = {}
++    if type(value.get("enabled")) is bool:
++        result["enabled"] = value["enabled"]
++    if isinstance(value.get("effort"), str) and value["effort"] in VALID_REASONING_EFFORTS:
++        result["effort"] = value["effort"]
++    return result or None
+diff --git a/tests/gateway/test_session_api.py b/tests/gateway/test_session_api.py
+index 6b9e6c5e8d..f7cfde5bf1 100644
+--- a/tests/gateway/test_session_api.py
++++ b/tests/gateway/test_session_api.py
+@@ -1004,3 +1004,62 @@ async def test_patch_session_still_rejects_unknown_fields(adapter, session_db):
+         resp = await cli.patch(f"/api/sessions/{session_id}", json={"nonsense": 1})
+         assert resp.status == 400, await resp.text()
+         assert (await resp.json())["error"]["code"] == "unsupported_session_field"
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("suffix", ["/chat", "/chat/stream"])
++async def test_turn_reasoning_override_preserves_conversation_options(adapter, session_db, suffix):
++    import json
++    from gateway.platforms.api_server import _request_reasoning_config
++    session_id = session_db.create_session("reasoning-turn", "api_server")
++    options = {"reasoning": {"enabled": True, "effort": "high"}, "service_tier": "priority"}
++    session_db.update_session_runtime_lock(session_id, model="local-model", provider="local",
++                                         model_options=options, confirmed=True)
++    before = json.loads(session_db.get_session(session_id)["model_config"])
++    captured = []
++
++    async def run(**kwargs):
++        captured.append(kwargs)
++        return {"final_response": "ok", "session_id": session_id}, {}
++
++    with patch.object(adapter, "_run_agent", side_effect=run):
++        async with TestClient(TestServer(_create_session_app(adapter))) as cli:
++            for effort, expected in [("none", {"enabled": False}), ("low", {"enabled": True, "effort": "low"}),
++                                     ("default", None), (None, options["reasoning"])]:
++                body = {"message": "hello"}
++                if effort is not None:
++                    body["reasoning_effort"] = effort
++                response = await cli.post(f"/api/sessions/{session_id}{suffix}", json=body)
++                assert response.status == 200, await response.text()
++                await response.text()
++                actual = captured[-1]["model_options"]
++                assert _request_reasoning_config(actual) == expected
++                assert actual["service_tier"] == options["service_tier"]
++                assert captured[-1]["requested_model"] == "local-model"
++                assert json.loads(session_db.get_session(session_id)["model_config"]) == before
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("suffix", ["/chat", "/chat/stream"])
++async def test_invalid_turn_reasoning_is_rejected_before_agent_or_lock_write(adapter, session_db, suffix):
++    session_id = session_db.create_session("invalid-reasoning-turn", "api_server")
++    before = session_db.get_session(session_id)["model_config"]
++    with patch.object(adapter, "_run_agent", new_callable=AsyncMock) as run:
++        async with TestClient(TestServer(_create_session_app(adapter))) as cli:
++            for effort in [True, 2, {}, [], None, "", "turbo"]:
++                response = await cli.post(f"/api/sessions/{session_id}{suffix}",
++                                         json={"message": "hello", "reasoning_effort": effort})
++                assert response.status == 400, await response.text()
++                assert (await response.json())["error"]["code"] == "invalid_reasoning_effort"
++    run.assert_not_called()
++    assert session_db.get_session(session_id)["model_config"] == before
++
++
++def test_reasoning_runtime_reports_only_known_configuration_fields(adapter):
++    from types import SimpleNamespace
++    for effort in [[], {}, "unknown"]:
++        agent = SimpleNamespace(provider="local", model="local-model", reasoning_config={
++            "enabled": False, "effort": effort, "private_configuration": "must-not-appear"})
++        result = adapter._turn_runtime_metadata(agent, route=None, requested_runtime=None,
++                                                route_source="global", confirmed_runtime_lock=False)
++        assert result["reasoning"] == {"enabled": False}

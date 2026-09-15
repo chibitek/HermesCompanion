@@ -69,6 +69,50 @@ class BridgeRoutesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await response.json(), {"async": True})
 
 
+class ChangeFeedTests(unittest.IsolatedAsyncioTestCase):
+    async def testAuthorizationPrecedesFilesystemReads(self):
+        app = web.Application()
+        adapter = Mock()
+        adapter._check_auth.return_value = web.json_response({}, status=401)
+        bridge.wire(app, adapter)
+        async with TestClient(TestServer(app)) as client:
+            with patch.object(bridge, "change_fingerprint") as reader:
+                response = await client.get("/api/companion/changes")
+                self.assertEqual(response.status, 401)
+                reader.assert_not_called()
+
+    async def testRealFileChangeProducesANewRevision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.db-wal"
+            path.write_bytes(b"first")
+            app = web.Application()
+            adapter = Mock()
+            adapter._check_auth.return_value = None
+            bridge.wire(app, adapter)
+            with patch.object(bridge, "change_fingerprint", side_effect=lambda: bridge.fingerprint_paths([path])):
+                async with TestClient(TestServer(app)) as client:
+                    response = await client.get("/api/companion/changes")
+                    self.assertEqual(response.headers["Content-Type"], "text/event-stream")
+                    first = await response.content.readuntil(b"\n\n")
+                    path.write_bytes(b"second revision")
+                    import asyncio
+                    second = await asyncio.wait_for(response.content.readuntil(b"\n\n"), timeout=3)
+                    self.assertIn(b"workspace.changed", second)
+                    self.assertNotEqual(first, second)
+                    self.assertNotIn(str(path).encode(), second)
+                    response.close()
+
+    def testDeletionAndRecreationInvalidateRevision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "projects.db"
+            empty = bridge.fingerprint_paths([path])
+            path.write_bytes(b"project")
+            created = bridge.fingerprint_paths([path])
+            self.assertNotEqual(empty, created)
+            path.unlink()
+            self.assertEqual(bridge.fingerprint_paths([path]), empty)
+
+
 class BotHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def testCanonicalPointerAndOwnerComeFromRoster(self):
         reader = AsyncMock(return_value={"profile": "assistant", "messages": []})

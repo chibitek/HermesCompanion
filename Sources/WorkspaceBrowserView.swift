@@ -1,5 +1,14 @@
 import SwiftUI
+
+private struct WorkspaceRevisionKey: EnvironmentKey { static let defaultValue = 0 }
+extension EnvironmentValues {
+    var workspaceRevision: Int {
+        get { self[WorkspaceRevisionKey.self] }
+        set { self[WorkspaceRevisionKey.self] = newValue }
+    }
+}
 import QuickLook
+import UniformTypeIdentifiers
 
 enum WorkspaceSection: String, CaseIterable, Identifiable {
     case projects = "Projects", bots = "Bots", kanban = "Kanban"
@@ -56,6 +65,11 @@ struct WorkspaceBrowserView: View {
                     }
                 }
             }
+            .toolbar {
+                NavigationLink {
+                    ProjectManagementView(client: client)
+                } label: { Label("Manage Projects", systemImage: "folder.badge.gearshape") }
+            }
         case .bots:
             WorkspaceReadView(load: { try await client.workspaceBots() }) { snapshot in
                 if snapshot.profiles.isEmpty {
@@ -78,6 +92,13 @@ struct WorkspaceBrowserView: View {
                                         if let preview = session.preview, !preview.isEmpty { Text(preview) }
                                     }
                                 }
+                                if let config = store.connectionConfig {
+                                    NavigationLink {
+                                        BotChatAccessView(rootClient: client, rootConfig: config, bot: bot)
+                                    } label: {
+                                        Label("Chat with Bot", systemImage: "bubble.left.and.text.bubble.right")
+                                    }
+                                }
                                 NavigationLink {
                                     BotHistoryView(client: client, bot: bot)
                                 } label: {
@@ -94,32 +115,7 @@ struct WorkspaceBrowserView: View {
                 }
             }
         case .kanban:
-            WorkspaceReadView(load: { try await client.workspaceBoards() }) { snapshot in
-                if snapshot.boards.isEmpty {
-                    ContentUnavailableView("No Kanban Boards", systemImage: section.icon)
-                }
-                ForEach(snapshot.boards) { board in
-                    NavigationLink {
-                        WorkspaceReadView(load: { try await client.workspaceBoard(slug: board.slug) }) { detail in
-                            ForEach(detail.columns) { column in
-                                Section("\(column.name.capitalized) (\(column.tasks.count))") {
-                                    ForEach(column.tasks) { task in
-                                        NavigationLink {
-                                            ServerTaskDetailView(client: client, board: board.slug, taskID: task.id)
-                                        } label: {
-                                            WorkspaceRow(title: task.title, detail: task.assignee, trailing: nil, icon: "checklist")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .navigationTitle(board.title)
-                    } label: {
-                        WorkspaceRow(title: board.title, detail: board.project_name,
-                                     trailing: board.total.map(String.init), icon: section.icon)
-                    }
-                }
-            }
+            ServerBoardsView(client: client)
         }
     }
 
@@ -175,6 +171,40 @@ struct WorkspaceBrowserView: View {
     }
 }
 
+private struct ServerBoardView: View {
+    let client: HermesAPIClient
+    let board: ServerBoard
+    @State private var showCreate = false
+    @State private var revision = 0
+    @State private var notice: String?
+
+    var body: some View {
+        WorkspaceReadView(load: { try await client.workspaceBoard(slug: board.slug) }) { detail in
+            if let notice { Text(notice).foregroundStyle(.secondary) }
+            ForEach(detail.columns) { column in
+                Section("\(column.name.capitalized) (\(column.tasks.count))") {
+                    ForEach(column.tasks) { task in
+                        NavigationLink {
+                            ServerTaskDetailView(client: client, board: board.slug, taskID: task.id)
+                        } label: {
+                            WorkspaceRow(title: task.title, detail: task.assignee, trailing: nil, icon: "checklist")
+                        }
+                    }
+                }
+            }
+        }
+        .id(revision)
+        .navigationTitle(board.title)
+        .toolbar { Button("New Task", systemImage: "plus") { showCreate = true } }
+        .sheet(isPresented: $showCreate) {
+            ServerTaskEditorView(client: client, board: board.slug) { receipt in
+                notice = receipt.warning
+                revision += 1
+            }
+        }
+    }
+}
+
 private struct ServerTaskDetailView: View {
     let client: HermesAPIClient
     let board: String
@@ -184,14 +214,20 @@ private struct ServerTaskDetailView: View {
     @State private var downloadError: String?
     @State private var downloadTask: Task<Void, Never>?
     @State private var downloadID = UUID()
+    @State private var editingTask: ServerBoardTask?
+    @State private var showComment = false
+    @State private var mutationRevision = 0
+    @State private var mutationNotice: String?
 
     var body: some View {
         WorkspaceReadView(load: { try await client.workspaceTask(board: board, id: taskID) }) { detail in
+            if let mutationNotice { Text(mutationNotice).foregroundStyle(.secondary) }
             if let downloadError {
                 Label(downloadError, systemImage: "exclamationmark.triangle")
             }
             Section {
                 Text(detail.task.title).font(.headline)
+                Button("Edit Task") { editingTask = detail.task }
                 LabeledContent("Status", value: detail.task.status)
                 if let assignee = detail.task.assignee { LabeledContent("Assignee", value: assignee) }
             }
@@ -218,6 +254,9 @@ private struct ServerTaskDetailView: View {
                     }
                     if downloadTask != nil { ProgressView("Downloading...") }
                 }
+            }
+            ServerTaskWriteControls(client: client, board: board, detail: detail) {
+                mutationRevision += 1
             }
             if let links = detail.links {
                 if !links.parents.isEmpty {
@@ -253,6 +292,7 @@ private struct ServerTaskDetailView: View {
                 }
             }
             Section("Comments (\(detail.comments.count))") {
+                Button("Add Comment") { showComment = true }
                 ForEach(detail.comments) { comment in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(comment.author).font(.headline)
@@ -279,6 +319,18 @@ private struct ServerTaskDetailView: View {
                         }
                     }
                 }
+            }
+        }
+        .id(mutationRevision)
+        .sheet(item: $editingTask) { task in
+            ServerTaskEditorView(client: client, board: board, existing: task) { receipt in
+                mutationNotice = receipt.warning
+                mutationRevision += 1
+            }
+        }
+        .sheet(isPresented: $showComment) {
+            ServerTaskCommentView(client: client, board: board, taskID: taskID) {
+                mutationRevision += 1
             }
         }
         .textSelection(.enabled)
@@ -324,6 +376,218 @@ private struct ServerTaskDetailView: View {
     }
 }
 
+
+private struct ServerTaskWriteControls: View {
+    let client: HermesAPIClient
+    let board: String
+    let detail: ServerTaskDetail
+    let onChanged: () -> Void
+    @Environment(\.workspaceRevision) private var workspaceRevision
+    @State private var capabilities: WorkspaceCapabilities?
+    @State private var failure: String?
+    @State private var importing = false
+    @State private var filename = ""
+    @State private var fileData: Data?
+    @State private var uploading = false
+    @State private var readingFile = false
+    @State private var completedBytes = 0
+    @State private var changingLink = false
+    @State private var showLinkEditor = false
+    @State private var attachmentToDelete: ServerTaskAttachment?
+    @State private var linkToRemove: TaskDependencySelection?
+
+    var body: some View {
+        Section("Files and Dependencies") {
+            if let failure { Text(failure).foregroundStyle(.red).textSelection(.enabled) }
+            if capabilities?.task_attachment_write == true {
+                Button("Upload Attachment", systemImage: "square.and.arrow.up") { importing = true }
+                    .disabled(readingFile || uploading || changingLink)
+                if readingFile { ProgressView("Reading attachment…") }
+                if uploading {
+                    ProgressView(value: Double(completedBytes), total: Double(max(fileData?.count ?? 0, 1)))
+                    Text("Uploading \(filename): \(ByteCountFormatter.string(fromByteCount: Int64(completedBytes), countStyle: .file))")
+                        .font(.caption)
+                } else if let data = fileData {
+                    Button("Retry Upload") { Task { await upload(data) } }
+                    Button("Discard Pending Upload") {
+                        _ = client.pendingTaskUploadID(board: board, taskID: detail.task.id, filename: filename, data: data, discard: true)
+                        fileData = nil
+                        failure = "The pending upload was forgotten on this phone. Refresh attachments before uploading again if the server may already have saved it."
+                    }
+                }
+                ForEach(detail.attachments ?? []) { attachment in
+                    Button("Delete \(attachment.filename)", systemImage: "trash", role: .destructive) {
+                        attachmentToDelete = attachment
+                    }.disabled(readingFile || uploading || changingLink)
+                }
+            } else {
+                Text("Attachment uploads and deletion require Companion bridge 0.1.11.").font(.caption).foregroundStyle(.secondary)
+            }
+            if capabilities?.task_link_write == true {
+                Button("Add Dependency", systemImage: "link") { showLinkEditor = true }
+                    .disabled(readingFile || uploading || changingLink)
+                ForEach(detail.links?.parents ?? [], id: \.self) { parent in
+                    Button("Remove dependency on \(parent)", role: .destructive) {
+                        linkToRemove = .init(parentID: parent, childID: detail.task.id)
+                    }.disabled(readingFile || uploading || changingLink)
+                }
+                ForEach(detail.links?.children ?? [], id: \.self) { child in
+                    Button("Remove dependent task \(child)", role: .destructive) {
+                        linkToRemove = .init(parentID: detail.task.id, childID: child)
+                    }.disabled(readingFile || uploading || changingLink)
+                }
+            } else {
+                Text("Dependency editing requires Companion bridge 0.1.11.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .task(id: workspaceRevision) {
+            do { capabilities = try await client.workspaceCapabilities() }
+            catch { failure = "Could not check task editing support: \(error.localizedDescription)" }
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
+            guard !readingFile, !uploading else { return }
+            readingFile = true
+            Task { @MainActor in
+                defer { readingFile = false }
+                do {
+                    let file = try result.get()
+                    let accessed = file.startAccessingSecurityScopedResource()
+                    defer { if accessed { file.stopAccessingSecurityScopedResource() } }
+                    guard let maximum = capabilities?.task_attachment_max_bytes else {
+                        failure = "Could not determine this server's attachment limit. Refresh task capabilities before uploading."
+                        return
+                    }
+                    let data = try await Task.detached {
+                        let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                        guard size <= maximum else {
+                            throw APIError.invalidEndpoint("This file contains \(size) bytes; the server accepts at most \(maximum). Choose a smaller file.")
+                        }
+                        return try Data(contentsOf: file)
+                    }.value
+                    filename = file.lastPathComponent
+                    fileData = data
+                    readingFile = false
+                    await upload(data)
+                } catch { failure = "Could not read or upload the selected attachment: \(error.localizedDescription)" }
+            }
+        }
+        .sheet(isPresented: $showLinkEditor) {
+            ServerTaskDependencyEditor(client: client, board: board, taskID: detail.task.id, onChanged: onChanged)
+        }
+        .confirmationDialog("Delete this attachment from Hermes?", isPresented: Binding(
+            get: { attachmentToDelete != nil }, set: { if !$0 { attachmentToDelete = nil } })) {
+                if let attachment = attachmentToDelete {
+                    Button("Delete Attachment", role: .destructive) {
+                        perform {
+                            try await client.deleteTaskAttachment(board: board, taskID: detail.task.id, attachmentID: attachment.id)
+                        }
+                    }
+                }
+            } message: { Text("This permanently removes the attachment from the server. Other clients will see the removal.") }
+        .confirmationDialog("Remove this dependency?", isPresented: Binding(
+            get: { linkToRemove != nil }, set: { if !$0 { linkToRemove = nil } })) {
+                if let link = linkToRemove {
+                    Button("Remove Dependency", role: .destructive) {
+                        perform {
+                            try await client.changeTaskDependency(board: board, taskID: detail.task.id,
+                                parentID: link.parentID, childID: link.childID, linked: false)
+                        }
+                    }
+                }
+            } message: { Text("Both tasks are retained. Removing a dependency can make its child eligible to run.") }
+    }
+
+    @MainActor private func upload(_ data: Data) async {
+        guard !uploading else { return }
+        uploading = true
+        completedBytes = 0
+        failure = nil
+        defer { uploading = false }
+        let identity = client.pendingTaskUploadID(board: board, taskID: detail.task.id, filename: filename, data: data)
+        let type = UTType(filenameExtension: (filename as NSString).pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        do {
+            _ = try await client.uploadTaskAttachment(board: board, taskID: detail.task.id, uploadID: identity,
+                filename: filename, contentType: type, data: data) { completed, _ in completedBytes = completed }
+            _ = client.pendingTaskUploadID(board: board, taskID: detail.task.id, filename: filename, data: data, discard: true)
+            fileData = nil
+            onChanged()
+        } catch {
+            failure = "Upload was not confirmed: \(error.localizedDescription) Retry keeps the same upload. After reopening this task, choose the same file to resume."
+        }
+    }
+
+    private func perform(_ operation: @escaping @MainActor () async throws -> Void) {
+        guard !changingLink else { return }
+        changingLink = true
+        failure = nil
+        Task { @MainActor in
+            defer { changingLink = false }
+            do { try await operation(); onChanged() }
+            catch { failure = "The task change was not confirmed: \(error.localizedDescription) Refresh before retrying." }
+        }
+    }
+}
+
+private struct TaskDependencySelection {
+    let parentID: String
+    let childID: String
+}
+
+private struct ServerTaskDependencyEditor: View {
+    let client: HermesAPIClient
+    let board: String
+    let taskID: String
+    let onChanged: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var tasks: [ServerBoardTask] = []
+    @State private var selected = ""
+    @State private var selectedIsParent = true
+    @State private var saving = false
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let failure { Text(failure).foregroundStyle(.red).textSelection(.enabled) }
+                Picker("Relationship", selection: $selectedIsParent) {
+                    Text("This task depends on").tag(true)
+                    Text("This task must finish before").tag(false)
+                }
+                Picker("Task", selection: $selected) {
+                    Text("Choose a task").tag("")
+                    ForEach(tasks) { task in Text(task.title).tag(task.id) }
+                }
+                Text("Hermes checks the selected board and rejects self-dependencies and cycles.").font(.caption)
+            }
+            .disabled(saving)
+            .navigationTitle("Add Dependency")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        saving = true
+                        Task {
+                            defer { saving = false }
+                            do {
+                                try await client.changeTaskDependency(board: board, taskID: taskID,
+                                    parentID: selectedIsParent ? selected : taskID,
+                                    childID: selectedIsParent ? taskID : selected, linked: true)
+                                onChanged()
+                                dismiss()
+                            } catch { failure = "Dependency was not saved: \(error.localizedDescription)" }
+                        }
+                    }.disabled(selected.isEmpty || saving)
+                }
+            }
+            .interactiveDismissDisabled(saving)
+            .task {
+                do { tasks = try await client.workspaceBoard(slug: board).columns.flatMap(\.tasks).filter { $0.id != taskID } }
+                catch { failure = "Could not load tasks on this board: \(error.localizedDescription)" }
+            }
+        }
+    }
+}
+
 private struct WorkspaceRow: View {
     let title: String
     let detail: String?
@@ -350,6 +614,7 @@ struct WorkspaceReadView<Value, Content: View>: View {
     let load: () async throws -> Value
     var refreshAutomatically = true
     @ViewBuilder let content: (Value) -> Content
+    @Environment(\.workspaceRevision) private var workspaceRevision
     @Environment(\.scenePhase) private var scenePhase
     @State private var value: Value?
     @State private var error: String?
@@ -367,7 +632,7 @@ struct WorkspaceReadView<Value, Content: View>: View {
             else if error == nil { ProgressView("Syncing with Hermes...") }
         }
         .refreshable { await refresh() }
-        .task(id: scenePhase) {
+        .task(id: "\(scenePhase)-\(refreshAutomatically ? workspaceRevision : 0)") {
             guard scenePhase == .active else { return }
             repeat {
                 await refresh()
@@ -391,11 +656,200 @@ struct WorkspaceReadView<Value, Content: View>: View {
             guard !Task.isCancelled, requestID == id else { return }
             // Do not leave removed server resources actionable beneath a sync error.
             value = nil
-            if case APIError.notFound = error {
-                self.error = "This workspace endpoint is unavailable on the server."
+            if let failure = error as? APIError, failure.isNotFound {
+                self.error = "This workspace endpoint is unavailable on the server: \(error.localizedDescription)"
             } else {
                 self.error = "Workspace sync failed: \(error.localizedDescription)"
             }
+        }
+    }
+}
+
+private struct ServerBoardsView: View {
+    let client: HermesAPIClient
+    @Environment(\.workspaceRevision) private var workspaceRevision
+    @State private var revision = 0
+    @State private var capabilities: WorkspaceCapabilities?
+    @State private var notice: String?
+    @State private var isWorking = false
+    @State private var showEditor = false
+    @State private var editingBoard: ServerBoard?
+    @State private var archiveTarget: ServerBoard?
+
+    var body: some View {
+        WorkspaceReadView(load: { try await client.workspaceBoards() }) { snapshot in
+            if let notice { Section { Text(notice).foregroundStyle(.secondary) } }
+            if capabilities?.board_manage != true {
+                Section { Text("Board management requires Companion bridge 0.1.10. Existing boards and tasks remain available.").foregroundStyle(.secondary) }
+            }
+            if snapshot.boards.isEmpty { ContentUnavailableView("No Kanban Boards", systemImage: "rectangle.3.group") }
+            ForEach(snapshot.boards) { board in
+                HStack {
+                    NavigationLink {
+                        ServerBoardView(client: client, board: board)
+                    } label: {
+                        WorkspaceRow(title: board.title,
+                            detail: board.slug == snapshot.current ? "Active board" : board.project_name,
+                            trailing: board.total.map(String.init), icon: "rectangle.3.group")
+                    }
+                    Menu {
+                        Button("Edit Board", systemImage: "pencil") { editingBoard = board; showEditor = true }
+                        Button("Use as Active Board", systemImage: "checkmark.circle") { perform(board, archive: false) }
+                            .disabled(board.slug == snapshot.current)
+                        if board.slug != "default" {
+                            Button("Archive Board", systemImage: "archivebox", role: .destructive) { archiveTarget = board }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle").accessibilityLabel("Manage \(board.title)")
+                    }
+                    .disabled(isWorking || capabilities?.board_manage != true)
+                }
+                .disabled(isWorking)
+            }
+        }
+        .id(revision)
+        .toolbar {
+            Button("New Board", systemImage: "plus") { editingBoard = nil; showEditor = true }
+                .disabled(isWorking || capabilities?.board_manage != true)
+        }
+        .task(id: workspaceRevision) {
+            do { capabilities = try await client.workspaceCapabilities() }
+            catch { notice = "Could not check board management support: \(error.localizedDescription)" }
+        }
+        .sheet(isPresented: $showEditor) {
+            ServerBoardEditorView(client: client, existing: editingBoard) { receipt in
+                notice = receipt.already_exists == true ? "That board ID already exists. Its saved details were kept; use Edit Board to change them." : nil
+                revision += 1
+            }
+        }
+        .confirmationDialog("Archive \(archiveTarget?.title ?? "board")?", isPresented: Binding(
+            get: { archiveTarget != nil }, set: { if !$0 { archiveTarget = nil } })) {
+                if let target = archiveTarget {
+                    Button("Archive Board", role: .destructive) { perform(target, archive: true) }
+                }
+            } message: {
+                Text("The board and its tasks are retained in the server's archive and removed from the board list. If it is active, Hermes returns to the default board.")
+            }
+    }
+
+    private func perform(_ board: ServerBoard, archive: Bool) {
+        guard capabilities?.board_manage == true, !isWorking else {
+            notice = "Update the Companion bridge to 0.1.10 before managing boards."
+            return
+        }
+        isWorking = true
+        Task {
+            defer { isWorking = false }
+            do {
+                try await client.performWorkspaceBoardAction(slug: board.slug, archive: archive)
+                notice = archive ? "Board archived on the server; its tasks were retained." : "Hermes now uses this board for CLI and slash-command tasks."
+            } catch {
+                notice = "Board action was not confirmed: \(error.localizedDescription) Refresh the list before retrying."
+            }
+            revision += 1
+        }
+    }
+}
+
+private struct ServerBoardEditorView: View {
+    let client: HermesAPIClient
+    let existing: ServerBoard?
+    let onSaved: (ServerBoardReceipt) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var slug = ""
+    @State private var name: String
+    @State private var description: String
+    @State private var icon: String
+    @State private var color: String
+    @State private var workdir: String
+    @State private var projectID: String
+    @State private var canManage = false
+    @State private var isSaving = false
+    @State private var failure: String?
+    @State private var attemptedCreation: ServerBoardWrite?
+
+    init(client: HermesAPIClient, existing: ServerBoard?, onSaved: @escaping (ServerBoardReceipt) -> Void) {
+        self.client = client
+        self.existing = existing
+        self.onSaved = onSaved
+        _name = State(initialValue: existing?.name ?? "")
+        _description = State(initialValue: existing?.description ?? "")
+        _icon = State(initialValue: existing?.icon ?? "")
+        _color = State(initialValue: existing?.color ?? "")
+        _workdir = State(initialValue: existing?.default_workdir ?? "")
+        _projectID = State(initialValue: existing?.project_id ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let failure { Section { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
+                Section("Board") {
+                    if let existing { LabeledContent("Board ID", value: existing.slug) }
+                    else { TextField("Board ID", text: $slug).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    TextField("Name", text: $name)
+                    TextField("Description", text: $description, axis: .vertical).lineLimit(2...8)
+                    TextField("Icon", text: $icon)
+                    TextField("Color", text: $color)
+                }
+                Section {
+                    TextField("Server folder", text: $workdir).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Project ID or slug", text: $projectID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                } header: { Text("Optional server workspace") } footer: {
+                    Text("Use an existing absolute folder path on the server. Linking a Hermes project uses its primary folder unless a folder is supplied.")
+                }
+            }
+            .disabled(isSaving || attemptedCreation != nil)
+            .navigationTitle(existing == nil ? "New Board" : "Edit Board")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isSaving) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
+                        .disabled(isSaving || !canManage || (existing == nil && slug.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                }
+            }
+            .interactiveDismissDisabled(isSaving)
+            .task {
+                do {
+                    canManage = try await client.workspaceCapabilities().board_manage == true
+                    if !canManage { failure = "Board management requires Companion bridge 0.1.10 on this server." }
+                } catch { failure = "Could not check board editing support: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    @MainActor private func save() async {
+        guard canManage, !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        var payload = ServerBoardWrite()
+        if existing == nil { payload.slug = slug }
+        // Omit unchanged fields so a phone edit does not overwrite unrelated Mac edits.
+        if name != (existing?.name ?? "") { payload.name = name }
+        if description != (existing?.description ?? "") { payload.description = description }
+        if icon != (existing?.icon ?? "") { payload.icon = icon }
+        if color != (existing?.color ?? "") { payload.color = color }
+        if workdir != (existing?.default_workdir ?? "") { payload.default_workdir = workdir }
+        if projectID != (existing?.project_id ?? "") { payload.project_id = projectID }
+        if existing != nil, [payload.name, payload.description, payload.icon, payload.color,
+                             payload.default_workdir, payload.project_id].allSatisfy({ $0 == nil }) {
+            dismiss()
+            return
+        }
+        do {
+            let receipt: ServerBoardReceipt
+            if let existing { receipt = try await client.updateWorkspaceBoard(slug: existing.slug, payload: payload) }
+            else {
+                if attemptedCreation == nil { attemptedCreation = try payload.validatedCreation() }
+                receipt = try await client.createWorkspaceBoard(payload: attemptedCreation!)
+            }
+            onSaved(receipt)
+            dismiss()
+        } catch {
+            if case APIError.http(let rejected) = error, [400, 401, 403, 404, 422].contains(rejected.status) {
+                attemptedCreation = nil
+            }
+            failure = "Board save was not confirmed: \(error.localizedDescription) \(attemptedCreation != nil ? "Retry keeps the same board ID and fields; cancel and refresh to inspect the server." : "Check the supplied fields and refresh if another client may have edited this board.")"
         }
     }
 }

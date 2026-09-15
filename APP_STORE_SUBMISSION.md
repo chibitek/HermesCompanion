@@ -1,132 +1,119 @@
-# App Store Submission — Hermes Companion
+# App Store submission: Hermes AI Companion
 
-## App Info
+## Current candidate
 
-| Field | Value |
-|---|---|
-| **Name** | Hermes Companion |
-| **Subtitle** | Chat with your AI agent |
-| **Bundle ID** | com.chibitek.hermescompanion |
-| **SKU** | hermes-companion-ios |
-| **Primary Category** | Productivity |
-| **Secondary Category** | Developer Tools |
-| **Price** | Free |
-| **Copyright** | Chibitek LLC |
+**1.8.86 (183)** adds complete scheduled-job delivery diagnostics and joins the
+workspace watcher when foreground sync stops. Execution completion is separate
+from delivery failure, queued receipts and unverified targets. Expandable reasons
+remain readable and copyable; recovery clears stale warnings. Earlier connection,
+steering, stream, deletion, reasoning and audio repairs remain included.
 
----
+- Device: matching app/widget versions and a signed export verified. Inventory
+  confirms 1.8.86 (183) installed. The locked phone blocked launch, so physical
+  visual/audio acceptance remains incomplete.
+- TestFlight: **Testing** in the existing internal group, containing builds
+  176 through 183. The tester remains Invited; acceptance and TestFlight
+  installation are unverified. The screenshot's Incompatible entry remains
+  unidentified.
+- App Review: build 182 was withdrawn and replaced. Apple confirmed one submitted
+  item, **1.8.86 (183)**, on September 14, 2026 at **3:56 AM Eastern**.
+  It is **Waiting for Review**, with manual release preserved.
+- Validation: **177 ordinary simulator tests** and **twelve separate real-gateway
+  checks** passed against final source. No jobs, sessions, projects or active
+  selection remained; linked files were unchanged and saved scheduler output was
+  verified. The native gateway previously passed 167 focused tests.
+- Issues #65, #66 and #67 are resolved in the public branch. Physical audio (#53),
+  variable model latency (#55), retained-session investigation (#57), external
+  messaging delivery, full native job configuration and complete feature parity
+  remain unfinished. Review notes disclose these limits.
+- Reviewer gateway access and screenshot refresh remain incomplete.
+- No subscriptions are implemented. Planned paid experiences are specified in
+  [SUBSCRIPTION_RELEASE_PLAN.md](docs/SUBSCRIPTION_RELEASE_PLAN.md).
+
+These are observed release states. Recheck App Store Connect before announcing a
+later release. Keep tester contacts, Apple account identifiers, review credentials,
+private captures and private server URLs out of Git.
+
+## Promotional text
+
+Stream chat from your own Hermes gateway, follow tool activity, manage saved
+servers, and use voice when you choose.
 
 ## Description
 
-Hermes Companion connects your iPhone to your own AI agent — the one running on your machine, with your models, your tools, and your data. No cloud middleman. No subscriptions. Just you and your agent, end to end.
+Hermes AI Companion connects your iPhone to a Hermes Agent gateway that you run
+on a Mac, Linux machine, or server.
 
-**YOUR AGENT, YOUR MACHINE**
-You run the Hermes Agent gateway on your own hardware — a Mac, a Linux box, or a VPS. Hermes Companion connects to it over an encrypted Tailscale tunnel. Your conversations, your files, your voice — nothing passes through a third-party server.
+### Chat with your agent
 
-**REAL-TIME CHAT**
-Stream responses as they're generated. Watch your agent think, call tools, and reason in real time. Approve or deny tool executions before they run. Send photos and files directly in chat.
+Stream replies, follow tool activity, browse conversations, and send photos or
+files. View server health and connection guidance, reconnect after switching
+apps, and queue follow-up instructions while a reply is running.
 
-**HERMES TALK — VOICE MODE**
-Tap the waveform and your phone becomes a full-screen voice terminal. Matrix digital rain, CRT scanlines, and a pulsing center-orb visualizer. On-device transcription via SFSpeechRecognizer — your voice never leaves the phone until you send it. TTS playback with configurable voice and speed.
+### Your workspace on your phone
 
-**ANY MODEL, ANY PROVIDER**
-Switch between any model your gateway can reach — Nous Portal (300+ models), OpenRouter, OpenAI, Anthropic, Google, local Ollama models, and any OpenAI-compatible endpoint. Star multiple favorites. Switch mid-conversation.
+Access supported gateway features, including sessions, models, skills, and
+Kanban boards. Live workspace updates require a compatible Hermes Companion
+bridge; older servers may use periodic synchronization. Available features
+depend on your gateway version and configuration.
 
-**MULTIPLE SERVERS**
-Connect to as many Hermes gateways as you want. Personal agent at home, work agent at the office, dedicated coding agent on a GPU box. Switch with one tap. Each server keeps its own sessions, models, skills, and preferences.
+### Voice when you want it
 
-**SIX THEMES**
-Liquid Glass, Matrix terminal green, Retro Amber CRT, Neon, Blue Hacker, and Cyberpunk. Every theme transforms the entire app.
+Use dictation or open voice conversation explicitly. Choose playback voices and
+speed. Typed chat does not require microphone access.
 
-**PRIVACY FIRST**
-- No cloud dependency — connects directly to your gateway
-- Credentials in iOS Keychain, never in plaintext
-- On-device voice transcription
-- No analytics, no telemetry, no tracking
-- Open source (MIT) — fully auditable
+### Multiple servers and themes
 
-**REQUIREMENTS**
-- A running Hermes Agent gateway (self-hosted)
-- Tailscale on both your iPhone and your gateway machine
-- iOS 26.0+
+Save, test, switch, and delete gateway connections. Customize the interface with
+six visual themes.
 
----
+### Direct connection
 
-## Keywords
+The app connects to the gateway you configure. Your gateway may use local models
+or external AI providers, depending on your settings. Network protection depends
+on your connection: use HTTPS or a trusted private network such as Tailscale.
 
-hermes,ai,chat,assistant,llm,voice,agent,self-hosted,open source,tailscale,terminal,matrix,cli,developer,tools,coding,privacy,local,offline
+### Requirements
 
----
+A reachable Hermes Agent gateway with its API enabled and valid connection
+credentials. iOS 26 or later. Tailscale is supported for private remote access.
 
-## Screenshots (required sizes)
+Hermes AI Companion is open source under the MIT license. Source code, setup
+guidance, and support are available on GitHub.
 
-| Size | Device | What to capture |
-|---|---|---|
-| 6.9" | iPhone 17 Pro Max | Chat with streaming response + tool events |
-| 6.9" | iPhone 17 Pro Max | Hermes Talk voice mode with Matrix rain |
-| 6.9" | iPhone 17 Pro Max | Model picker with favorites |
-| 6.9" | iPhone 17 Pro Max | Settings / server picker |
-| 6.7" | iPhone 15 Pro Max | Chat with streaming response |
-| 6.7" | iPhone 15 Pro Max | Hermes Talk voice mode |
-| 6.7" | iPhone 15 Pro Max | Model picker |
-| 6.5" | iPhone 11 Pro Max | Chat |
-| 6.5" | iPhone 11 Pro Max | Voice mode |
-| 5.5" | iPhone 8 Plus | Chat |
+## Review preparation
 
----
+- Explain that the app has no app account, but chat and workspace features
+  require gateway authentication. A missing app sign-in does not mean reviewers
+  can test chat without a configured gateway.
+- Supply working, isolated reviewer access through App Store Connect only.
+  Never share a personal gateway key or production conversations. Verify access
+  from outside the developer's private network before submitting.
+- Describe the ATS exception accurately: HTTP is protected by a VPN only when
+  the user actually configured one. The app does not establish Tailscale itself.
+- The app implements no custom cryptography and uses operating-system HTTPS/TLS.
+- Do not advertise subscriptions, Watch, CarPlay, or native Vision Pro in this
+  candidate. Those capabilities need their own implementation and verification.
+- Inspect uploaded screenshots for accurate current behavior and absence of
+  private information. The historical device-size checklist is not proof of
+  current Apple screenshot requirements.
+- The current `PRIVACY.md` describes optional Tailscale, external model providers,
+  on-device recognition, and local diagnostic logs. App Store Connect currently
+  declares Data Not Collected by the developer. Local logs and independently
+  configured user gateways are distinct from automatic developer collection;
+  re-evaluate the disclosure if a hosted service or collecting SDK is introduced.
+  See [Apple's disclosure definitions](https://developer.apple.com/app-store/app-privacy-details/).
+  The App Store privacy-policy URL must serve this updated policy.
 
-## App Privacy Labels
+## Candidate validation
 
-### Data Types Collected
+The ordinary suite passed 159 tests and skipped six opt-in integration tests.
+All six real disposable-gateway checks passed separately with zero retained
+sessions. An earlier cleanup observation remains tracked in issue #57;
+variable local-model latency remains
+tracked in [issue 55](https://github.com/chibitek/HermesCompanion/issues/55).
+Physical music, microphone, and Bluetooth acceptance checks remain tracked in
+[issue 53](https://github.com/chibitek/HermesCompanion/issues/53).
 
-| Data Type | Collected? | Linked to Identity? | Used for Tracking? | Purpose |
-|---|---|---|---|---|
-| **Contact Info — Email Address** | No | — | — | — |
-| **User Content — Photos/Videos** | Yes | No | No | App Functionality (camera attachments sent to user's own server) |
-| **User Content — Audio Data** | Yes | No | No | App Functionality (voice transcription, on-device only) |
-| **User Content — Customer Support** | No | — | — | — |
-| **Identifiers — User ID** | No | — | — | — |
-| **Diagnostics — Crash Data** | No | — | — | — |
-
-### Privacy Details
-
-- **Photos/Videos**: Photos taken with the in-app camera are sent to the user's self-hosted Hermes Agent gateway. They are not stored on any third-party server.
-- **Audio Data**: Microphone audio is processed on-device by Apple's SFSpeechRecognizer for transcription. Raw audio is never stored or transmitted. The transcribed text is sent to the user's self-hosted gateway.
-
----
-
-## App Review Notes
-
-### ATS Exception (NSAllowsArbitraryLoads)
-
-The app connects to user-configured Hermes Agent gateways over Tailscale WireGuard tunnels. These gateways run on private IPs in the 100.64.0.0/10 range (Tailscale CGNAT). Because the IP addresses are user-specific and dynamic, we cannot enumerate them in NSExceptionDomains. The app uses HTTPS where the gateway supports it, but many self-hosted setups use plain HTTP on local/Tailscale networks. All connections are encrypted at the network layer by Tailscale's WireGuard tunnel regardless of the HTTP scheme.
-
-### Encryption (ITSAppUsesNonExemptEncryption = false)
-
-The app uses only HTTPS/TLS for network communication. No custom cryptographic algorithms are implemented. The Tailscale WireGuard tunnel is provided by the Tailscale app, not by Hermes Companion.
-
-### CarPlay
-
-CarPlay support is implemented but requires the `com.apple.developer.carplay-audio` entitlement, which needs separate approval. The entitlement is not included in the current build. We will request it separately and submit an update.
-
-### Self-Hosted Architecture
-
-This app is a thin client for the open-source Hermes Agent platform (github.com/NousResearch/hermes-agent). It does not connect to any Chibitek-operated servers. All data processing happens on the user's own hardware. The app has no sign-up, no account creation, and no backend services of its own.
-
----
-
-## Export Compliance
-
-- **ITSAppUsesNonExemptEncryption**: No (set in Info.plist)
-- **Encryption**: Only standard HTTPS/TLS. No custom cryptography.
-- **ECCN**: 5D992 (mass market)
-- **CCATS**: Not required
-
----
-
-## Version Info
-
-| Field | Value |
-|---|---|
-| **Version** | 1.8.53 |
-| **Build** | 139 |
-| **What's New** | Hermes Platform hub with interactive scheduled jobs and native artifact uploads when browser control is enabled |
+The signed build was uploaded to Apple and installed directly on the development
+phone. That direct installation is not evidence of a TestFlight installation.

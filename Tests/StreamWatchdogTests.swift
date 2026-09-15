@@ -2,6 +2,14 @@ import XCTest
 @testable import HermesCompanion
 
 final class StreamWatchdogTests: XCTestCase {
+    func testFirstActivityShortensInitialGrace() async throws {
+        let watchdog = StreamWatchdogManager()
+        let fired = expectation(description: "first activity activates shorter timeout")
+        watchdog.arm(after: 0.04, initialTimeout: 1) { fired.fulfill() }
+        watchdog.recordActivity()
+        await fulfillment(of: [fired], timeout: 0.25)
+    }
+
     func testActivityResetsTimeout() async throws {
         let watchdog = StreamWatchdogManager()
         let fired = expectation(description: "timeout fires only after latest activity")

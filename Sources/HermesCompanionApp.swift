@@ -12,36 +12,21 @@ struct HermesCompanionApp: App {
         WindowGroup {
             RootView(store: store)
                 .environmentObject(appearance)
+                .environment(\.workspaceRevision, store.workspaceRevision)
                 .preferredColorScheme(effectiveColorScheme)
                 .tint(appearance.accent)
                 .task {
                     ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
-                    // Auto-connect if a saved config exists in Keychain.
-                    // AppStore.init already loads it into connectionConfig;
-                    // here we verify the server is reachable and populate
-                    // capabilities/sessions so the user goes straight to chat.
-                    if store.connectionConfig != nil && store.capabilities == nil {
-                        await store.autoConnect()
-                    }
                     // CarPlay voice controller shares this store.
                     CarPlayVoiceController.shared.attach(store: store)
                     // Request notification permission so we can alert the
                     // user when a chat response arrives while backgrounded.
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
-                    // Foreground liveness: reconnectIfNeeded no-ops when healthy,
-                    // silently reconnects when the socket died while the app sat
-                    // open (Tailscale rekey, gateway restart, network switch).
-                    while !Task.isCancelled {
-                        do {
-                            try await Task.sleep(for: .seconds(60))
-                        } catch {
-                            return
-                        }
-                        guard !Task.isCancelled else { return }
-                        guard scenePhase == .active, !store.isStreaming else { continue }
-                        await store.reconnectIfNeeded()
-                    }
+                }
+                .task(id: "\(scenePhase)-\(String(describing: store.apiClient.map(ObjectIdentifier.init)))-\(store.isLoadingConnection)") {
+                    guard scenePhase == .active, !store.isLoadingConnection else { return }
+                    await store.runLiveSync()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                                     switch newPhase {
@@ -96,24 +81,6 @@ struct RootView: View {
                 ConnectingView()
             } else if store.isConnected {
                 ChatView(store: store)
-                    .task {
-                        try? await Task.sleep(nanoseconds: 100_000_000)
-                        await MainActor.run {
-                            if store.activeSession == nil {
-                                Task {
-                                    if store.sessions.isEmpty {
-                                        await store.refreshSessions()
-                                    }
-                                    // Always create a fresh session for the app —
-                                    // reusing an existing Hermes session pulls in
-                                    // its system prompt, tools, and context, which
-                                    // causes the model to make tool calls, hit the
-                                    // iteration limit, and drop the SSE connection.
-                                    await store.createSession(title: nil)
-                                }
-                            }
-                        }
-                    }
             } else if showServerPicker {
                 ServerPickerView(store: store, appearance: appearance) { config in
                     Task {
@@ -121,8 +88,7 @@ struct RootView: View {
                             // "Add New Server" — show full setup form
                             showServerPicker = false
                         } else {
-                            store.connectionConfig = config
-                            await store.autoConnect()
+                            await store.switchToConnection(config)
                         }
                     }
                 }
@@ -147,12 +113,11 @@ struct RootView: View {
             guard finished, !autoConnectAttempted else { return }
             autoConnectAttempted = true
             Task {
-                // If we have saved connections, ping all of them for health status
-                if !store.savedConnections.isEmpty {
-                    await store.checkAllServerHealth()
-                }
-                // Auto-connect to last server if toggle is on and we have a config
-                let shouldAutoReconnect = SharedDefaults.shared.bool(forKey: "auto_reconnect_last_server")
+                // Unreachable saved servers must not delay the selected connection.
+                async let healthChecks: Void = store.checkAllServerHealth()
+                let defaults = SharedDefaults.shared
+                let shouldAutoReconnect = defaults.object(forKey: "auto_reconnect_last_server") == nil
+                    || defaults.bool(forKey: "auto_reconnect_last_server")
                 if shouldAutoReconnect, store.connectionConfig != nil {
                     await store.autoConnect()
                     // If auto-connect failed, show the server picker
@@ -163,6 +128,7 @@ struct RootView: View {
                     // Always show server picker by default
                     showServerPicker = true
                 }
+                await healthChecks
             }
         }
         .alert("What's New in Hermes \(currentVersion)", isPresented: $showReleaseNotes) {
@@ -279,7 +245,7 @@ struct ServerPickerView: View {
 
     private var autoReconnectToggle: some View {
         HStack(spacing: 12) {
-            Image(systemName: "arrow.trianglehead.clockwise.icircle")
+            Image(systemName: "arrow.clockwise.circle")
                 .font(.system(size: 16))
                 .foregroundStyle(theme.textSecondary)
             VStack(alignment: .leading, spacing: 2) {

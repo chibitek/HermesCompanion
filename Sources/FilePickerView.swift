@@ -8,6 +8,12 @@ import UniformTypeIdentifiers
 /// via a completion callback.
 struct FilePickerView: UIViewControllerRepresentable {
     let onPick: (Data, String, String) -> Void
+    let onError: (String) -> Void
+
+    init(onError: @escaping (String) -> Void = { _ in }, onPick: @escaping (Data, String, String) -> Void) {
+        self.onPick = onPick
+        self.onError = onError
+    }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         // Support a broad range of content types
@@ -36,14 +42,16 @@ struct FilePickerView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onPick: onPick)
+        Coordinator(onPick: onPick, onError: onError)
     }
 
     final class Coordinator: NSObject, UIDocumentPickerDelegate {
         let onPick: (Data, String, String) -> Void
+        let onError: (String) -> Void
 
-        init(onPick: @escaping (Data, String, String) -> Void) {
+        init(onPick: @escaping (Data, String, String) -> Void, onError: @escaping (String) -> Void) {
             self.onPick = onPick
+            self.onError = onError
         }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
@@ -56,7 +64,12 @@ struct FilePickerView: UIViewControllerRepresentable {
                     }
                 }
 
-                guard let data = try? Data(contentsOf: url) else { continue }
+                let data: Data
+                do { data = try Data(contentsOf: url) }
+                catch {
+                    onError("Could not open \(url.lastPathComponent): \(error.localizedDescription). Download it in Files first, then select it again.")
+                    continue
+                }
                 let fileName = url.lastPathComponent
                 let mimeType = MimeTypeResolver.resolve(for: url)
                 onPick(data, fileName, mimeType)

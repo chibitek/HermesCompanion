@@ -29,6 +29,12 @@ struct ToolsetsListView: View {
                 .ignoresSafeArea()
 
             List {
+                if let failure = store.toolsetsError {
+                    Section {
+                        Label(failure, systemImage: "exclamationmark.triangle")
+                        Button("Retry") { Task { await store.refreshToolsets() } }
+                    }
+                }
                 if filteredToolsets.isEmpty {
                     ContentUnavailableView(
                         "No Toolsets",
@@ -74,6 +80,7 @@ struct ToolsetsListView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
         }
+        .task { await store.refreshToolsets() }
         .navigationTitle("Toolsets")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search toolsets")

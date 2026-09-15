@@ -1,0 +1,417 @@
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 5c4a2bf4ae..1b7f9c1e10 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -2274,6 +2274,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+                 "chat_completions": True, "chat_completions_streaming": True,
+                 "responses_api": True, "responses_streaming": True, "run_submission": True,
+                 "runs_idempotency": _api_runs._idempotency_capabilities(self, store_type=RunIdempotencyStore),
++                "run_event_replay": {"supported": True, "fanout": True, "cursor_header": "Last-Event-ID", "durable": False},
+                 **_STATIC_FEATURE_FLAGS,
+                 "cors": bool(self._cors_origins),
+                 # Always advertised for feature-detection; enabled follows config.
+diff --git a/gateway/platforms/api_server_run_events.py b/gateway/platforms/api_server_run_events.py
+new file mode 100644
+index 0000000000..e7207efcdc
+--- /dev/null
++++ b/gateway/platforms/api_server_run_events.py
+@@ -0,0 +1,92 @@
++"""Event-loop-owned run replay with independent reader cursors.
++
++The TUI replay module is tied to process-global JSON-RPC session envelopes.
++This transport keeps adapter-owned HTTP run ownership and wakeups separate.
++"""
++import asyncio
++import json
++import weakref
++from collections import deque
++
++
++class ReplayGap(ValueError):
++    pass
++
++
++class RunEventPool:
++    def __init__(self, max_bytes=64 * 1024 * 1024, max_records=16384):
++        self.max_bytes = max_bytes
++        self.max_records = max_records
++        self.bytes = 0
++        self.records = deque()
++
++    def record(self, stream, sequence, size):
++        self.bytes += size
++        self.records.append((weakref.ref(stream), sequence))
++        while self.bytes > self.max_bytes or len(self.records) > self.max_records:
++            reference, through = self.records.popleft()
++            if (old := reference()) is not None:
++                old.evict_through(through)
++
++
++class RunEventLog:
++    MAX_EVENTS = 1024
++    MAX_BYTES = 4 * 1024 * 1024
++
++    def __init__(self, pool, *, max_events=MAX_EVENTS, max_bytes=MAX_BYTES):
++        self.pool = pool
++        self.max_events, self.max_bytes = max_events, max_bytes
++        self.events = deque()
++        self.bytes = self.sequence = self.evicted_through = 0
++        self.closed = False
++        self.subscribers = 0
++        self.changed = asyncio.Event()
++
++    def put_nowait(self, event):
++        if self.closed:
++            return
++        if event is None:
++            self.closed = True
++            self.changed.set()
++            return
++        self.sequence += 1
++        payload = {**event, "sequence": self.sequence}
++        frame = f"id: {self.sequence}\ndata: {json.dumps(payload)}\n\n".encode()
++        self.events.append((self.sequence, frame))
++        self.bytes += len(frame)
++        self.pool.record(self, self.sequence, len(frame))
++        while len(self.events) > self.max_events or self.bytes > self.max_bytes:
++            self.evict_through(self.events[0][0])
++        self.changed.set()
++
++    def evict_through(self, sequence):
++        while self.events and self.events[0][0] <= sequence:
++            removed, frame = self.events.popleft()
++            self.bytes -= len(frame)
++            self.pool.bytes -= len(frame)
++            self.evicted_through = removed
++        self.changed.set()
++
++    def validate_cursor(self, cursor):
++        if cursor < self.evicted_through or cursor > self.sequence:
++            raise ReplayGap(
++                f"Run events after {cursor} are no longer fully available; "
++                f"retained cursor range is {self.evicted_through}..{self.sequence}. "
++                "Refresh run status and saved conversation before resuming the event stream.")
++
++    async def next(self, cursor):
++        while True:
++            self.validate_cursor(cursor)
++            if self.events:
++                index = cursor - self.events[0][0] + 1
++                if 0 <= index < len(self.events):
++                    return self.events[index]
++            if self.closed:
++                return None
++            self.changed.clear()
++            await self.changed.wait()
++
++    def release(self):
++        self.evict_through(self.sequence)
++        self.closed = True
++        self.changed.set()
+diff --git a/gateway/platforms/api_server_runs.py b/gateway/platforms/api_server_runs.py
+index 3976ff02de..66138804aa 100644
+--- a/gateway/platforms/api_server_runs.py
++++ b/gateway/platforms/api_server_runs.py
+@@ -24,6 +24,7 @@ except ImportError:
+ 
+ from gateway.platforms.api_server_room_grants import _json_error, _room_grant_error_response
+ from gateway.platforms.api_server_run_idempotency import TERMINAL_STATUSES
++from gateway.platforms.api_server_run_events import ReplayGap, RunEventLog, RunEventPool
+ 
+ 
+ logger = logging.getLogger("gateway.platforms.api_server")
+@@ -93,6 +94,7 @@ def _initialize_run_state(self, *, store_factory) -> None:
+     # approval session keys (approval core resolves by session key, clients by run_id).
+     self._run_idempotency_ids: set[str] = set()
+     self._run_stream_subscribers: set[str] = set()
++    self._run_event_pool = RunEventPool()
+     self._stopping_run_ids: set[str] = set()
+     (
+         self._run_owners, self._run_streams, self._run_streams_created, self._active_run_agents,
+@@ -316,7 +318,7 @@ class _RunLaunch:
+ 
+     owner: Any
+     run_id: str
+-    queue: "asyncio.Queue[Optional[Dict]]"
++    queue: "RunEventLog"
+     session_id: str
+     gateway_session_key: Optional[str]
+     declared_selected: bool
+@@ -358,6 +360,8 @@ def _retire_live_run(self, run_id: str) -> None:
+ 
+ 
+ def _drop_run_transport(self, run_id: str) -> None:
++    if stream := self._run_streams.get(run_id):
++        stream.release()
+     _forget_run(self, run_id, self._run_streams, self._run_streams_created)
+ 
+ 
+@@ -472,7 +476,7 @@ async def _handle_runs(self, request: "web.Request", *, _api_server) -> "web.Res
+     session_history_delivery = not previous_response_id and not conversation_history
+     if not conversation_history and selected_session_id and not previous_response_id:
+         conversation_history = await self._conversation_history_for_session(str(selected_session_id))
+-    q = self._run_streams[run_id] = asyncio.Queue()
++    q = self._run_streams[run_id] = RunEventLog(self._run_event_pool)
+     created_at = self._run_streams_created[run_id] = time.time()
+     self._run_approval_sessions[run_id] = run_id  # approval session key (see _RunLaunch)
+     initial_status = self._set_run_status(
+@@ -716,7 +720,12 @@ async def _handle_get_run(self, request: "web.Request", *, _api_server) -> "web.
+     """GET /v1/runs/{run_id} — return pollable run status for external UIs."""
+     _, status, _, _, err = _load_owned_run(
+         self, request, _api_server=_api_server, permission="status", active_fallback=True)
+-    return err or web.json_response(status)
++    if err is not None:
++        return err
++    snapshot = dict(status)
++    if stream := self._run_streams.get(request.match_info["run_id"]):
++        snapshot.update(event_cursor=stream.sequence, event_replay_floor=stream.evicted_through)
++    return web.json_response(snapshot)
+ 
+ 
+ async def _handle_run_events(self, request: "web.Request", *, _api_server) -> "web.StreamResponse":
+@@ -738,27 +747,42 @@ async def _handle_run_events(self, request: "web.Request", *, _api_server) -> "w
+         await asyncio.sleep(0.05)
+     else:
+         return _run_not_found(_api_server._openai_error, run_id)
+-    q = self._run_streams[run_id]
++    stream = self._run_streams[run_id]
++    raw_cursor = request.headers.get("Last-Event-ID", "0")
++    if not raw_cursor.isascii() or not raw_cursor.isdecimal() or len(raw_cursor) > 20:
++        return _json_error(_api_server._openai_error, "Last-Event-ID must be a nonnegative event sequence", code="invalid_event_cursor", status=400)
++    cursor = int(raw_cursor)
++    try:
++        stream.validate_cursor(cursor)
++    except ReplayGap as exc:
++        return _json_error(_api_server._openai_error, str(exc), code="run_replay_gap", status=409)
++    stream.subscribers += 1
+     self._run_stream_subscribers.add(run_id)
+     response = web.StreamResponse(status=200, headers={
+         "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+-    await response.prepare(request)
+     try:
++        await response.prepare(request)
+         while True:
+             try:
+-                event = await asyncio.wait_for(q.get(), timeout=30.0)
++                item = await asyncio.wait_for(stream.next(cursor), timeout=30.0)
+             except asyncio.TimeoutError:
+                 await response.write(b": keepalive\n\n")
+                 continue
+-            if event is None:  # run finished
++            except ReplayGap as exc:
++                await response.write(_api_server._sse_frame(_run_event(run_id, "error", code="run_replay_gap", message=str(exc))))
++                break
++            if item is None:
+                 await response.write(b": stream closed\n\n")
+                 break
+-            await response.write(_api_server._sse_frame(event))
++            cursor, frame = item
++            await response.write(frame)
+     except Exception as exc:
+         logger.debug("[api_server] SSE stream error for run %s: %s", run_id, exc)
+     finally:
+-        self._run_stream_subscribers.discard(run_id)
+-        _drop_run_transport(self, run_id)
++        stream.subscribers -= 1
++        if not stream.subscribers:
++            self._run_stream_subscribers.discard(run_id)
++        # Closing one viewer neither clears the replay log nor another viewer.
+     return response
+ 
+ 
+@@ -895,10 +919,11 @@ def _sweep_orphaned_runs_once(self, now: Optional[float] = None) -> None:
+     if now is None:
+         now = time.time()
+     for run_id, created_at in list(self._run_streams_created.items()):
+-        if now - created_at <= self._RUN_STREAM_TTL or run_id in self._run_stream_subscribers:
++        task = self._active_run_tasks.get(run_id)
++        settled_at = self._run_statuses.get(run_id, {}).get("updated_at", created_at)
++        if (task is not None and not task.done()) or run_id in self._run_stream_subscribers or now - settled_at <= self._RUN_STREAM_TTL:
+             continue
+         logger.debug("[api_server] sweeping expired run transport %s", run_id)
+-        task = self._active_run_tasks.get(run_id)
+         # Transport TTL bounds buffering; live control state survives until the task returns.
+         _drop_run_transport(self, run_id)
+         if task is None or task.done():
+diff --git a/tests/gateway/test_api_server_run_fanout.py b/tests/gateway/test_api_server_run_fanout.py
+new file mode 100644
+index 0000000000..efa3e3d86f
+--- /dev/null
++++ b/tests/gateway/test_api_server_run_fanout.py
+@@ -0,0 +1,103 @@
++"""Two viewers of one run must not consume each other's events or cleanup state."""
++import asyncio
++import json
++import threading
++from unittest.mock import MagicMock
++
++import pytest
++from aiohttp import web
++from aiohttp.test_utils import TestClient, TestServer
++from gateway.config import PlatformConfig
++from gateway.platforms.api_server import APIServerAdapter
++
++
++def decoded(frame):
++    return json.loads(next(line[6:] for line in frame.decode().splitlines() if line.startswith("data: ")))
++
++
++@pytest.mark.asyncio
++async def test_two_clients_reconnect_without_losing_run_events(monkeypatch):
++    adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "test-key"}))
++    release = threading.Event()
++    ready = threading.Event()
++    callbacks = {}
++    agent = MagicMock()
++    agent.session_prompt_tokens = agent.session_completion_tokens = agent.session_total_tokens = 0
++
++    def run_conversation(**kwargs):
++        ready.set()
++        assert release.wait(10), "test did not release the controlled run"
++        return {"final_response": "First second"}
++
++    agent.run_conversation.side_effect = run_conversation
++
++    def create_agent(**kwargs):
++        callbacks.update(kwargs)
++        return agent
++
++    monkeypatch.setattr(adapter, "_create_agent", create_agent)
++    app = web.Application()
++    app.router.add_post("/v1/runs", adapter._handle_runs)
++    app.router.add_get("/v1/runs/{run_id}/events", adapter._handle_run_events)
++    app.router.add_get("/v1/runs/{run_id}", adapter._handle_get_run)
++    async with TestClient(TestServer(app), headers={"Authorization": "Bearer test-key"}) as client:
++        started = await client.post("/v1/runs", json={"input": "controlled test"})
++        assert started.status == 202, await started.text()
++        run_id = (await started.json())["run_id"]
++        path = f"/v1/runs/{run_id}/events"
++        try:
++            assert await asyncio.to_thread(ready.wait, 3)
++            first = await client.get(path)
++            second = await client.get(path)
++            callbacks["stream_delta_callback"]("First ")
++            a, b = await asyncio.wait_for(asyncio.gather(first.content.readuntil(b"\n\n"), second.content.readuntil(b"\n\n")), 3)
++            assert decoded(a)["delta"] == decoded(b)["delta"] == "First "
++            assert decoded(a)["sequence"] == decoded(b)["sequence"]
++            sequence = decoded(a)["sequence"]
++            first.close()
++            callbacks["stream_delta_callback"]("second")
++            next_frame = decoded(await asyncio.wait_for(second.content.readuntil(b"\n\n"), 3))
++            assert next_frame["delta"] == "second"
++            assert next_frame["sequence"] > sequence
++            replay = await client.get(path, headers={"Last-Event-ID": str(sequence)})
++            assert decoded(await asyncio.wait_for(replay.content.readuntil(b"\n\n"), 3)) == next_frame
++            release.set()
++            endings = await asyncio.wait_for(asyncio.gather(second.text(), replay.text()), 3)
++            assert all("run.completed" in body and "First second" in body for body in endings)
++            terminal_replay = await client.get(path, headers={"Last-Event-ID": str(next_frame["sequence"])})
++            assert "run.completed" in await terminal_replay.text()
++            snapshot = await (await client.get(f"/v1/runs/{run_id}")).json()
++            assert snapshot["event_cursor"] > next_frame["sequence"]
++            assert snapshot["event_replay_floor"] <= sequence
++            invalid = await client.get(path, headers={"Last-Event-ID": "999999"})
++            assert invalid.status == 409
++            assert (await invalid.json())["error"]["code"] == "run_replay_gap"
++            denied = await client.get(path, headers={"Authorization": "Bearer wrong"})
++            assert denied.status == 401
++        finally:
++            release.set()
++            task = adapter._active_run_tasks.get(run_id)
++            if task is not None:
++                await asyncio.wait_for(asyncio.shield(task), 3)
++            adapter._run_idempotency_store.close()
++
++
++@pytest.mark.asyncio
++async def test_bounded_replay_reports_gaps_and_releases_shared_memory():
++    from gateway.platforms.api_server_run_events import ReplayGap, RunEventLog, RunEventPool
++
++    pool = RunEventPool(max_bytes=300, max_records=4)
++    first, second = RunEventLog(pool, max_events=2), RunEventLog(pool)
++    for index in range(8):
++        (first if index % 2 else second).put_nowait({"event": "message.delta", "delta": "x" * 40})
++        assert pool.bytes <= pool.max_bytes
++        assert len(pool.records) <= pool.max_records
++    with pytest.raises(ReplayGap):
++        await first.next(0)
++    # A client acknowledging the loss can continue from the reported watermark.
++    sequence, frame = await first.next(first.evicted_through)
++    assert decoded(frame)["sequence"] == sequence
++    second.release()
++    assert pool.bytes == first.bytes
++    first.release()
++    assert pool.bytes == 0
+diff --git a/tests/gateway/test_api_server_runs.py b/tests/gateway/test_api_server_runs.py
+index 273ef8c91d..f515b82357 100644
+--- a/tests/gateway/test_api_server_runs.py
++++ b/tests/gateway/test_api_server_runs.py
+@@ -725,8 +725,10 @@ class TestRunLifecycleSweep:
+ 
+                 assert adapter._active_run_tasks[run_id] is task
+                 assert adapter._active_run_agents[run_id] is mock_agent
+-                assert run_id not in adapter._run_streams
+-                assert run_id not in adapter._run_streams_created
++                # Active work retains bounded replay even with no viewers;
++                # reconnecting after transport age must still see new events.
++                assert run_id in adapter._run_streams
++                assert run_id in adapter._run_streams_created
+                 assert adapter._run_approval_sessions[run_id] == run_id
+ 
+                 limited = adapter._concurrency_limited_response()
+diff --git a/website/docs/developer-guide/programmatic-integration.md b/website/docs/developer-guide/programmatic-integration.md
+index 449c009d79..1d86c51999 100644
+--- a/website/docs/developer-guide/programmatic-integration.md
++++ b/website/docs/developer-guide/programmatic-integration.md
+@@ -109,7 +109,7 @@ POST /v1/chat/completions        OpenAI Chat Completions (streaming via SSE)
+ POST /v1/responses               OpenAI Responses API (stateful)
+ POST /v1/runs                    Start a run, returns run_id (202)
+ GET  /v1/runs/{id}               Run status
+-GET  /v1/runs/{id}/events        SSE stream of lifecycle events
++GET  /v1/runs/{id}/events        SSE events; Last-Event-ID cursor when replay is advertised
+ POST /v1/runs/{id}/approval      Resolve a pending approval
+ POST /v1/runs/{id}/steer         Inject mid-run guidance at the next tool boundary
+ POST /v1/runs/{id}/stop          Interrupt the run
+diff --git a/website/docs/user-guide/features/api-server.md b/website/docs/user-guide/features/api-server.md
+index c4ea2bddbe..0cc9e35956 100644
+--- a/website/docs/user-guide/features/api-server.md
++++ b/website/docs/user-guide/features/api-server.md
+@@ -473,6 +473,22 @@ Statuses are retained briefly after terminal states (`completed`, `failed`, or `
+ 
+ Server-Sent Events stream of the run's tool-call progress, token deltas, and lifecycle events. Designed for dashboards and thick clients that want to attach/detach without losing state.
+ 
++When `features.run_event_replay.supported` and `fanout` are true, each viewer
++has an independent cursor. Frames include a numeric SSE `id` and matching
++`sequence` in their JSON payload. Send `Last-Event-ID` on reconnect to receive
++only newer frames. Disconnecting one viewer does not remove another viewer or
++the retained event history.
++
++Replay is in-process and bounded to 1,024 events / 4 MiB per run, with a shared
++64 MiB / 16,384-record adapter budget. An out-of-range cursor returns HTTP 409
++`run_replay_gap`. A connected viewer that falls behind receives an `error` event
++with that code, then closes. Poll run status for the final output and current
++`event_cursor` / `event_replay_floor`; do not render a truncated replay as a
++complete transcript. A client may explicitly resume from the current cursor
++while labelling earlier live output as unavailable. Gateway restart does not
++preserve the event log; durable run status is the recovery source.
++
++
+ When the agent delegates work to background subagents, the stream also carries
+ `subagent.start` and `subagent.complete` lifecycle events, so clients can
+ observe delegation outcomes — including timeouts and failures — instead of the
+@@ -510,11 +526,10 @@ human confirmation. The client owns the next turn. Clients that continue using
+ their own history snapshots should use synchronous delegation rather than
+ expecting a server-side delivery row to be merged into those snapshots.
+ 
+-Unconsumed event buffers expire after five minutes so a detached client cannot
+-grow memory indefinitely. This expires transport state only: a run that is
+-still executing remains visible to status polling, approval, stop control, and
+-concurrency accounting until its executor work actually exits. A connected SSE
+-subscriber continues draining normally.
++Event logs remain bounded while a run is active and expire five minutes after
++settlement when no viewers remain. Control state, approvals, and concurrency
++accounting remain live until executor work actually exits.
++
+ 
+ ### POST /v1/runs/\{run_id\}/stop
+ 

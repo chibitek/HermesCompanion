@@ -116,6 +116,11 @@ struct ServerBoard: Decodable, Identifiable {
     let name: String?
     let total: Int?
     let project_name: String?
+    let description: String?
+    let icon: String?
+    let color: String?
+    let default_workdir: String?
+    let project_id: String?
     var id: String { slug }
     var title: String { name.flatMap { $0.isEmpty ? nil : $0 } ?? slug }
 }
@@ -138,6 +143,7 @@ struct ServerBoardTask: Decodable, Identifiable {
     let assignee: String?
     let latest_summary: String?
     let result: String?
+    let priority: Int?
 }
 
 struct ServerTaskDetail: Decodable {
@@ -192,4 +198,134 @@ struct ServerTaskRun: Decodable, Identifiable {
     let summary: String?
     let error: String?
     let started_at: Double
+}
+
+
+struct WorkspaceCapabilities: Decodable {
+    let version: String
+    let task_create: Bool
+    let task_update: Bool
+    let task_comment: Bool
+    let task_statuses: [String]
+    let project_manage: Bool?
+    let board_manage: Bool?
+    let task_attachment_write: Bool?
+    let task_link_write: Bool?
+    let task_attachment_max_bytes: Int?
+    let task_attachment_chunk_bytes: Int?
+}
+
+struct ServerTaskWrite: Encodable {
+    var title: String? = nil
+    var body: String? = nil
+    var assignee: String? = nil
+    var priority: Int? = nil
+    var status: String? = nil
+    var result: String? = nil
+    var summary: String? = nil
+    var block_reason: String? = nil
+    var triage: Bool? = nil
+    var idempotency_key: String? = nil
+
+    static func changes(from task: ServerBoardTask, title: String, body: String,
+                        assignee: String, priority: Int, status: String, result: String,
+                        summary: String, blockReason: String) -> ServerTaskWrite {
+        var changes = ServerTaskWrite()
+        if title != task.title { changes.title = title }
+        if body != (task.body ?? "") { changes.body = body }
+        if assignee != (task.assignee ?? "") { changes.assignee = assignee }
+        if priority != (task.priority ?? 0) { changes.priority = priority }
+        if status != task.status { changes.status = status }
+        if status != task.status {
+            if status == "done", result != (task.result ?? "") { changes.result = result }
+            if ["done", "review"].contains(status), !summary.isEmpty { changes.summary = summary }
+            if ["blocked", "scheduled"].contains(status), !blockReason.isEmpty { changes.block_reason = blockReason }
+        }
+        return changes
+    }
+
+    var isEmpty: Bool {
+        title == nil && body == nil && assignee == nil && priority == nil && status == nil
+            && result == nil && summary == nil && block_reason == nil && triage == nil
+            && idempotency_key == nil
+    }
+}
+
+struct ServerTaskWriteReceipt: Decodable {
+    let board: String
+    let task: ServerBoardTask
+    let warning: String?
+}
+
+struct ServerTaskCommentReceipt: Decodable {
+    let board: String
+    let task_id: String
+    let ok: Bool
+}
+
+struct ServerBoardWrite: Encodable {
+    var slug: String? = nil
+    var name: String? = nil
+    var description: String? = nil
+    var icon: String? = nil
+    var color: String? = nil
+    var default_workdir: String? = nil
+    var project_id: String? = nil
+
+    func validatedCreation() throws -> ServerBoardWrite {
+        var result = self
+        let value = (slug ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard value.range(of: "^[a-z0-9][a-z0-9_-]{0,63}$", options: .regularExpression) != nil else {
+            throw APIError.invalidEndpoint("Board ID must contain 1–64 lowercase letters, digits, hyphens or underscores, starting with a letter or digit.")
+        }
+        result.slug = value
+        return result
+    }
+}
+
+struct ServerBoardReceipt: Decodable {
+    let board: ServerBoard
+    let already_exists: Bool?
+}
+
+struct ServerBoardActionReceipt: Decodable {
+    let slug: String
+    let action: String
+    let current: String
+}
+
+struct TaskUploadMetadata: Encodable {
+    let upload_id: String
+    let filename: String
+    let content_type: String
+    let size: Int
+    let sha256: String
+}
+
+struct TaskUploadChunk: Encodable {
+    let upload_id: String
+    let offset: Int
+    let data: String
+}
+
+struct TaskUploadReceipt: Decodable {
+    let board: String
+    let task_id: String
+    let upload_id: String
+    let offset: Int
+    let attachment: ServerTaskAttachment?
+}
+
+struct TaskAttachmentDeletionReceipt: Decodable {
+    let board: String
+    let task_id: String
+    let attachment_id: Int
+    let deleted: Bool
+}
+
+struct TaskLinkReceipt: Decodable {
+    let board: String
+    let parent_id: String
+    let child_id: String
+    let linked: Bool
 }

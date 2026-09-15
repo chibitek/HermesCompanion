@@ -1,0 +1,246 @@
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index d52d8619f8..bdbb7cb2de 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -3965,23 +3965,20 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+                 self._runner = None
+                 self._site = None
+                 if getattr(exc, "errno", None) == errno.EADDRINUSE:
+-                    # Config error: non-retryable, or the reconnect watcher leaks fds forever.
++                    # Remain fatal by default: unbounded retries of a permanent conflict
++                    # previously leaked adapter resources (#52132). The gateway grants only
++                    # two extra macOS bind attempts because BSD TIME_WAIT also produces this
++                    # error with exclusive address reuse settings after a clean restart.
+                     self._set_fatal_error(
+-                        # A port conflict is a configuration error, not a transient blip — another process
+-                        # holds the port for its lifetime. A bare ``return False`` makes the reconnect
+-                        # watcher in gateway.run treat it as retryable and loop forever at the backoff cap
+-                        # (observed: 1568+ retries over 5 days across multi-profile setups all defaulting to
+-                        # the same port, #52132), filling errors.log and leaking the adapter's ResponseStore
+-                        # fds each retry. Non-retryable drops it from the reconnect queue; the operator
+-                        # recovers with ``/platform resume api_server`` after changing the port.
+                         "api_server_port_in_use",
+-                        f"Port {self._port} already in use. Set "
+-                        f"platforms.api_server.port in config.yaml to a "
+-                        f"different value, then `/platform resume api_server`.",
++                        f"Port {self._port} could not be bound. If the gateway reports "
++                        f"this platform as fatal, check for another listener, set "
++                        f"platforms.api_server.port in config.yaml if necessary, "
++                        f"then `/platform resume api_server`.",
+                         retryable=False)
+                 logger.error(
+-                    "[%s] Could not bind %s:%d: %s. Set a different port in "
+-                    "config.yaml: platforms.api_server.port",
++                    "[%s] Could not bind %s:%d: %s. Check the platform retry/fatal "
++                    "status before changing platforms.api_server.port in config.yaml.",
+                     self.name, self._host, self._port, exc)
+                 return False
+             from gateway.platforms.shared_ingress import listener_base_url
+diff --git a/gateway/run_adapters.py b/gateway/run_adapters.py
+index 6c16c7d298..d68b5173b1 100644
+--- a/gateway/run_adapters.py
++++ b/gateway/run_adapters.py
+@@ -14,6 +14,7 @@ import contextlib
+ from contextlib import suppress
+ import functools
+ import os
++import sys
+ import time
+ import weakref as _weakref
+ from agent.async_utils import consume_detached_task_result
+@@ -194,6 +195,20 @@ class GatewayAdapterLifecycleMixin:
+             self._track_task_in(tasks, asyncio.create_task(self._handle_adapter_fatal_error_detached(adapter)))
+         )
+ 
++    @staticmethod
++    def _can_retry_platform_connect(adapter, *, attempts: int) -> bool:
++        """Allow two recovery binds on macOS without relaxing exclusive port ownership.
++
++        EADDRINUSE also describes TIME_WAIT after a clean restart on BSD when
++        SO_REUSEADDR is disabled. Use the existing 30s/60s reconnect schedule,
++        then stop if the port remains occupied. Other fatal errors keep their
++        original retry policy; each failed adapter is disposed by the caller.
++        """
++        if (sys.platform == "darwin" and adapter.platform == Platform.API_SERVER
++                and adapter.fatal_error_code == "api_server_port_in_use"):
++            return attempts < 3
++        return adapter.fatal_error_retryable
++
+     def _reconnect_queue_entry(
+         self, platform, adapter, platform_config, *, attempts: int, delay: float, queued: bool = True
+     ) -> dict:
+@@ -719,7 +734,7 @@ class GatewayAdapterLifecycleMixin:
+             success = await self._connect_adapter_with_timeout(adapter, platform, is_reconnect=True)
+             if success:
+                 await self._install_reconnected_adapter(platform, adapter)
+-            elif adapter.has_fatal_error and not adapter.fatal_error_retryable:
++            elif adapter.has_fatal_error and not self._can_retry_platform_connect(adapter, attempts=attempt):
+                 self._mark_platform_fatal(platform.value, adapter)
+                 logger.warning(
+                     "Reconnect %s: non-retryable error (%s), removing from retry queue",
+diff --git a/gateway/run_startup.py b/gateway/run_startup.py
+index 4ee1d76eb4..b737882bd7 100644
+--- a/gateway/run_startup.py
++++ b/gateway/run_startup.py
+@@ -1119,7 +1119,8 @@ class GatewayStartupMixin:
+                 continue
+             # A live foreign token holder is an ownership conflict, not a blip: retryable only for
+             # MID-RUN reconnects; at startup route it non-retryable so the gateway exits 78, not deaf.
+-            _retryable = adapter.fatal_error_retryable and not is_global_startup_conflict(adapter.fatal_error_code)
++            _retryable = (self._can_retry_platform_connect(adapter, attempts=1)
++                          and not is_global_startup_conflict(adapter.fatal_error_code))
+             self._update_platform_runtime_status(
+                 platform.value, platform_state="retrying" if _retryable else "fatal",
+                 error_code=adapter.fatal_error_code, error_message=adapter.fatal_error_message,
+diff --git a/tests/gateway/test_api_server_restart_recovery.py b/tests/gateway/test_api_server_restart_recovery.py
+new file mode 100644
+index 0000000000..80c210f081
+--- /dev/null
++++ b/tests/gateway/test_api_server_restart_recovery.py
+@@ -0,0 +1,146 @@
++"""Real socket invariants for Companion #52: bounded macOS API restart recovery."""
++
++import asyncio
++import secrets
++import socket
++import sqlite3
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, Mock
++
++import aiohttp
++import pytest
++
++from gateway.config import GatewayConfig, Platform, PlatformConfig
++from gateway.platforms.api_server import APIServerAdapter
++from gateway.run import GatewayRunner
++
++
++def _runner(config, monkeypatch):
++    runner = object.__new__(GatewayRunner)
++    runner.config = GatewayConfig(platforms={Platform.API_SERVER: config})
++    runner._failed_platforms = {}
++    runner.adapters = {}
++    runner.delivery_router = SimpleNamespace(adapters=runner.adapters)
++    runner._update_platform_runtime_status = Mock()
++    runner._wire_adapter_handlers = Mock()
++    runner._sync_voice_mode_state_to_adapter = Mock()
++    runner._bind_voice_input_callback = Mock()
++    runner._redeliver_failed_obligations_for_platform = AsyncMock()
++    runner._schedule_resume_pending_sessions = Mock()
++    monkeypatch.setattr('gateway.channel_directory.build_channel_directory', AsyncMock())
++    created = []
++
++    def create(platform, cfg):
++        assert platform == Platform.API_SERVER
++        adapter = APIServerAdapter(cfg)
++        created.append(adapter)
++        return adapter
++
++    runner._create_adapter = create
++    return runner, created
++
++
++async def _queue_failed_start(runner, config):
++    adapter = runner._create_adapter(Platform.API_SERVER, config)
++    assert await adapter.connect() is False
++    retryable, fatal = [], []
++    await runner._start_aggregate_connect_results(
++        [(Platform.API_SERVER, adapter, config, 'failed', None)], retryable, fatal)
++    assert retryable and not fatal
++    assert Platform.API_SERVER in runner._failed_platforms
++    return adapter
++
++
++@pytest.mark.macos_only
++@pytest.mark.asyncio
++@pytest.mark.parametrize('release_port', [True, False])
++async def test_native_api_bind_recovery_preserves_owner_and_bounds_retries(monkeypatch, release_port):
++    """Real failed binds recover after release; a persistent owner is never replaced."""
++    owner = socket.socket()
++    owner.bind(('127.0.0.1', 0))
++    owner.listen()
++    port = owner.getsockname()[1]
++    config = PlatformConfig(enabled=True, extra={
++        'host': '127.0.0.1', 'port': port, 'key': secrets.token_hex(32)})
++    runner, created = _runner(config, monkeypatch)
++    try:
++        await _queue_failed_start(runner, config)
++        # Startup schedules work; no reconnect is allowed before its deadline.
++        info = runner._failed_platforms[Platform.API_SERVER]
++        count = len(created)
++        await runner._reconnect_failed_platform(Platform.API_SERVER, info['next_retry'] - 1)
++        assert len(created) == count
++        if release_port:
++            owner.close()
++        # Drive scheduled passes without sleeping: connect and disposal remain real.
++        for _ in range(4):
++            info = runner._failed_platforms.get(Platform.API_SERVER)
++            if info is None:
++                break
++            await runner._reconnect_failed_platform(Platform.API_SERVER, info['next_retry'])
++        assert Platform.API_SERVER not in runner._failed_platforms
++        if release_port:
++            assert Platform.API_SERVER in runner.adapters
++            async with aiohttp.ClientSession() as client:
++                async with client.get(f'http://127.0.0.1:{port}/health') as response:
++                    assert response.status == 200
++                    assert (await response.json())['status'] == 'ok'
++        else:
++            assert not runner.adapters
++            assert len(created) == 3  # initial attempt plus two bounded retries
++            assert owner.getsockname()[1] == port
++            status = runner._update_platform_runtime_status.call_args.kwargs
++            assert status['platform_state'] == 'fatal'
++            assert status['error_code'] == 'api_server_port_in_use'
++        # Every failed adapter's actual SQLite connection is closed, not left to GC.
++        for adapter in created:
++            if adapter in runner.adapters.values():
++                continue
++            assert adapter._runner is None and adapter._site is None
++            with pytest.raises(sqlite3.ProgrammingError):
++                adapter._response_store._conn.execute('SELECT 1')
++    finally:
++        owner.close()
++        for adapter in created:
++            await adapter.cancel_background_tasks()
++            await adapter.disconnect()
++
++
++@pytest.mark.macos_only
++@pytest.mark.asyncio
++@pytest.mark.timeout(150)
++async def test_real_closed_http_connection_recovers_through_scheduled_reconnect(monkeypatch):
++    """Exercise BSD TIME_WAIT from a real server-closed HTTP response, not an idle listener."""
++    config = PlatformConfig(enabled=True, extra={
++        'host': '127.0.0.1', 'port': 0, 'key': secrets.token_hex(32)})
++    first = APIServerAdapter(config)
++    runner, created = _runner(config, monkeypatch)
++    try:
++        assert await first.connect()
++        port = first._site._server.sockets[0].getsockname()[1]
++        reader, writer = await asyncio.open_connection('127.0.0.1', port)
++        writer.write(b'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
++        await writer.drain()
++        response = await asyncio.wait_for(reader.read(), timeout=10)
++        assert b'200 OK' in response
++        writer.close()
++        await writer.wait_closed()
++        await first.disconnect()
++        config.extra['port'] = port
++        await _queue_failed_start(runner, config)
++        while Platform.API_SERVER in runner._failed_platforms:
++            info = runner._failed_platforms[Platform.API_SERVER]
++            now = asyncio.get_running_loop().time()
++            await asyncio.sleep(max(0, info['next_retry'] - now))
++            await runner._reconnect_failed_platform(Platform.API_SERVER, asyncio.get_running_loop().time())
++        assert Platform.API_SERVER in runner.adapters
++        async with aiohttp.ClientSession() as client:
++            async with client.get(f'http://127.0.0.1:{port}/health') as response:
++                assert response.status == 200
++        assert len(created) <= 3
++    finally:
++        await first.cancel_background_tasks()
++        await first.disconnect()
++        for adapter in created:
++            await adapter.cancel_background_tasks()
++            await adapter.disconnect()
