@@ -8,19 +8,19 @@ final class StreamWatchdogManager: @unchecked Sendable {
     private let lock = NSLock()
     private var generation = 0
     private var timeout: TimeInterval = 0
-    private var initialTimeout: TimeInterval = 0
-    private var hasReceivedFirstEvent = false
+    private var deadline: TimeInterval = 0
+    private var awaitingFirstActivity = true
     private var action: (() -> Void)?
 
     func arm(after timeout: TimeInterval, initialTimeout: TimeInterval? = nil, action: @escaping () -> Void) {
         lock.lock()
         self.timeout = timeout
-        self.initialTimeout = initialTimeout ?? timeout
-        self.hasReceivedFirstEvent = false
+        awaitingFirstActivity = true
+        self.deadline = ProcessInfo.processInfo.systemUptime + (initialTimeout ?? timeout)
         self.action = action
         generation += 1
         let currentGeneration = generation
-        let useTimeout = self.initialTimeout
+        let useTimeout = initialTimeout ?? timeout
         lock.unlock()
         schedule(generation: currentGeneration, after: useTimeout)
     }
@@ -31,19 +31,25 @@ final class StreamWatchdogManager: @unchecked Sendable {
             lock.unlock()
             return
         }
-        hasReceivedFirstEvent = true
-        generation += 1
-        let currentGeneration = generation
-        let currentTimeout = timeout
-        lock.unlock()
-        schedule(generation: currentGeneration, after: currentTimeout)
+        // Move one deadline rather than allocating a delayed callback for
+        // every token. The existing timer re-arms itself if activity continued.
+        deadline = ProcessInfo.processInfo.systemUptime + timeout
+        if awaitingFirstActivity {
+            awaitingFirstActivity = false
+            generation += 1
+            let current = generation
+            let interval = timeout
+            lock.unlock()
+            schedule(generation: current, after: interval)
+        } else {
+            lock.unlock()
+        }
     }
 
     func cancel() {
         lock.lock()
         generation += 1
         action = nil
-        hasReceivedFirstEvent = false
         lock.unlock()
     }
 
@@ -53,6 +59,12 @@ final class StreamWatchdogManager: @unchecked Sendable {
             self.lock.lock()
             guard self.generation == scheduledGeneration, let action = self.action else {
                 self.lock.unlock()
+                return
+            }
+            let remaining = self.deadline - ProcessInfo.processInfo.systemUptime
+            if remaining > 0 {
+                self.lock.unlock()
+                self.schedule(generation: scheduledGeneration, after: remaining)
                 return
             }
             self.action = nil

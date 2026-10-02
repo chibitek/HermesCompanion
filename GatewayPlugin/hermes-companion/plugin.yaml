@@ -1,6 +1,6 @@
 name: hermes-companion
-version: 0.1.6
-description: Server-backed workspace browsing for Hermes Companion.
+version: 0.1.11
+description: Workspace sync and native project/Kanban editing for Hermes Companion.
 author: Chibitek
 license: MIT
 platforms:

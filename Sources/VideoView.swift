@@ -51,9 +51,7 @@ struct AgentOSError: LocalizedError {
 
 @MainActor
 final class VideoStore: ObservableObject {
-    static let defaultServer = "http://localhost:3738"
-    /// Preferred avatar ("Preferred avatar") when present in the list.
-    static let defaultAvatarId = ""
+    static let defaultServer = ""
 
     @AppStorage("agent_os_server_url") var serverURL = VideoStore.defaultServer
 
@@ -72,7 +70,11 @@ final class VideoStore: ObservableObject {
     var baseURL: URL? {
         var s = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
         while s.hasSuffix("/") { s.removeLast() }
-        return URL(string: s)
+        guard let url = URL(string: s),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false else { return nil }
+        return url
     }
 
     func absoluteURL(_ relative: String) -> URL? {
@@ -117,11 +119,7 @@ final class VideoStore: ObservableObject {
             let env = try JSONDecoder().decode(Envelope.self, from: data)
             avatars = env.avatars ?? []
             if selectedAvatarId == nil {
-                if avatars.contains(where: { $0.avatar_id == Self.defaultAvatarId }) {
-                    selectedAvatarId = Self.defaultAvatarId
-                } else {
-                    selectedAvatarId = avatars.first?.avatar_id
-                }
+                selectedAvatarId = avatars.first?.avatar_id
             }
         } catch {
             errorMessage = "Couldn't load avatars: \(error.localizedDescription)"

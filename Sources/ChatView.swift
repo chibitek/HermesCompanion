@@ -12,7 +12,9 @@ struct ChatView: View {
     @State private var showSessionPicker = false
     @State private var showSettings = false
     @State private var showPlatformHub = false
+    @State private var showRunControls = false
     @State private var showVideo = false
+    @State private var showQueuedMessages = false
     @State private var attachments: [AttachmentData] = []
     @State private var showPhotoPicker = false
     @State private var photoPickerItems: [PhotosPickerItem] = []
@@ -22,6 +24,48 @@ struct ChatView: View {
     @State private var showVoicePage = false
     @StateObject private var wakePhraseListener = WakePhraseListener()
     @AppStorage("hey_hermes_enabled", store: SharedDefaults.shared) private var heyHermesEnabled = false
+
+    private var serverStatus: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let age = store.lastServerResponseAt.map { context.date.timeIntervalSince($0) }
+            let responsive = age.map { $0 < 15 } ?? false
+            let ready = responsive && store.isConnected && store.syncError == nil
+            let status = store.isLoadingConnection ? "Connecting to Hermes" :
+                (store.syncError != nil ? "Sync needs attention" :
+                    (ready ? "Hermes connected" : (responsive ? "Health check responding" : "Checking Hermes")))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Circle().fill(ready ? Color.green : Color.orange).frame(width: 7, height: 7)
+                    Text(store.isStreaming ? store.responseActivity : status)
+                    Spacer()
+                    if let age {
+                        Text("Health \(max(0, Int(age)))s ago")
+                    }
+                    if let latency = store.serverLatencyMs { Text("\(latency) ms") }
+                }
+                if store.isStreaming {
+                    if let signal = store.lastChatActivityAt {
+                        Text("Stream activity \(max(0, Int(context.date.timeIntervalSince(signal))))s ago")
+                    } else {
+                        Text("Waiting for the gateway to acknowledge this message")
+                    }
+                }
+                if let issue = store.liveChangesError, store.syncError == nil {
+                    Text(issue).foregroundStyle(.orange)
+                }
+                if let issue = store.syncError {
+                    Text(issue).foregroundStyle(.orange).textSelection(.enabled)
+                } else if !store.isStreaming, store.activeSession != nil, let synced = store.lastSyncedAt {
+                    Text("Chat synced \(max(0, Int(context.date.timeIntervalSince(synced))))s ago")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(appearance.activeTheme.textSecondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -37,6 +81,19 @@ struct ChatView: View {
                         toolEventsPanel
                     }
 
+                    serverStatus
+
+                    if !store.queuedMessages.isEmpty {
+                        Button {
+                            showQueuedMessages = true
+                        } label: {
+                            Label("Follow-ups (\(store.queuedMessages.count))", systemImage: "text.bubble")
+                                .font(.caption)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 4)
+                        }
+                    }
                     inputBar
                 }
 
@@ -61,6 +118,9 @@ struct ChatView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button("Run Controls", systemImage: "play.rectangle") { showRunControls = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showVideo = true
                     } label: {
@@ -75,8 +135,21 @@ struct ChatView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showRunControls) {
+                if let client = store.apiClient, let config = store.connectionConfig {
+                    NavigationStack {
+                        DurableRunView(client: client, scope: config.normalizedBaseURL, capabilities: store.capabilities?.features,
+                            session: store.activeSession, model: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionModelOverride,
+                            provider: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionProviderOverride)
+                    }.id(ObjectIdentifier(client))
+                }
+            }
             .sheet(isPresented: $showVideo) {
                 VideoView()
+                    .withActiveTheme(appearance)
+            }
+            .sheet(isPresented: $showQueuedMessages) {
+                queuedMessagesSheet
                     .withActiveTheme(appearance)
             }
             .sheet(isPresented: $showSessionPicker) {
@@ -115,20 +188,21 @@ struct ChatView: View {
         .onAppear {
             wakePhraseListener.onWakePhrase = {
                 guard !showVoicePage, !voiceConversation.isConversing else { return }
-                showVoicePage = true
+                openVoiceConversation()
             }
             if heyHermesEnabled { wakePhraseListener.start() }
             Task { await store.refreshSkills() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openVoiceMode)) { _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                showVoicePage = true
+                openVoiceConversation()
             }
         }
         .onDisappear {
             wakePhraseListener.stop()
         }
         .onChange(of: heyHermesEnabled) { _, enabled in
+            if enabled { wakePhraseListener.allowAfterExplicitVoiceRequest() }
             enabled ? wakePhraseListener.start() : wakePhraseListener.stop()
             ControlCenter.shared.reloadControls(ofKind: VoiceActivationControlConstants.kind)
         }
@@ -146,7 +220,7 @@ struct ChatView: View {
                if SharedDefaults.shared.bool(forKey: "open_voice_page") {
                    SharedDefaults.shared.set(false, forKey: "open_voice_page")
                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                       showVoicePage = true
+                       openVoiceConversation()
                     }
                  }
            case .background:
@@ -185,7 +259,7 @@ struct ChatView: View {
                             attachments.append(AttachmentData(data: jpegData, fileName: fileName, mimeType: "image/jpeg"))
                         }
                     } catch {
-                        // Ignore individual failures, continue processing others
+                        store.error = AppError(message: "Could not load a selected photo: \(error.localizedDescription). Open it in Photos to finish downloading it, then attach it again.")
                     }
                 }
                 photoPickerItems = []
@@ -193,7 +267,7 @@ struct ChatView: View {
         }
         // File picker sheet
         .sheet(isPresented: $showFilePicker) {
-            FilePickerView { data, fileName, mimeType in
+            FilePickerView(onError: { store.error = AppError(message: $0) }) { data, fileName, mimeType in
                 attachments.append(AttachmentData(data: data, fileName: fileName, mimeType: mimeType))
             }
         }
@@ -230,6 +304,7 @@ struct ChatView: View {
             isStreaming: store.isStreaming,
             onSend: sendMessage,
             onQueue: queueMessage,
+            canSteerCurrentChat: store.canSteerCurrentChat,
             onStop: { store.stopStreaming() },
             onCamera: { showPhotoPicker = true },
             onFilePick: { showFilePicker = true },
@@ -268,17 +343,69 @@ struct ChatView: View {
                 handleVoiceTranscription(transcription)
             },
             onOpenVoicePage: {
-                showVoicePage = true
+                openVoiceConversation()
             },
             onDictationStateChange: { isRecording in
                 if isRecording {
-                    wakePhraseListener.pause()
+                    wakePhraseListener.suspendForTextInput()
                 } else if scenePhase == .active, !showVoicePage {
                     wakePhraseListener.resume()
                 }
             },
+            onTextInput: { wakePhraseListener.suspendForTextInput() },
             voiceConversation: voiceConversation
         )
+    }
+
+    private var queuedMessagesSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(store.queuedMessages) { message in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(message.sessionID.flatMap { id in store.sessions.first { $0.id == id }?.title }
+                                 ?? message.sessionID.map { "Conversation \($0)" } ?? "Choose a conversation")
+                                .font(.caption.weight(.semibold))
+                            Text(message.display).textSelection(.enabled)
+                            Text(message.state == .sending ? (message.guidanceAccepted == true ? "Guidance accepted by Hermes" : "Sending to Hermes") :
+                                    (message.state == .queued ? "Waiting for this conversation's response to finish" : "Review before sending"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let issue = message.issue {
+                                Text(issue).font(.caption).foregroundStyle(.secondary)
+                            }
+                            if message.state != .sending {
+                                if let sessionID = message.sessionID, sessionID != store.activeSession?.id {
+                                    Button("Open original conversation") {
+                                        Task { await store.openQueuedConversation(message.id) }
+                                    }
+                                    .buttonStyle(.borderless)
+                                } else {
+                                    Button("Move to composer") {
+                                        guard inputText.isEmpty, attachments.isEmpty,
+                                              let recovered = store.recoverQueuedMessage(message.id) else { return }
+                                        wakePhraseListener.suspendForTextInput()
+                                        inputText = recovered
+                                        showQueuedMessages = false
+                                    }
+                                    .disabled(!inputText.isEmpty || !attachments.isEmpty)
+                                    .buttonStyle(.borderless)
+                                }
+                                Button("Delete follow-up", role: .destructive) {
+                                    store.removeQueuedMessage(message.id)
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } footer: {
+                    Text("Moving a follow-up to the composer does not send it. Check the selected conversation and its latest messages first. Finish or clear your current draft before recovering another.")
+                }
+            }
+            .navigationTitle("Follow-ups")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showQueuedMessages = false } } }
+        }
     }
 
     private var messageList: some View {
@@ -298,7 +425,9 @@ struct ChatView: View {
                             accentColor: appearance.accent,
                             compact: appearance.compactModeBool,
                             showTimestamp: appearance.showTimestampsBool,
-                            images: msg.images
+                            timestamp: msg.timestamp,
+                            images: msg.images,
+                            toolNames: msg.toolNames
                         )
                             .id(msg.id)
                     }
@@ -413,13 +542,26 @@ struct ChatView: View {
         .padding(.vertical, appearance.activeTheme.spacingS)
     }
 
+    private func openVoiceConversation() {
+        wakePhraseListener.pause()
+        wakePhraseListener.allowAfterExplicitVoiceRequest()
+        showVoicePage = true
+    }
+
     // MARK: - Send
 
     private func sendMessage() {
+        wakePhraseListener.suspendForTextInput()
         let visibleText = inputText.trimmingCharacters(in: .whitespaces)
         let images = attachments.filter { $0.isImage }.map { $0.data }
         let fileAttachments = attachments
         guard !visibleText.isEmpty || !images.isEmpty || !fileAttachments.isEmpty else { return }
+        for attachment in fileAttachments where !attachment.isImage {
+            guard MimeTypeResolver.isTextType(attachment.mimeType), String(data: attachment.data, encoding: .utf8) != nil else {
+                store.error = AppError(message: "Cannot send \(attachment.fileName) (\(attachment.mimeType)): this gateway's chat accepts images and UTF-8 text. Export this document as text or images. Your draft and attachments have been kept.")
+                return
+            }
+        }
         let payload = SkillCommandLogic.messagePayload(for: visibleText)
         inputText = ""
         attachments = []
@@ -427,11 +569,15 @@ struct ChatView: View {
     }
 
     private func queueMessage() {
+        wakePhraseListener.suspendForTextInput()
+        guard attachments.isEmpty else {
+            store.error = AppError(message: "Follow-up guidance currently accepts text only. Wait for Hermes to finish before sending attachments. Your draft and attachments have been kept.")
+            return
+        }
         let visibleText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !visibleText.isEmpty else { return }
         let payload = SkillCommandLogic.messagePayload(for: visibleText)
-        inputText = ""
-        store.queueMessage(payload, displayText: visibleText)
+        if store.queueMessage(payload, displayText: visibleText) { inputText = "" }
     }
 
     @MainActor

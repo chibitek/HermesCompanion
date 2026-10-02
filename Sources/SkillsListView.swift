@@ -25,7 +25,13 @@ struct SkillsListView: View {
                 .ignoresSafeArea()
 
             List {
-                if filteredSkills.isEmpty {
+                if let failure = store.skillsError {
+                    Section {
+                        Label(failure, systemImage: "exclamationmark.triangle")
+                        Button("Retry") { Task { await store.refreshSkills() } }
+                    }
+                }
+                if filteredSkills.isEmpty && store.skillsError == nil {
                     ContentUnavailableView(
                         "No Skills",
                         systemImage: "books.vertical",
@@ -52,6 +58,7 @@ struct SkillsListView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
         }
+        .task { await store.refreshSkills() }
         .navigationTitle("Skills")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search skills")

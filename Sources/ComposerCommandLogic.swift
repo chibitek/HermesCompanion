@@ -12,15 +12,14 @@ enum ComposerDictationLogic {
 enum ComposerSubmissionAction: Equatable {
     case send
     case queue
-    case stop
-    case voice
+    case compose
 }
 
 enum ComposerSubmissionLogic {
     static func action(isStreaming: Bool, canSend: Bool) -> ComposerSubmissionAction {
         if isStreaming {
-            return canSend ? .queue : .stop
+            return canSend ? .queue : .compose
         }
-        return canSend ? .send : .voice
+        return canSend ? .send : .compose
     }
 }

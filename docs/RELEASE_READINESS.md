@@ -1,5 +1,252 @@
 # Development Release Readiness
 
+## Current delivery: 1.8.87 (184)
+
+Task attachments now support full-size uploads, resumable retries and deletion.
+Task dependencies can be added and removed with native ownership and cycle
+checks. Download errors distinguish metadata, byte-count and transport failures.
+The final full simulator suite passed 179 ordinary tests; all thirteen opt-in
+real gateway checks passed separately. The bridge passed 32 tests.
+
+Issue #57 was reproduced deterministically: delayed auxiliary usage could recreate
+a deleted conversation before saving its generated title. Patch 8 now checks
+existence and writes usage in one transaction. All 184 targeted native tests pass;
+the final live run retained no sessions, jobs or projects. Linked files were
+preserved and the test board was archived. See [KANBAN_LIVE_VERIFICATION.md](KANBAN_LIVE_VERIFICATION.md).
+
+The verified local gateway was gracefully restarted after confirming no active
+runs or delegations. It runs native revision `480383eb3f` with eight compatibility
+patches and bridge 0.1.11. Live reads confirmed healthy status, attachment/link
+writes, the 25 MiB file limit and 4 MiB chunks. Installed bridge files match the
+verified sources. Build 184 was archived, exported with matching app/widget
+versions and verified signing, and installed on the paired device. Device
+inventory confirms 1.8.87 (184). Launch was blocked by the locked phone.
+Apple accepted the upload at 4:37 AM Eastern on September 14. TestFlight shows
+Testing in the existing internal group with one tester and nine builds. The
+tester remains Invited. Build 183 was withdrawn, and Apple confirmed one submitted
+item, 1.8.87 (184), at 4:43 AM Eastern, Waiting for Review. Manual release remains
+selected. Review notes disclose missing reviewer gateway access, unchanged
+screenshots and unfinished physical audio/network/visual acceptance. Full feature
+parity and paid platform experiences remain unfinished.
+
+## Historical delivery diagnostics update: 1.8.86 (183)
+
+Scheduled jobs now separate execution status from delivery failures, queued
+receipts and unverified delivery. Expandable rows retain the complete reason,
+and successful recovery clears stale delivery warnings. See
+[JOB_DELIVERY_DIAGNOSTICS.md](JOB_DELIVERY_DIAGNOSTICS.md).
+
+Investigation #66 found a request-body helper that stopped on temporary stream
+unavailability and a workspace watcher that could outlive its sync owner. A real
+bound-stream regression failed before the helper repair. Live sync now cancels
+and joins its watcher. The final full simulator suite passed 177 ordinary tests,
+with twelve opt-in real-gateway checks skipped for their separate run. All twelve
+then passed against the final source with zero retained jobs, sessions, projects
+or active selection, unchanged linked files and verified saved scheduler output.
+
+Build 183 has matching app/widget versions, a verified signed export and a
+confirmed device installation. Launch was blocked by the locked phone. TestFlight
+shows Testing in the existing internal group. Build 182 was withdrawn; Apple
+confirmed one submitted item, 1.8.86 (183), on September 14 at 3:56 AM Eastern,
+Waiting for Review with manual release preserved. The tester remains Invited.
+Physical visual/audio acceptance, external messaging delivery, full native job
+configuration, reviewer access and complete feature parity remain unfinished.
+
+## Subsequent Kanban verification, same build 183
+
+All thirteen real gateway checks passed, including native desktop task edits,
+comments, child results, attachment bytes/removal and iOS completion/archive.
+The native half independently verified the phone's saved fields. No chat, job or
+project records remained; the owned Kanban board was archived in the disposable
+home and linked files were retained. See [KANBAN_LIVE_VERIFICATION.md](KANBAN_LIVE_VERIFICATION.md)
+for exact scope; the later build 184 section adds attachment/dependency editing. This work
+does not change the shipped binary, native gateway or Apple review candidate.
+
+## Historical scheduled-job sync update: 1.8.85 (182)
+
+Remote scheduled-job changes now refresh the Companion list through workspace
+invalidation, with a 30-second foreground polling fallback. Older responses
+cannot overwrite newer job snapshots. A failed read displays a job-specific
+stale-data warning and retry action without erasing unrelated platform errors.
+See [JOB_SYNC.md](JOB_SYNC.md).
+
+Validation: 174 ordinary simulator tests passed in the final full rerun; all ten
+real-gateway checks passed separately. No jobs, sessions, projects or active
+project remained, and linked files retained their contents. The job regression
+failed before repair and passed afterward. Intermittent admission-test issue #66
+was still open at that delivery. Native job capability/execution issue #65 was
+resolved by the subsequent server verification below.
+
+Build 182 has matching app/widget versions and a verified signed export. Device
+inventory confirms installation; launch was blocked by the locked phone, so
+physical visual/audio acceptance remains incomplete. Apple processed the upload
+and build 182 is Testing in the existing internal group. The build 181 submission
+was withdrawn. Apple confirmed one submitted item, 1.8.85 (182), on September 14
+at 3:16 AM Eastern, Waiting for Review with manual release selected. Invitation
+acceptance, reviewer gateway access, screenshots, physical network transitions
+and full feature parity remain incomplete.
+
+## Subsequent server-only job contract verification
+
+Patch 7 advertises actual cron availability and the eight native job routes.
+The focused native suite passed 167 tests. All eleven real iOS checks passed,
+including actual local-model scheduled execution, saved local output and live
+result synchronization. Cleanup left no jobs, sessions, projects or active
+selection; linked files were unchanged. The local server was gracefully restarted
+on `faecddc545`; health, job capabilities and bridge 0.1.10 were verified live.
+The iOS binary and Apple candidate remain build 182. External channel delivery
+and full native job configuration remain outside this verified subset.
+
+## Historical run monitoring update: 1.8.84 (181)
+
+Build 181 preserves live output, the replay cursor and status monitoring when
+reattaching the run already selected. The regression failed before repair and
+now reaches the canonical terminal result without losing or duplicating text.
+See [RUN_MONITOR_REATTACH.md](RUN_MONITOR_REATTACH.md).
+
+The full suite passed 171 ordinary iOS tests, with eight opt-in checks skipped.
+All eight real-gateway checks then passed separately with zero retained sessions
+or metadata. No gateway change was required; the six compatibility patches and
+bridge 0.1.10 from build 180 remain the deployed server baseline.
+
+A subsequent verification-only update added a real two-client project lifecycle
+check. All nine live checks passed with zero remaining sessions, projects or
+active selection; linked server files retained their exact contents. No app
+binary changed. [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md) records current
+evidence and remaining feature work, including scheduled-job capability coherence.
+
+The archive has matching app/widget versions and the signed export was verified.
+Physical-device inventory confirms 1.8.84 (181) installed, but launch was blocked
+by the locked phone. Physical visual/audio acceptance remains incomplete. Apple
+processed the upload and build 181 is Testing in the existing internal group.
+TestFlight invitation acceptance and install are verified.
+
+The older build 180 submission was withdrawn. Apple confirmed one submitted item,
+**1.8.84 (181)**, on September 14 at 2:44 AM Eastern; it is Waiting for Review with
+manual release selected. Reviewer access, screenshot verification, full feature
+coverage, physical audio (#53), model latency (#55) and retained-session
+investigation (#57) remain open. No subscription is included. The following
+snapshots are historical.
+
+## Historical reasoning update: 1.8.83 (180)
+
+Build 180 makes reasoning controls operational for capable gateways without
+changing another client's saved conversation options. Conversation default,
+Server default and Off are distinct; the UI shows the last response's applied
+configuration and explains unavailable controls on older gateways. See
+[CHAT_REASONING.md](CHAT_REASONING.md).
+
+Validation passed 170 ordinary iOS tests and 165 native gateway tests. All eight
+isolated real-gateway checks passed separately, including a second independent
+client verifying reasoning defaults, with zero retained sessions or metadata.
+The running Hermes 0.21.2 gateway reports revision
+`266a90387d144836aa1ce4633362f1db4c0b7d61`, containing all six compatibility
+patches. Bridge 0.1.10 is unchanged. A graceful restart completed after checking
+for active work; health, advertised capability and actual reasoning behavior were
+verified, and the owned production verification session was deleted.
+
+The archive has matching app/widget versions and the signed export passed
+verification. Physical-device inventory confirms 1.8.83 (180) installed. Launch
+and visual acceptance of this build remain unverified. Apple processed the
+upload; build 180 is Testing in the existing internal group. The tester remains
+accepted by September 14, so acceptance and installation through TestFlight are verified.
+The screenshot's Incompatible entry is still unidentified.
+
+The pending build 179 submission was withdrawn. After a transient submission
+error, Apple confirmed one submitted item, **1.8.83 (180)**, on September 14 at
+2:29 AM Eastern. It is Waiting for Review with manual release selected. Reviewer
+gateway access, screenshot refresh, physical audio acceptance (#53), variable
+model latency (#55), and the intermittent retained-session observation (#57)
+remain open. No subscription or additional paid platform experience is included.
+The records below are historical.
+
+## Historical active steering update: 1.8.82 (179)
+
+Build 179 adds native active-chat steering and recoverable undelivered guidance
+from other clients. The full suite passed 168 ordinary tests; all seven isolated
+real-gateway checks passed with zero retained sessions or metadata. See
+[CHAT_STEERING.md](CHAT_STEERING.md).
+
+The signed archive and exported app/widget versions match. Physical-device
+inventory confirms 1.8.82 (179) installed; launch was blocked because the phone
+was locked. Apple accepted the upload; build 179 is Testing in the existing
+internal group. The tester remains accepted by September 14 with no registered device; TestFlight
+acceptance and installation are verified. The screenshot's Incompatible
+entry is still unidentified.
+
+The pending build 178 submission was withdrawn. Apple confirmed one submitted
+item, **1.8.82 (179)**, on September 14 at 1:58 AM Eastern; it is Waiting for Review
+with manual release selected. Reviewer gateway access and screenshot refresh
+remain follow-up work. No subscription or additional paid platform experience
+is included. The build 178 record below is historical.
+
+## Build 178 September 14 delivery snapshot
+
+Companion **1.8.81 (178)** is installed on the physical phone; device inventory
+confirms its version and launching the app succeeded. The first installation
+command lost its connection; the later inventory check established completion.
+The app and widget have matching versions, and the signed export was verified.
+Build 178 is Testing in the internal TestFlight group.
+Build 178 adds confirmed session deletion and specific in-app update notes to the
+queue, structured-message, typed-chat audio and text-fidelity repairs.
+
+The internal group contains builds 176, 177 and 178. The existing tester remains
+accepted by September 14; the invitation was resent on September 14 after the tester reported the
+app absent from the active list. TestFlight acceptance and installation remain
+unverified, and the screenshot's Incompatible entry is still unidentified.
+The connected phone meets the exported build's requirements.
+
+The previous build 176 review submission was withdrawn. Apple confirmed
+**1.8.81 (178)** submitted on September 14; it is Waiting for Review with manual
+release selected. TestFlight availability and App Review are separate states.
+
+The running Hermes **0.21.2** gateway reports code revision
+`afbd3e296ef825922bdd8d79b7d6f4f933288d36`, containing all five compatibility
+patches. Installed bridge **0.1.10** files match the current public source.
+Authenticated native and bridge capabilities returned HTTP 200 on September 14.
+No restart was needed to reapply code already running.
+
+The latest source suite passed **159 tests**, with six live checks skipped.
+All six checks then passed against the real gateway and local model in an
+isolated workspace. A first six-test run failed its final cleanup gate despite
+passing the tests; after adding per-test cleanup assertions, the repeat passed
+with zero sessions remaining. The intermittent observation remains in #57.
+Model latency remains open in #55, and physical music/microphone/Bluetooth
+acceptance remains open in #53.
+
+The privacy policy now describes optional Tailscale, configured model providers,
+on-device speech recognition, and local diagnostic logs. The submitted review
+notes disclose the gateway requirement; working isolated reviewer access and
+screenshot refresh/verification remain follow-up work.
+No subscription, Watch, native Vision Pro, or unapproved CarPlay experience is
+included in this candidate's advertised scope.
+
+See [CONNECTION_REVIEW.md](CONNECTION_REVIEW.md) and
+[APP_STORE_SUBMISSION.md](../APP_STORE_SUBMISSION.md). Historical build and
+deployment snapshots below describe earlier checks, not current installed state.
+
+## Session deletion repair in build 178
+
+Session deletion now requires the native receipt type, requested conversation ID
+and `deleted: true` before clearing local conversation or queued drafts. Failed
+confirmation preserves local state with a specific diagnostic. The full suite
+passed 159 ordinary tests with six skipped, and all six real-gateway checks passed
+separately with zero retained sessions. The repair is installed in build 178,
+and is included in the submitted build 178. Earlier builds 176 and 177 omit it. See [SESSION_DELETION_RECEIPTS.md](SESSION_DELETION_RECEIPTS.md).
+
+## Queue and stream repair in build 177
+
+Queued follow-ups now retain server and conversation ownership through navigation,
+restart, and uncertain sends. A visible recovery list permits review and removal;
+dispatch waits for confirmation and never skips an earlier item requiring review.
+The source simulator suite passed 151 tests, with five live checks skipped; all
+five checks passed separately against an isolated real gateway and local model.
+The structured-message repair subsequently passed 158 ordinary tests and six
+live checks. Both repairs are included in the phone-installed build 177,
+and are also included in the submitted build 178.
+See [QUEUE_RELIABILITY.md](QUEUE_RELIABILITY.md) and
+[SSE_MESSAGE_CONTRACT.md](SSE_MESSAGE_CONTRACT.md) for scope and verification.
+
 ## Text-Only Audio Isolation Follow-Up
 
 The typed-message background keep-alive no longer generates or plays a silent
@@ -28,7 +275,7 @@ physical iPhone remains unverified; this change has not been installed there.
 As of September 11, 2026. This is a verification record, not a release approval
 or a claim that the full product goal is complete.
 
-## Latest Verification Snapshot
+## Historical September 12 Verification Snapshot
 
 Source `390c86f` plus the local-only voice cleanup passed 93 iOS Simulator tests
 on September 12. Bridge 0.1.6 passed all 16 tests again. The release also
@@ -38,7 +285,7 @@ compilation does not establish signing, physical-device behavior, or feature
 completeness. Earlier evidence below is historical; this snapshot supersedes
 its build/test counts, not its unresolved release requirements.
 
-## Installed Versus Unreleased
+## Historical Installed Versus Unreleased
 
 The latest verified phone installation is 1.8.63 build 158, from merged PR 46.
 It contains the September 12 local-only voice cleanup. The local Hermes gateway
@@ -76,11 +323,10 @@ The prior verified phone installation was 1.8.62 build 156, from merged PR 42.
 - The two local gateway compatibility patches previously passed 162 focused
   server tests. A live local Qwen turn confirmed its named provider and model;
   the diagnostic session was removed. See `../GatewayPatches/README.md`.
-- Local branch inventory contains only `Dev_Erick` and `main`, with one worktree.
 
 ## Required Before Release
 
-- Obtain approval to push/open the PR, merge, and install the updated bridge/app.
+- Public branch updates, server patch deployment, Apple upload, and phone installation were authorized. The feature PR remains a draft; merging is not complete.
 - Increment the build number and perform a signed device build/install. An
   unsigned Release compilation does not verify signing or installation.
 - Verify the new project and Kanban screens on the phone, including long text,
@@ -259,3 +505,15 @@ and a late not-found response after switching chats. Live Mac deletion and phone
 foreground recovery still require device verification. This assumes the connected
 Hermes gateway implements the native direct-session endpoint; alternate hosted
 endpoint behavior must be verified separately.
+
+
+## Physical launch update
+
+The paired iPhone is unlocked and Hermes 1.8.87 (184) launches via devicectl.
+TestFlight invite acceptance remains the only gap to the app appearing in iOS TestFlight.
+
+
+## TestFlight acceptance recorded
+
+App Store Connect shows Installed 1.8.87 (184) for erick.grau@chibitek.com on the
+paired iPhone. Physical launch is verified via devicectl.

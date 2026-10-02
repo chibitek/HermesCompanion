@@ -239,7 +239,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: theme.spacingM) {
                 cardHeader("Agent OS", icon: "film")
 
-                TextField("http://localhost:3738", text: $agentOSServer)
+                TextField("Agent OS server URL", text: $agentOSServer)
                     .textFieldStyle(.plain)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
@@ -451,30 +451,31 @@ struct SettingsView: View {
 
     // MARK: - Reasoning card
 
-    private static let thinkingOptions: [(value: String, label: String)] = [
-        ("", "Off"),
-        ("low", "Low"),
-        ("medium", "Medium"),
-        ("high", "High"),
-    ]
-
     private var reasoningCard: some View {
         glassCard {
             VStack(alignment: .leading, spacing: theme.spacingM) {
                 cardHeader("Reasoning", icon: "brain")
 
-                Picker("Thinking", selection: $selectedThinking) {
-                    ForEach(Self.thinkingOptions, id: \.value) { opt in
-                        Text(opt.label).tag(opt.value)
+                Picker("Reasoning for the next response", selection: $selectedThinking) {
+                    ForEach(ChatReasoningPreference.allCases, id: \.rawValue) { opt in
+                        Text(opt.label).tag(opt.rawValue)
                     }
                 }
                 .pickerStyle(.menu)
                 .tint(theme.textPrimary)
+                .disabled(!store.chatReasoningAvailable)
                 .onChange(of: selectedThinking) { _, newValue in
                     store.preferredThinking = newValue
                 }
 
-                Text("Local preference only — the gateway's chat endpoint doesn't currently honor a per-message reasoning override. Saved so it's ready when server support lands.")
+                if let reasoning = store.activeRuntime?.reasoning {
+                    Text("Last response reasoning: \(reasoning.label)")
+                        .font(.caption)
+                        .foregroundStyle(theme.textSecondary)
+                }
+                Text(store.chatReasoningAvailable
+                    ? "Applies to the next response, including voice and attachments. Conversation default preserves the chat's settings; Server default uses the gateway configuration. Providers may limit supported levels."
+                    : "This gateway does not advertise per-response reasoning controls. Update the Hermes gateway to use this setting. Chat continues with its existing reasoning configuration.")
                     .font(.caption)
                     .foregroundStyle(theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)

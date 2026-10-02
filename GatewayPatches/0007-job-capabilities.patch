@@ -1,0 +1,66 @@
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index e2982c17e7..c5e090ab32 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -70,7 +70,7 @@ _STATIC_FEATURE_FLAGS = {
+     "session_resources": True, "model_options": True, "session_chat": True,
+     "session_chat_streaming": True, "session_fork": True, "session_model_lock": True,
+     "session_chat_reasoning": True,
+-    "admin_config_rw": False, "jobs_admin": False, "memory_write_api": False,
++    "admin_config_rw": False, "memory_write_api": False,
+     "skills_api": True, "audio_api": False, "realtime_voice": False,
+     "session_continuity_header": "X-Hermes-Session-Id",
+     "session_key_header": "X-Hermes-Session-Key"}
+@@ -95,6 +95,14 @@ _CAPABILITY_ENDPOINTS = (
+     ("session_chat", ("POST", "/api/sessions/{session_id}/chat")),
+     ("session_chat_stream", ("POST", "/api/sessions/{session_id}/chat/stream")),
+     ("session_model_lock", ("POST", "/api/sessions/{session_id}/model")),
++    ("jobs", ("GET", "/api/jobs")),
++    ("job_create", ("POST", "/api/jobs")),
++    ("job", ("GET", "/api/jobs/{job_id}")),
++    ("job_update", ("PATCH", "/api/jobs/{job_id}")),
++    ("job_delete", ("DELETE", "/api/jobs/{job_id}")),
++    ("job_pause", ("POST", "/api/jobs/{job_id}/pause")),
++    ("job_resume", ("POST", "/api/jobs/{job_id}/resume")),
++    ("job_run", ("POST", "/api/jobs/{job_id}/run")),
+     ("browser_control_register", ("POST", "/v1/browser-control/register")),
+     ("browser_control_ws", ("GET", "/v1/browser-control/ws")),
+     ("artifact_upload", ("POST", "/v1/artifacts/upload")),
+@@ -2281,6 +2289,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+                 "runs_idempotency": _api_runs._idempotency_capabilities(self, store_type=RunIdempotencyStore),
+                 "run_event_replay": {"supported": True, "fanout": True, "cursor_header": "Last-Event-ID", "durable": False},
+                 **_STATIC_FEATURE_FLAGS,
++                "jobs_admin": _CRON_AVAILABLE,
+                 "cors": bool(self._cors_origins),
+                 # Always advertised for feature-detection; enabled follows config.
+                 "browser_extension_control": {
+diff --git a/tests/gateway/test_api_server.py b/tests/gateway/test_api_server.py
+index 865ee79a14..55b645c258 100644
+--- a/tests/gateway/test_api_server.py
++++ b/tests/gateway/test_api_server.py
+@@ -949,6 +949,25 @@ class TestModelsEndpoint:
+ 
+ 
+ class TestCapabilitiesEndpoint:
++    @pytest.mark.asyncio
++    @pytest.mark.parametrize("available", [False, True])
++    async def test_job_capability_matches_module_and_registered_routes(self, adapter, monkeypatch, available):
++        import gateway.platforms.api_server as api
++        monkeypatch.setattr(api, "_CRON_AVAILABLE", available)
++        app = _create_app(adapter)
++        app.router.add_get("/api/jobs", adapter._handle_list_jobs)
++        async with TestClient(TestServer(app)) as cli:
++            response = await cli.get("/v1/capabilities")
++            data = await response.json()
++            assert data["features"]["jobs_admin"] is available
++            registered = {(method, path) for method, path, _ in adapter._http_route_table()}
++            advertised = {(item["method"], item["path"]) for item in data["endpoints"].values()
++                          if item["path"].startswith("/api/jobs")}
++            expected = {(method, path) for method, path in registered if path.startswith("/api/jobs")}
++            assert advertised == expected
++            jobs = await cli.get("/api/jobs?include_disabled=true")
++            assert jobs.status == (200 if available else 501)
++
+     @pytest.mark.asyncio
+     async def test_capabilities_advertises_plugin_safe_contract(self, adapter):
+         app = _create_app(adapter)

@@ -14,6 +14,86 @@ enum ReleaseNotes {
 
     static func changes(for version: String) -> [String] {
         switch version {
+        case "1.8.87":
+            return [
+                "Upload and delete task attachments with Companion bridge 0.1.11, with progress and resumable retries.",
+                "Add or remove task dependencies while Hermes enforces workflow and cycle rules.",
+                "Attachment errors now explain invalid metadata, changed file sizes, and network failures.",
+                "Includes complete scheduled-job delivery reasons and reliable live-sync shutdown."
+            ]
+        case "1.8.86":
+            return [
+                "Scheduled jobs distinguish execution from delivery failures and show complete error details.",
+                "Queued and unverified delivery remain separate from confirmed results.",
+                "Foreground sync waits for its workspace watcher to stop before returning."
+            ]
+        case "1.8.85":
+            return [
+                "Scheduled jobs refresh after changes from other clients, with periodic fallback.",
+                "Failed refreshes show a job-specific warning and retry action."
+            ]
+        case "1.8.84":
+            return [
+                "Attaching again to the run already on screen keeps its live response and status updates active.",
+                "Interrupted run streams resume from the saved event position without clearing or duplicating text.",
+                "Includes operational reasoning controls and the earlier chat steering and audio fixes."
+            ]
+        case "1.8.83":
+            return [
+                "Reasoning choices now apply to chat responses on supported Hermes gateways.",
+                "Choose conversation defaults, server defaults, Off or an effort level without changing settings saved by other clients.",
+                "Settings can show the reasoning configuration used for the last response."
+            ]
+        case "1.8.82":
+            return [
+                "Send guidance to an active response when your Hermes server supports steering.",
+                "Follow-ups distinguish server acceptance from completed delivery and retain uncertain sends for review.",
+                "Undelivered guidance from other clients stays recoverable without automatic resending."
+            ]
+        case "1.8.81":
+            return [
+                "Deleting a conversation now waits for confirmation from Hermes before removing it or its queued drafts.",
+                "If deletion is not confirmed, your conversation stays available with a specific explanation.",
+                "Includes recoverable queued follow-ups and more reliable live response handling from the previous update."
+            ]
+        case "1.8.80":
+            return [
+                "Queued follow-ups stay with their original conversation when you switch chats or restart the app.",
+                "Review uncertain deliveries in Follow-ups and move a message back to the composer without sending it automatically.",
+                "Live response acknowledgements retain their message details, and malformed stream fields produce specific errors."
+            ]
+        case "1.8.79":
+            return [
+                "Live replies preserve spaces, paragraphs, and code indentation as Hermes sends them.",
+                "JSON replies and literal markup remain intact instead of being removed or rewritten.",
+                "Includes the text-chat microphone and audio ownership fixes from build 175."
+            ]
+        case "1.8.78":
+            return [
+                "Text chat leaves the microphone and audio route alone, including during system audio interruptions.",
+                "Typing or dictating pauses Hey Hermes until you explicitly reopen voice conversation or re-enable wake listening.",
+                "Dictation releases wake listening before starting microphone capture."
+            ]
+        case "1.8.77":
+            return [
+                "The composer shows a guidance arrow while Hermes is working and an up arrow when idle.",
+                "An empty tap focuses the composer. Touch and hold the arrow to stop an active response or open voice conversation when idle.",
+                "The blinking cursor at the end of the latest response remains the busy indicator."
+            ]
+        case "1.8.76":
+            return [
+                "Create and edit Kanban boards from your iPhone.",
+                "Choose the active Hermes board or archive a board while retaining its tasks on the server.",
+                "Board editing requires Companion bridge 0.1.10; older servers continue to support existing board views.",
+                "Connection recovery stays on your selected server and preserves the current conversation."
+            ]
+        case "1.8.65":
+            return [
+                "Chat shows gateway reachability, response activity, and sync status.",
+                "Open conversations refresh automatically; bridge 0.1.7 adds live workspace change notifications.",
+                "Stream failures show the server's reason and no longer count as successful replies.",
+                "History pagination, model selection for new chats, and duplicate image uploads are fixed."
+            ]
         case "1.8.62":
             return [
                 "Projects now browse server-owned folders through the Companion workspace bridge.",

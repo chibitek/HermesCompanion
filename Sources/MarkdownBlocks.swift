@@ -8,7 +8,7 @@ import Foundation
 ///
 /// ponytail: intentionally naive — no nested lists, no tables, no setext
 /// headings, inline `code` only via AttributedString. Add tables/nesting when
-/// the maintainer's chat content actually needs them.
+/// conversation content actually needs them.
 enum MarkdownBlocks {
     enum Block: Equatable {
         /// Plain paragraph (or heading line with `#`s stripped). May contain inline markdown.

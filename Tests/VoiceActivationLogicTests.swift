@@ -4,6 +4,39 @@ import AVFoundation
 
 final class VoiceActivationLogicTests: XCTestCase {
     @MainActor
+    func testIdleVoiceControllersIgnoreSystemAudioInterruptionsAndCleanup() throws {
+        let audio = AVAudioSession.sharedInstance()
+        let category = audio.category
+        let mode = audio.mode
+        let options = audio.categoryOptions
+        defer { try? audio.setCategory(category, mode: mode, options: options) }
+        let phoneVoice = VoiceConversationManager()
+        let carVoice = VoiceConversationManager()
+        try audio.setCategory(.ambient, mode: .default)
+
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification,
+            object: audio, userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+        XCTAssertEqual(audio.category, .ambient, "Idle observers must not reconfigure keyboard or other app audio")
+        phoneVoice.stopConversation()
+        carVoice.stopListening()
+        carVoice.stopConversation()
+        XCTAssertEqual(audio.category, .ambient, "Stopping an unused voice controller must leave audio alone")
+    }
+
+    @MainActor
+    func testTextModeSurvivesAutomaticWakeListenerResumes() {
+        let listener = WakePhraseListener()
+        listener.suspendForTextInput()
+        listener.start()
+        listener.resume()
+        listener.resumeFromBackground()
+        listener.stop()
+        XCTAssertTrue(listener.isSuspendedForTextInput)
+        listener.allowAfterExplicitVoiceRequest()
+        XCTAssertFalse(listener.isSuspendedForTextInput)
+    }
+
+    @MainActor
     func testTextBackgroundLifecyclePreservesAudioCategory() throws {
         let audio = AVAudioSession.sharedInstance()
         let originalCategory = audio.category

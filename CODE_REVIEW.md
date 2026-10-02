@@ -2,7 +2,7 @@
 
 **Date:** July 8, 2026
 **Reviewer:** ct-review-architect skill (automated)
-**Repository:** ${HOME}/repos/HermesCompanion
+**Repository:** HermesCompanion
 **Files reviewed:** 21 Swift source files + project.yml + Info.plist + .gitignore (10,555 lines total)
 **Mode:** Read-only audit (no files modified)
 

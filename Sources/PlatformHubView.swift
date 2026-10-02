@@ -63,6 +63,24 @@ struct PlatformHubView: View {
                         }
                     }
 
+                    if let error = store.jobsError {
+                        Section {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(theme.danger)
+                            Button("Retry Scheduled Jobs") { Task { await store.refreshJobsOnly() } }
+                        }
+                    }
+
+                    if let client = store.apiClient, let config = store.connectionConfig {
+                        Section("Live Run Controls") {
+                            NavigationLink {
+                                DurableRunView(client: client, scope: config.normalizedBaseURL, capabilities: store.capabilities?.features,
+                                    session: store.activeSession, model: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionModelOverride,
+                                    provider: store.activeSession != nil && store.sessionModelLockAvailable ? nil : store.sessionProviderOverride)
+                                    .id(ObjectIdentifier(client))
+                            } label: { Label("Run Controls", systemImage: "play.rectangle") }
+                        }
+                    }
                     overviewSection
                     capabilitiesSection
                     endpointsSection
@@ -83,7 +101,7 @@ struct PlatformHubView: View {
                     artifactsSection
                 }
                 .sheet(isPresented: $showArtifactPicker) {
-                    FilePickerView { data, fileName, mimeType in
+                    FilePickerView(onError: { store.platformError = $0 }) { data, fileName, mimeType in
                         isUploadingArtifact = true
                         Task {
                             await store.uploadArtifact(
@@ -394,16 +412,23 @@ struct PlatformHubView: View {
                                 .font(.caption)
                                 .foregroundStyle(theme.textSecondary)
                         }
-                        if let lastStatus = job.lastStatus, !lastStatus.isEmpty {
-                            Text("Last: \(lastStatus)")
+                        if let summary = job.lastRunSummary, !summary.isEmpty {
+                            Text(summary)
                                 .font(.caption)
                                 .foregroundStyle(theme.textSecondary)
                         }
-                        if let error = job.lastError, !error.isEmpty {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(theme.danger)
-                                .lineLimit(2)
+                        ForEach(job.diagnostics) { diagnostic in
+                            DisclosureGroup {
+                                Text(diagnostic.detail)
+                                    .font(.caption)
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } label: {
+                                Label(diagnostic.title, systemImage: diagnostic.isFailure
+                                    ? "exclamationmark.triangle" : "clock")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(diagnostic.isFailure ? theme.danger : theme.textSecondary)
                         }
 
                         Button {

@@ -133,14 +133,27 @@ struct CapabilitiesResponse: Codable {
     struct Features: Codable {
         let browserExtensionControl: Bool?
         let modelOptions: Bool?
+        let sessionChatReasoning: Bool?
         let sessionModelLock: Bool?
         let chatCompletions: Bool
         let chatCompletionsStreaming: Bool
         let sessionChat: Bool
         let sessionChatStreaming: Bool
+        struct RunIdempotency: Codable {
+            let supported: Bool
+            let durable: Bool
+            let retention_seconds: Double?
+        }
+        struct RunEventReplay: Codable {
+            let supported: Bool
+            let fanout: Bool
+        }
+        let runEventReplay: RunEventReplay?
+        let runsIdempotency: RunIdempotency?
         let runSubmission: Bool
         let runEventsSSE: Bool
         let runStop: Bool
+        let runSteer: Bool
         let runApprovalResponse: Bool
         let toolProgressEvents: Bool
         let approvalEvents: Bool
@@ -170,6 +183,7 @@ struct CapabilitiesResponse: Codable {
                 browserExtensionControl = browser?.enabled
             }
             modelOptions = try values.decodeIfPresent(Bool.self, forKey: .modelOptions)
+            sessionChatReasoning = try values.decodeIfPresent(Bool.self, forKey: .sessionChatReasoning)
             sessionModelLock = try values.decodeIfPresent(Bool.self, forKey: .sessionModelLock)
             artifactTransport = try values.decodeIfPresent(Bool.self, forKey: .artifactTransport)
                 ?? browser.map { $0.enabled && $0.artifactTransport != nil }
@@ -177,9 +191,12 @@ struct CapabilitiesResponse: Codable {
             chatCompletionsStreaming = try values.decodeIfPresent(Bool.self, forKey: .chatCompletionsStreaming) ?? false
             sessionChat = try values.decodeIfPresent(Bool.self, forKey: .sessionChat) ?? false
             sessionChatStreaming = try values.decodeIfPresent(Bool.self, forKey: .sessionChatStreaming) ?? false
+            runEventReplay = try values.decodeIfPresent(RunEventReplay.self, forKey: .runEventReplay)
+            runsIdempotency = try values.decodeIfPresent(RunIdempotency.self, forKey: .runsIdempotency)
             runSubmission = try values.decodeIfPresent(Bool.self, forKey: .runSubmission) ?? false
             runEventsSSE = try values.decodeIfPresent(Bool.self, forKey: .runEventsSSE) ?? false
             runStop = try values.decodeIfPresent(Bool.self, forKey: .runStop) ?? false
+            runSteer = try values.decodeIfPresent(Bool.self, forKey: .runSteer) ?? false
             runApprovalResponse = try values.decodeIfPresent(Bool.self, forKey: .runApprovalResponse) ?? false
             toolProgressEvents = try values.decodeIfPresent(Bool.self, forKey: .toolProgressEvents) ?? false
             approvalEvents = try values.decodeIfPresent(Bool.self, forKey: .approvalEvents) ?? false
@@ -194,11 +211,15 @@ struct CapabilitiesResponse: Codable {
             case chatCompletionsStreaming = "chat_completions_streaming"
             case sessionChat = "session_chat"
             case sessionChatStreaming = "session_chat_streaming"
+            case runEventReplay = "run_event_replay"
+            case runsIdempotency = "runs_idempotency"
             case runSubmission = "run_submission"
             case runEventsSSE = "run_events_sse"
             case runStop = "run_stop"
+            case runSteer = "run_steer"
         case runApprovalResponse = "run_approval_response"
         case modelOptions = "model_options"
+        case sessionChatReasoning = "session_chat_reasoning"
         case sessionModelLock = "session_model_lock"
             case toolProgressEvents = "tool_progress_events"
             case approvalEvents = "approval_events"
@@ -261,10 +282,24 @@ struct SessionListResponse: Codable {
     let object: String
     let data: [HermesSession]
     let total: Int?
+    let limit: Int?
+    let offset: Int?
+    let hasMore: Bool?
+    enum CodingKeys: String, CodingKey {
+        case object, data, total, limit, offset
+        case hasMore = "has_more"
+    }
 }
 
 struct CreateSessionRequest: Codable {
     let title: String?
+    var model: String? = nil
+    var provider: String? = nil
+    var requireModelLock: Bool? = nil
+    enum CodingKeys: String, CodingKey {
+        case title, model, provider
+        case requireModelLock = "require_model_lock"
+    }
 }
 
 // MARK: - Messages
@@ -276,11 +311,13 @@ struct SessionMessage: Codable, Identifiable, Hashable {
     let timestamp: Double?
     let toolCalls: [ToolCall]?
     let toolCallId: String?
+    let displayKind: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role, content, timestamp
         case toolCalls = "tool_calls"
         case toolCallId = "tool_call_id"
+        case displayKind = "display_kind"
     }
 
     init(from decoder: Decoder) throws {
@@ -292,6 +329,7 @@ struct SessionMessage: Codable, Identifiable, Hashable {
         self.timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
         self.toolCalls = try c.decodeIfPresent([ToolCall].self, forKey: .toolCalls)
         self.toolCallId = try c.decodeIfPresent(String.self, forKey: .toolCallId)
+        self.displayKind = try c.decodeIfPresent(String.self, forKey: .displayKind)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -302,6 +340,7 @@ struct SessionMessage: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(timestamp, forKey: .timestamp)
         try c.encodeIfPresent(toolCalls, forKey: .toolCalls)
         try c.encodeIfPresent(toolCallId, forKey: .toolCallId)
+        try c.encodeIfPresent(displayKind, forKey: .displayKind)
     }
 
     var idString: String { String(id) }
@@ -311,22 +350,11 @@ struct SessionMessage: Codable, Identifiable, Hashable {
     var isTool: Bool { role == "tool" }
     /// True for assistant messages that are tool-call wrappers (no visible text).
     var isToolCall: Bool { isAssistant && (toolCalls?.isEmpty == false) }
-    /// True for messages that should be hidden from the chat UI.
+    /// Respect Hermes's display projection. Tool calls may accompany visible
+    /// assistant text; JSON can also be a legitimate assistant answer.
     var shouldHide: Bool {
-        if isTool || isSystem { return true }
-        if isToolCall { return true }
-        // Hide assistant messages with null/empty content (tool-call intermediates)
-        if isAssistant && (content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
-            return true
-        }
-        // Hide assistant messages whose content is raw JSON (tool-call artifacts)
-        if isAssistant, let c = content {
-            let trimmed = c.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.hasPrefix("{\"") || trimmed.hasPrefix("[{") || trimmed.hasPrefix("{\"role\"") {
-                return true
-            }
-        }
-        return false
+        if displayKind == "hidden" || isTool || isSystem { return true }
+        return isAssistant && !isToolCall && (content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     var date: Date? {
@@ -349,16 +377,39 @@ struct ToolCallFunction: Codable, Hashable {
 struct SessionMessagesResponse: Codable {
     let object: String
     let data: [SessionMessage]
+    let pagination: MessagePagination?
+}
+
+struct MessagePagination: Codable {
+    let offset: Int
+    let returned: Int
 }
 
 // MARK: - Chat Request
+
+enum ChatReasoningPreference: String, CaseIterable {
+    case conversation = "", serverDefault = "default", off = "none"
+    case minimal, low, medium, high, xhigh, max, ultra
+
+    var label: String {
+        switch self {
+        case .conversation: "Conversation default"
+        case .serverDefault: "Server default"
+        case .off: "Off"
+        default: rawValue.capitalized
+        }
+    }
+    var requestValue: String? { self == .conversation ? nil : rawValue }
+}
 
 struct SessionChatRequest: Codable {
     let message: String
     let systemMessage: String?
     let model: String?
+    var reasoningEffort: String? = nil
 
     enum CodingKeys: String, CodingKey {
+        case reasoningEffort = "reasoning_effort"
         case message
         case systemMessage = "system_message"
         case model
@@ -373,6 +424,16 @@ struct SessionRuntime: Codable, Hashable, Sendable {
     let routeSource: String?
     let requested: RequestedRuntime?
     let modelLock: String?
+    var reasoning: ReasoningConfiguration? = nil
+
+    struct ReasoningConfiguration: Codable, Hashable, Sendable {
+        let enabled: Bool?
+        let effort: String?
+        var label: String {
+            if enabled == false { return "Off" }
+            return effort?.capitalized ?? "Enabled"
+        }
+    }
 
     struct RequestedRuntime: Codable, Hashable, Sendable {
         let provider: String?
@@ -384,6 +445,7 @@ struct SessionRuntime: Codable, Hashable, Sendable {
         case routeSource = "route_source"
         case requested
         case modelLock = "model_lock"
+        case reasoning
     }
 
     var effectiveProvider: String? {
@@ -428,11 +490,12 @@ struct SessionChatResponse: Codable {
     let object: String
     let sessionId: String
     let message: ChatMessageContent
+    let runtime: SessionRuntime?
 
     enum CodingKeys: String, CodingKey {
         case object
         case sessionId = "session_id"
-        case message
+        case message, runtime
     }
 }
 
@@ -442,6 +505,36 @@ struct ChatMessageContent: Codable {
 }
 
 // MARK: - SSE Events (streaming)
+
+/// Message metadata carried by a structured stream event, distinct from error text.
+struct SSEMessage: Codable, Sendable {
+    let id: String?
+    let role: String?
+    let content: String?
+}
+
+private enum SSEMessageValue: Codable, Sendable {
+    case text(String)
+    case object(SSEMessage)
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let text = try? value.decode(String.self) {
+            self = .text(text)
+        } else {
+            // Reject invalid scalar values and malformed typed object fields.
+            self = .object(try value.decode(SSEMessage.self))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .text(let text): try value.encode(text)
+        case .object(let message): try value.encode(message)
+        }
+    }
+}
 
 struct SSEEventPayload: Codable, Sendable {
     var event: String
@@ -456,10 +549,23 @@ struct SSEEventPayload: Codable, Sendable {
     let completed: Bool?
     let partial: Bool?
     let interrupted: Bool?
-    let message: String?  // error message
+    private let messagePayload: SSEMessageValue?
+    var message: String? {
+        if case .text(let text) = messagePayload { return text }
+        return nil
+    }
+    var structuredMessage: SSEMessage? {
+        if case .object(let message) = messagePayload { return message }
+        return nil
+    }
     let runtime: SessionRuntime?
+    let sequence: Int?
+    let code: String?
+    let pendingSteer: String?
 
     enum CodingKeys: String, CodingKey {
+        case pendingSteer = "pending_steer"
+        case sequence, code
         case event
         case sessionId = "session_id"
         case runId = "run_id"
@@ -472,15 +578,18 @@ struct SSEEventPayload: Codable, Sendable {
         case completed
         case partial
         case interrupted
-        case message
+        case messagePayload = "message"
         case runtime
     }
 
-    /// Custom decoder: the `event` field is NOT in the SSE JSON data — it comes
-    /// from the `event:` SSE protocol line. We decode without it and inject it after.
+    /// Some gateways put the event name in JSON and others use the SSE event line.
+    /// The parser applies an explicit event line after decoding this payload.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.event = try c.decodeIfPresent(String.self, forKey: .event) ?? ""
+        self.sequence = try c.decodeIfPresent(Int.self, forKey: .sequence)
+        self.code = try c.decodeIfPresent(String.self, forKey: .code)
+        self.pendingSteer = try c.decodeIfPresent(String.self, forKey: .pendingSteer)
         self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
         self.runId = try c.decodeIfPresent(String.self, forKey: .runId)
         self.message_id = try c.decodeIfPresent(String.self, forKey: .message_id)
@@ -492,25 +601,19 @@ struct SSEEventPayload: Codable, Sendable {
         self.completed = try c.decodeIfPresent(Bool.self, forKey: .completed)
         self.partial = try c.decodeIfPresent(Bool.self, forKey: .partial)
         self.interrupted = try c.decodeIfPresent(Bool.self, forKey: .interrupted)
-        // The `message` field is overloaded: in `message.started` events it's an
-        // object ({"id": ..., "role": ...}), in `error` events it's a string.
-        // Try string first; if that fails, decode as object and extract nothing
-        // (we don't need the message object's fields — we only use the string form).
-        if let msg = try? c.decodeIfPresent(String.self, forKey: .message) {
-            self.message = msg
-        } else {
-            // It's an object or absent — not an error message, so nil is fine
-            self.message = nil
-        }
+        self.messagePayload = try c.decodeIfPresent(SSEMessageValue.self, forKey: .messagePayload)
         self.runtime = try c.decodeIfPresent(SessionRuntime.self, forKey: .runtime)
     }
 
-    /// Direct initializer for fallback construction
+    /// Programmatic events, including plain-text errors and completion sentinels.
     init(event: String, sessionId: String?, runId: String?, message_id: String?,
          delta: String?, content: String?, toolName: String?, preview: String?,
          args: AnyCodable?, completed: Bool?, partial: Bool?, interrupted: Bool?,
-         message: String?, runtime: SessionRuntime? = nil) {
+         message: String?, runtime: SessionRuntime? = nil, sequence: Int? = nil, code: String? = nil, pendingSteer: String? = nil) {
         self.event = event
+        self.sequence = sequence
+        self.code = code
+        self.pendingSteer = pendingSteer
         self.sessionId = sessionId
         self.runId = runId
         self.message_id = message_id
@@ -522,7 +625,7 @@ struct SSEEventPayload: Codable, Sendable {
         self.completed = completed
         self.partial = partial
         self.interrupted = interrupted
-        self.message = message
+        self.messagePayload = message.map(SSEMessageValue.text)
         self.runtime = runtime
     }
 }
@@ -889,8 +992,50 @@ struct HermesJob: Codable, Identifiable, Hashable {
     let lastRunAt: String?
     let lastStatus: String?
     let lastError: String?
+    let lastDeliveryError: String?
+    let lastDeliveryUnverified: [String]?
+    let lastDeliveryQueued: [String: HermesJobDeliveryReceipt]?
     let deliver: String?
     let skills: [String]?
+
+    var lastRunSummary: String? {
+        switch lastStatus {
+        case "ok", "delivery_failed", "delivery_queued": return "Execution completed"
+        case "error": return "Execution failed"
+        case "blocked_config": return "Blocked by configuration"
+        case "interrupted": return "Execution interrupted"
+        default: return lastStatus
+        }
+    }
+
+    var diagnostics: [HermesJobDiagnostic] {
+        var result: [HermesJobDiagnostic] = []
+        if let error = lastError, !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(.init(id: "execution", title: "Execution failed", detail: error, isFailure: true))
+        }
+        if let error = lastDeliveryError, !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            result.append(.init(id: "delivery", title: "Delivery failed", detail: error, isFailure: true))
+        } else if lastStatus == "delivery_failed" {
+            result.append(.init(id: "delivery", title: "Delivery failed", detail:
+                "Hermes recorded a delivery failure without its reason. Open this job's execution log on the server and check its delivery target before running it again.", isFailure: true))
+        }
+        let queued = lastDeliveryQueued ?? [:]
+        if !queued.isEmpty || lastStatus == "delivery_queued" {
+            let details = queued.keys.sorted().map { target in
+                "\(target): \(queued[target]?.status ?? "awaiting confirmation")"
+            }.joined(separator: "\n")
+            result.append(.init(id: "queued", title: "Delivery queued", detail: details.isEmpty
+                ? "Hermes accepted delivery for later processing but has not confirmed completion."
+                : details, isFailure: false))
+        }
+        let unverified = Set(lastDeliveryUnverified ?? []).filter { !$0.isEmpty && queued[$0] == nil }.sorted()
+        if !unverified.isEmpty {
+            result.append(.init(id: "unverified", title: "Delivery not confirmed", detail:
+                "These targets accepted the request without delivery evidence:\n" + unverified.joined(separator: "\n")
+                + "\nCheck the destination before running the job again to avoid duplicates.", isFailure: false))
+        }
+        return result
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name, prompt, enabled, state, deliver, skills
@@ -899,7 +1044,21 @@ struct HermesJob: Codable, Identifiable, Hashable {
         case lastRunAt = "last_run_at"
         case lastStatus = "last_status"
         case lastError = "last_error"
+        case lastDeliveryError = "last_delivery_error"
+        case lastDeliveryUnverified = "last_delivery_unverified"
+        case lastDeliveryQueued = "last_delivery_queued"
     }
+}
+
+struct HermesJobDeliveryReceipt: Codable, Hashable {
+    let status: String?
+}
+
+struct HermesJobDiagnostic: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let detail: String
+    let isFailure: Bool
 }
 
 struct HermesJobsResponse: Codable {

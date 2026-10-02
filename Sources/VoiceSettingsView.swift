@@ -105,7 +105,7 @@ struct VoiceSettingsView: View {
             } header: {
                 Text("Hands-Free Activation")
             } footer: {
-                Text("When enabled, Hermes listens on-device for “Hey Hermes” while the app is open, then starts voice mode. iOS does not allow third-party wake phrases when the app is closed.")
+                Text("When enabled, Hermes listens on-device for “Hey Hermes” while the app is open. Typing or dictating a message pauses wake listening, including after sending. Open voice conversation or turn this switch off and on to resume. Wake listening is unavailable when the app is closed.")
             }
 
             Section {
@@ -192,6 +192,7 @@ struct VoiceSettingsView: View {
                 }
             }
         }
+        .onDisappear { previewSynthesizer.stopSpeaking(at: .immediate) }
         .navigationTitle("Voice")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -258,7 +259,7 @@ struct VoiceSettingsView: View {
             .foregroundStyle(color)
     }
 
-    private let previewSynthesizer = AVSpeechSynthesizer()
+    @State private var previewSynthesizer = AVSpeechSynthesizer()
 
     private func previewVoice() {
         previewSynthesizer.stopSpeaking(at: .immediate)
@@ -274,18 +275,9 @@ struct VoiceSettingsView: View {
                             min(AVSpeechUtteranceMaximumSpeechRate, Float(speed)))
         utterance.pitchMultiplier = Float(pitch)
 
-        // Don't hijack the shared session mid voice-conversation: switching
-        // .playAndRecord to .playback kills the mic. Preview plays fine under
-        // the conversation's existing session.
-        let session = AVAudioSession.sharedInstance()
-        if session.category != .playAndRecord {
-            do {
-                try session.setCategory(.playback, mode: .default)
-                try session.setActive(true)
-            } catch {
-                FileLogger.shared.log("VoiceSettings: preview audio session failed: \(error.localizedDescription)")
-            }
-        }
+        // Let the system release preview playback when speech finishes. Preview
+        // must not activate the shared microphone/conversation audio session.
+        previewSynthesizer.usesApplicationAudioSession = false
         previewSynthesizer.speak(utterance)
     }
 }

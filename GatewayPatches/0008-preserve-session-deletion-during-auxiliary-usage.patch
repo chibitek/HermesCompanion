@@ -1,0 +1,67 @@
+diff --git a/hermes_state_usage.py b/hermes_state_usage.py
+index f272b76070..0637f548e8 100644
+--- a/hermes_state_usage.py
++++ b/hermes_state_usage.py
+@@ -380,9 +380,15 @@ class SessionUsageMixin:
+         if not session_id or not task:
+             return
+         usage["api_call_count"] = 1 if api_call_count is None else int(api_call_count)
+-        # FK to sessions.id: same INSERT OR IGNORE guard as update_token_counts.
+-        self._insert_session_row(session_id, "unknown")
+-        self._execute_write(lambda conn: self._record_model_usage(conn, session_id, task=task, **usage))
++        # Auxiliary calls can finish after the user deletes their conversation.
++        # Accounting must never recreate it. Check the parent and write usage in
++        # the same BEGIN IMMEDIATE transaction, serialized with session deletion.
++        def _do(conn):
++            if conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone() is None:
++                return
++            self._record_model_usage(conn, session_id, task=task, **usage)
++
++        self._execute_write(_do)
+ 
+     def usage_totals(self, *, min_message_count: int = 1, include_archived: bool = False) -> Dict[str, float]:
+         """Tokens and spend across the whole store (one scan), so the sidebar total does not
+diff --git a/tests/hermes_state/test_aux_usage_accounting.py b/tests/hermes_state/test_aux_usage_accounting.py
+index d960e0d78d..3955d2b490 100644
+--- a/tests/hermes_state/test_aux_usage_accounting.py
++++ b/tests/hermes_state/test_aux_usage_accounting.py
+@@ -40,6 +40,34 @@ def _usage_rows(db, session_id):
+ 
+ 
+ class TestRecordAuxiliaryUsage:
++    @pytest.mark.parametrize("task", ["title_generation", "vision", "background_review"])
++    def test_late_auxiliary_response_does_not_recreate_deleted_session(self, db, task):
++        """Companion #57: background usage must respect a completed session deletion."""
++        from concurrent.futures import ThreadPoolExecutor
++        from threading import Event
++
++        db.create_session("deleted-chat", source="api_server")
++        ready, deleted = Event(), Event()
++
++        def finish_background_response():
++            ready.set()
++            assert deleted.wait(10), "Session deletion never completed"
++            db.record_auxiliary_usage(
++                "deleted-chat", task, model="aux-model", input_tokens=40, output_tokens=8,
++            )
++            return db.set_auto_title("deleted-chat", "Late generated title", source="llm")
++
++        with ThreadPoolExecutor(max_workers=1) as executor:
++            future = executor.submit(finish_background_response)
++            try:
++                assert ready.wait(10), "Background response never became ready"
++                assert db.delete_session("deleted-chat")
++            finally:
++                deleted.set()
++            assert future.result(timeout=10) is False
++        assert db.get_session("deleted-chat") is None
++        assert _usage_rows(db, "deleted-chat") == []
++
+     def test_records_task_row(self, db):
+         db.create_session("s1", source="cli")
+         db.record_auxiliary_usage(
+@@ -291,4 +319,3 @@ class TestInsightsAuxTotals:
+         assert ov["total_output_tokens"] == 600
+         models = {m["model"] for m in report["models"]}
+         assert {"main-model", "glm-5"} <= models
+-

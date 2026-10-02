@@ -17,6 +17,7 @@ final class WakePhraseListener: ObservableObject {
     private var hasInputTap = false
     private var isEnabled = false
     private var isPaused = false
+    private(set) var isSuspendedForTextInput = false
     private var isBackground = false
     private var lastActivation = Date.distantPast
     private var recognitionGeneration = UUID()
@@ -33,6 +34,7 @@ final class WakePhraseListener: ObservableObject {
         isEnabled = true
         isPaused = false
         isBackground = false
+        guard !isSuspendedForTextInput else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             await self.requestPermissionsIfNeeded()
@@ -44,6 +46,17 @@ final class WakePhraseListener: ObservableObject {
         isEnabled = false
         isBackground = false
         tearDown()
+    }
+
+    /// Text entry is an explicit choice to leave the microphone alone. Ordinary
+    /// sheet dismissal, app foregrounding, and dictation completion cannot undo it.
+    func suspendForTextInput() {
+        isSuspendedForTextInput = true
+        pause()
+    }
+
+    func allowAfterExplicitVoiceRequest() {
+        isSuspendedForTextInput = false
     }
 
     func pause(deactivateAudioSession: Bool = true) {
@@ -80,7 +93,7 @@ final class WakePhraseListener: ObservableObject {
     }
 
     private func beginListeningIfPossible() {
-        guard isEnabled, !isPaused, !audioEngine.isRunning,
+        guard isEnabled, !isPaused, !isSuspendedForTextInput, !audioEngine.isRunning,
               AVAudioApplication.shared.recordPermission == .granted,
               SFSpeechRecognizer.authorizationStatus() == .authorized,
               let speechRecognizer, speechRecognizer.isAvailable,
@@ -120,7 +133,7 @@ final class WakePhraseListener: ObservableObject {
                    Date().timeIntervalSince(self.lastActivation) > 2 {
                     self.lastActivation = Date()
                     FileLogger.shared.log("WakePhraseListener: Hey Hermes detected (background: \(self.isBackground))")
-                    self.pause(deactivateAudioSession: false)
+                    self.pause()
 
                     if self.isBackground {
                         // Post a local notification to bring the app to foreground
