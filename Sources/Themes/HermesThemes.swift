@@ -227,11 +227,53 @@ enum ThemeRegistry {
 
 }
 
+// MARK: - Adaptive Color Helpers
+
+/// Builds a Color that resolves differently per interface style, honoring
+/// `.preferredColorScheme` overrides via the view trait collection.
+private func schemeColor(
+    light: (r: Double, g: Double, b: Double, a: Double),
+    dark: (r: Double, g: Double, b: Double, a: Double)
+) -> Color {
+    Color(uiColor: UIColor { trait in
+        let c = trait.userInterfaceStyle == .dark ? dark : light
+        return UIColor(red: c.r, green: c.g, blue: c.b, alpha: c.a)
+    })
+}
+
+/// Screen backdrop for the default Hermes theme. Dark keeps the original
+/// #0A0E16 base with a #0E2441 glow; light uses a cool near-white base with
+/// a soft blue glow in the same position.
+private struct HermesAdaptiveBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        ZStack {
+            dark ? Color(red: 0.039, green: 0.055, blue: 0.086)  // #0A0E16
+                 : Color(red: 0.957, green: 0.965, blue: 0.984) // #F4F6FB
+            RadialGradient(
+                colors: dark
+                    ? [Color(red: 0.055, green: 0.090, blue: 0.137).opacity(0.85), // #0E2441
+                       Color(red: 0.039, green: 0.055, blue: 0.086).opacity(0.0)]
+                    : [Color(red: 0.851, green: 0.918, blue: 0.980).opacity(0.9),  // #D9EAFA
+                       Color(red: 0.957, green: 0.965, blue: 0.984).opacity(0.0)],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 500
+            )
+        }
+        .ignoresSafeArea()
+    }
+}
+
 // MARK: - Hermes (Default Liquid Glass Theme)
 
 /// The default theme matching the design handoff:
 /// bg/base #0A0E16, bg/surface #162032, brand teal #00B398,
 /// brand teal-bright #00D4B3, brand amber #F2A900, danger #CF4520.
+/// All colors adapt to light mode; the light palette inverts the same
+/// cool-navy scale onto a near-white base.
 struct HermesDefaultTheme: HermesTheme {
     let id = "hermes"
     let displayName = "Hermes"
@@ -243,27 +285,32 @@ struct HermesDefaultTheme: HermesTheme {
     let danger = Color(red: 0.812, green: 0.271, blue: 0.125)      // #CF4520
     let warning = Color(red: 0.949, green: 0.663, blue: 0.0)      // #F2A900
 
+    // Text colors — light inverts the navy scale for contrast on pale surfaces.
+    let textPrimary = schemeColor(light: (0.051, 0.082, 0.149, 1),   // #0D1526
+                                  dark:  (0.949, 0.965, 0.988, 1))   // #F2F6FC
+    let textBody = schemeColor(light: (0.141, 0.188, 0.290, 1),      // #24304A
+                               dark:  (0.859, 0.894, 0.945, 1))      // #DBE4F1
+    let textSecondary = schemeColor(light: (0.322, 0.380, 0.478, 1), // #52617A
+                                    dark:  (0.494, 0.557, 0.651, 1)) // #7E8EA6
+    let textMuted = schemeColor(light: (0.541, 0.592, 0.675, 1),     // #8A97AC
+                                dark:  (0.361, 0.420, 0.518, 1))     // #5C6B84
+
+    // Surfaces — light uses translucent white cards and dark hairline borders.
+    let bgCard = schemeColor(light: (1, 1, 1, 0.72),
+                             dark:  (0.118, 0.164, 0.250, 0.6))      // rgba(30,42,64,.6)
+    let cardBorder = schemeColor(light: (0.039, 0.055, 0.086, 0.08),
+                                 dark:  (1, 1, 1, 0.07))
+    let cardBorderWidth: CGFloat = 1
+
     var backgroundView: AnyView {
-        AnyView(
-            ZStack {
-                Color(red: 0.039, green: 0.055, blue: 0.086)     // #0A0E16 bg/base
-                RadialGradient(
-                    colors: [
-                        Color(red: 0.055, green: 0.090, blue: 0.137).opacity(0.85), // #0E2441 glow
-                        Color(red: 0.039, green: 0.055, blue: 0.086).opacity(0.0)
-                    ],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 500
-                )
-            }
-            .ignoresSafeArea()
-        )
+        AnyView(HermesAdaptiveBackground())
     }
 
     let userBubbleBackground = Color(red: 0.0, green: 0.702, blue: 0.596) // #00B398
-    let assistantBubbleBackground: Color = Color(red: 0.118, green: 0.164, blue: 0.250).opacity(0.6) // bg/card rgba(30,42,64,.6)
-    let assistantBubbleBorder: Color = Color.white.opacity(0.07)
+    let assistantBubbleBackground = schemeColor(light: (1, 1, 1, 0.78),
+                                                dark:  (0.118, 0.164, 0.250, 0.6))
+    let assistantBubbleBorder = schemeColor(light: (0.039, 0.055, 0.086, 0.08),
+                                            dark:  (1, 1, 1, 0.07))
     let assistantBubbleBorderWidth: CGFloat = 1
 
     let userMessageFont: Font = .body
@@ -278,8 +325,10 @@ struct HermesDefaultTheme: HermesTheme {
     let cursorColor: Color = Color(red: 0.0, green: 0.831, blue: 0.702)
 
     let toolChipsUseGlass: Bool = false
-    let toolChipBackground: Color = Color(red: 0.043, green: 0.063, blue: 0.094).opacity(0.7) // #0B1018
-    let toolChipBorder: Color = Color.white.opacity(0.08)
+    let toolChipBackground = schemeColor(light: (0.039, 0.055, 0.086, 0.05),
+                                       dark:  (0.043, 0.063, 0.094, 0.7))  // #0B1018
+    let toolChipBorder = schemeColor(light: (0.039, 0.055, 0.086, 0.08),
+                                   dark:  (1, 1, 1, 0.08))
 }
 
 // MARK: - Matrix Terminal Theme

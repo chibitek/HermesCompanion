@@ -154,6 +154,8 @@ struct ConnectionSetupView: View {
                 serverPickerSheet
             }
         }
+        // This screen is a fixed dark brand design; keep it dark in light mode.
+        .preferredColorScheme(.dark)
     }
     
     // MARK: - Brand Header
@@ -455,6 +457,7 @@ struct ConnectionSetupView: View {
             .navigationTitle("Choose Server")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .preferredColorScheme(.dark)
     }
     
     // MARK: - Server Picker Section
