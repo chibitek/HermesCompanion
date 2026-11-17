@@ -155,6 +155,7 @@ struct ConnectionSetupView: View {
             }
         }
         // This screen is a fixed dark brand design; keep it dark in light mode.
+        .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
     }
     
@@ -457,6 +458,7 @@ struct ConnectionSetupView: View {
             .navigationTitle("Choose Server")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .environment(\.colorScheme, .dark)
         .preferredColorScheme(.dark)
     }
     
